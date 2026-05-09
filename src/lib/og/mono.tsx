@@ -31,7 +31,12 @@ export async function getImageResponseOptions(): Promise<ImageResponseOptions> {
   };
 }
 
-export function generate({ title, description, logo, site = 'My App' }: GenerateProps) {
+export function generate({
+  title,
+  description,
+  logo,
+  site = 'Mustaque Nadim Academy',
+}: GenerateProps) {
   const primaryTextColor = 'rgb(240,240,240)';
 
   return (
