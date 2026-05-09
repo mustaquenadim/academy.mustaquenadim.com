@@ -136,7 +136,7 @@ export function Feedback({
                 target="_blank"
                 className={cn(
                   buttonVariants({
-                    color: 'primary',
+                    variant: 'default',
                   }),
                   'text-xs',
                 )}
@@ -147,7 +147,7 @@ export function Feedback({
               <button
                 className={cn(
                   buttonVariants({
-                    color: 'secondary',
+                    variant: 'secondary',
                   }),
                   'text-xs',
                 )}
@@ -177,7 +177,7 @@ export function Feedback({
             />
             <button
               type="submit"
-              className={cn(buttonVariants({ color: 'outline' }), 'w-fit px-3')}
+              className={cn(buttonVariants({ variant: 'outline' }), 'w-fit px-3')}
               disabled={isPending}
             >
               Submit
@@ -286,7 +286,7 @@ function FeedbackBlockContent({ id, body, onSendAction }: FeedbackBlockProps) {
             target="_blank"
             className={cn(
               buttonVariants({
-                color: 'primary',
+                variant: 'default',
               }),
               'text-xs',
             )}
@@ -297,7 +297,7 @@ function FeedbackBlockContent({ id, body, onSendAction }: FeedbackBlockProps) {
           <button
             className={cn(
               buttonVariants({
-                color: 'secondary',
+                variant: 'secondary',
               }),
               'text-xs',
             )}
