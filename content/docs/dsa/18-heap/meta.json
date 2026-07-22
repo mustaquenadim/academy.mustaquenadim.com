@@ -1,0 +1,10 @@
+{
+  "title": "Heap",
+  "icon": "Triangle",
+  "pages": [
+    "01-heap-intro",
+    "02-heap-operations-and-heapsort",
+    "03-top-k-patterns",
+    "04-streaming"
+  ]
+}

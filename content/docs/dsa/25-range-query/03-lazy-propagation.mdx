@@ -1,0 +1,543 @@
+---
+title: "Lazy Propagation"
+description: "Updating a whole range at once, thousands of times, would be slow — unless the tree defers the work until it’s actually needed."
+extractedReferences:
+  - href: /docs/dsa/25-range-query/01-segment-tree-intro
+  - href: /docs/dsa/25-range-query/02-segment-tree-queries
+  - href: /docs/dsa/25-range-query/04-fenwick-tree
+---
+
+## The problem
+
+You run a booking system where each seat has a price. A promotion drops: "add \$5 to every
+seat from row 200 to row 800." Then another: "add \$3 to rows 100 to 500." Between promotions,
+the site keeps asking for the total price of arbitrary blocks of seats. Range updates and
+range queries, thousands of each, all mixed together.
+
+Your segment tree already does point updates in O(log n). But a *range* update of `k` seats,
+done point by point, is `k` separate updates. Bump a range of 600 seats and you've paid
+`600 * log n`. A handful of wide promotions and the tree is on its knees.
+
+## A first attempt
+
+Loop the point update over the range:
+
+```python
+def range_add(tree, l, r, delta):
+    for i in range(l, r + 1):
+        tree.update(i, delta)   # each call is O(log n)
+```
+
+For a range of width `k` that's **O(k log n)** — and `k` can be the entire array. You've
+regressed to something worse than the naive plain-array approach, which at least did a range
+add in O(k). Touching every leaf defeats the whole point of having a tree.
+
+## The insight
+
+When a promotion covers rows 200–800, the segment tree already has nodes that represent big
+chunks of that range *whole* — the same O(log n) canonical nodes a query would use. Why walk
+down to 600 leaves when a few high nodes cover the range completely?
+
+Here's the move: when an update **fully covers** a node, update that node's stored aggregate
+directly and **leave a note** on it — "everyone below me still owes this +5." Don't touch the
+children yet. Only when a later query or update actually needs to descend *through* that node
+do you **push the note down** to its two children. Work you never need is work you never do.
+
+That note is the **lazy tag**, and pushing it down on demand is **lazy propagation**. Range
+updates join range queries at O(log n).
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Each node carries a pending tag
+
+Alongside `tree[node]` (the aggregate) keep `lazy[node]` — an update that has been applied to
+this node's aggregate but **not yet** to its children. `lazy = 0` means "nothing owed."
+
+</Step>
+
+<Step>
+
+### Applying a tag updates the aggregate in O(1)
+
+Adding `d` to every element of a node covering `[lo, hi]` raises its sum by `d * (hi - lo + 1)`.
+So `apply` does `tree[node] += d * count` and accumulates `lazy[node] += d`. No descent.
+
+```text
+range_add [2..5] += 5   (array of 8)
+
+           [0..7]
+          /      \
+     [0..3]      [4..7]
+     /   \        /   \
+ [0..1] [2..3]* [4..5]* [6..7]
+                 
+* fully covered -> bump aggregate, tag lazy += 5, stop
+  [0..3] and [4..7] re-sum from children on the way up
+```
+
+</Step>
+
+<Step>
+
+### Push down before you descend
+
+Any time you need to recurse into a node's children — because the query or update only
+partially overlaps it — first flush its pending tag: `apply` the tag to both children, then
+clear `lazy[node] = 0`. Now the children are correct and you can recurse safely.
+
+</Step>
+
+<Step>
+
+### Re-combine on the way up
+
+After recursing into both children during a partial update, refresh the parent:
+`tree[node] = tree[left] + tree[right]`. Queries push down the same way, so they always read
+values that already include every tag above them.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Range add, range sum. `push_down` is the heart of it.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class LazySegmentTree:
+    def __init__(self, data):
+        self.n = len(data)
+        self.tree = [0] * (4 * self.n)
+        self.lazy = [0] * (4 * self.n)
+        if self.n:
+            self._build(data, 1, 0, self.n - 1)
+
+    def _build(self, data, node, lo, hi):
+        if lo == hi:
+            self.tree[node] = data[lo]
+            return
+        mid = (lo + hi) // 2
+        self._build(data, 2 * node, lo, mid)
+        self._build(data, 2 * node + 1, mid + 1, hi)
+        self.tree[node] = self.tree[2 * node] + self.tree[2 * node + 1]
+
+    def _apply(self, node, lo, hi, add):
+        self.tree[node] += add * (hi - lo + 1)
+        self.lazy[node] += add
+
+    def _push_down(self, node, lo, hi):
+        if self.lazy[node]:
+            mid = (lo + hi) // 2
+            self._apply(2 * node, lo, mid, self.lazy[node])
+            self._apply(2 * node + 1, mid + 1, hi, self.lazy[node])
+            self.lazy[node] = 0
+
+    def update(self, l, r, add):
+        self._update(1, 0, self.n - 1, l, r, add)
+
+    def _update(self, node, lo, hi, l, r, add):
+        if r < lo or hi < l:
+            return
+        if l <= lo and hi <= r:
+            self._apply(node, lo, hi, add)
+            return
+        self._push_down(node, lo, hi)
+        mid = (lo + hi) // 2
+        self._update(2 * node, lo, mid, l, r, add)
+        self._update(2 * node + 1, mid + 1, hi, l, r, add)
+        self.tree[node] = self.tree[2 * node] + self.tree[2 * node + 1]
+
+    def query(self, l, r):
+        return self._query(1, 0, self.n - 1, l, r)
+
+    def _query(self, node, lo, hi, l, r):
+        if r < lo or hi < l:
+            return 0
+        if l <= lo and hi <= r:
+            return self.tree[node]
+        self._push_down(node, lo, hi)
+        mid = (lo + hi) // 2
+        return (self._query(2 * node, lo, mid, l, r)
+                + self._query(2 * node + 1, mid + 1, hi, l, r))
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class LazySegmentTree {
+  private n: number;
+  private tree: number[];
+  private lazy: number[];
+
+  constructor(data: number[]) {
+    this.n = data.length;
+    this.tree = new Array(4 * this.n).fill(0);
+    this.lazy = new Array(4 * this.n).fill(0);
+    if (this.n > 0) this.build(data, 1, 0, this.n - 1);
+  }
+
+  private build(data: number[], node: number, lo: number, hi: number): void {
+    if (lo === hi) {
+      this.tree[node] = data[lo];
+      return;
+    }
+    const mid = (lo + hi) >> 1;
+    this.build(data, 2 * node, lo, mid);
+    this.build(data, 2 * node + 1, mid + 1, hi);
+    this.tree[node] = this.tree[2 * node] + this.tree[2 * node + 1];
+  }
+
+  private apply(node: number, lo: number, hi: number, add: number): void {
+    this.tree[node] += add * (hi - lo + 1);
+    this.lazy[node] += add;
+  }
+
+  private pushDown(node: number, lo: number, hi: number): void {
+    if (this.lazy[node] !== 0) {
+      const mid = (lo + hi) >> 1;
+      this.apply(2 * node, lo, mid, this.lazy[node]);
+      this.apply(2 * node + 1, mid + 1, hi, this.lazy[node]);
+      this.lazy[node] = 0;
+    }
+  }
+
+  update(l: number, r: number, add: number): void {
+    this.updateNode(1, 0, this.n - 1, l, r, add);
+  }
+
+  private updateNode(node: number, lo: number, hi: number, l: number, r: number, add: number): void {
+    if (r < lo || hi < l) return;
+    if (l <= lo && hi <= r) {
+      this.apply(node, lo, hi, add);
+      return;
+    }
+    this.pushDown(node, lo, hi);
+    const mid = (lo + hi) >> 1;
+    this.updateNode(2 * node, lo, mid, l, r, add);
+    this.updateNode(2 * node + 1, mid + 1, hi, l, r, add);
+    this.tree[node] = this.tree[2 * node] + this.tree[2 * node + 1];
+  }
+
+  query(l: number, r: number): number {
+    return this.queryNode(1, 0, this.n - 1, l, r);
+  }
+
+  private queryNode(node: number, lo: number, hi: number, l: number, r: number): number {
+    if (r < lo || hi < l) return 0;
+    if (l <= lo && hi <= r) return this.tree[node];
+    this.pushDown(node, lo, hi);
+    const mid = (lo + hi) >> 1;
+    return (
+      this.queryNode(2 * node, lo, mid, l, r) +
+      this.queryNode(2 * node + 1, mid + 1, hi, l, r)
+    );
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class LazySegmentTree {
+    private final int n;
+    private final long[] tree;
+    private final long[] lazy;
+
+    LazySegmentTree(int[] data) {
+        n = data.length;
+        tree = new long[4 * Math.max(1, n)];
+        lazy = new long[4 * Math.max(1, n)];
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    private void build(int[] data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) >>> 1;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    private void apply(int node, int lo, int hi, long add) {
+        tree[node] += add * (hi - lo + 1);
+        lazy[node] += add;
+    }
+
+    private void pushDown(int node, int lo, int hi) {
+        if (lazy[node] != 0) {
+            int mid = (lo + hi) >>> 1;
+            apply(2 * node, lo, mid, lazy[node]);
+            apply(2 * node + 1, mid + 1, hi, lazy[node]);
+            lazy[node] = 0;
+        }
+    }
+
+    void update(int l, int r, long add) {
+        update(1, 0, n - 1, l, r, add);
+    }
+
+    private void update(int node, int lo, int hi, int l, int r, long add) {
+        if (r < lo || hi < l) return;
+        if (l <= lo && hi <= r) {
+            apply(node, lo, hi, add);
+            return;
+        }
+        pushDown(node, lo, hi);
+        int mid = (lo + hi) >>> 1;
+        update(2 * node, lo, mid, l, r, add);
+        update(2 * node + 1, mid + 1, hi, l, r, add);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    long query(int l, int r) {
+        return query(1, 0, n - 1, l, r);
+    }
+
+    private long query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return 0;
+        if (l <= lo && hi <= r) return tree[node];
+        pushDown(node, lo, hi);
+        int mid = (lo + hi) >>> 1;
+        return query(2 * node, lo, mid, l, r) + query(2 * node + 1, mid + 1, hi, l, r);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct {
+    int n;
+    long long *tree;
+    long long *lazy;
+} LazySeg;
+
+static void build(LazySeg *st, const int *data, int node, int lo, int hi) {
+    if (lo == hi) {
+        st->tree[node] = data[lo];
+        return;
+    }
+    int mid = (lo + hi) / 2;
+    build(st, data, 2 * node, lo, mid);
+    build(st, data, 2 * node + 1, mid + 1, hi);
+    st->tree[node] = st->tree[2 * node] + st->tree[2 * node + 1];
+}
+
+LazySeg *seg_create(const int *data, int n) {
+    LazySeg *st = malloc(sizeof(LazySeg));
+    st->n = n;
+    st->tree = calloc(4 * n, sizeof(long long));
+    st->lazy = calloc(4 * n, sizeof(long long));
+    if (n > 0) build(st, data, 1, 0, n - 1);
+    return st;
+}
+
+static void apply(LazySeg *st, int node, int lo, int hi, long long add) {
+    st->tree[node] += add * (hi - lo + 1);
+    st->lazy[node] += add;
+}
+
+static void push_down(LazySeg *st, int node, int lo, int hi) {
+    if (st->lazy[node]) {
+        int mid = (lo + hi) / 2;
+        apply(st, 2 * node, lo, mid, st->lazy[node]);
+        apply(st, 2 * node + 1, mid + 1, hi, st->lazy[node]);
+        st->lazy[node] = 0;
+    }
+}
+
+static void update(LazySeg *st, int node, int lo, int hi, int l, int r, long long add) {
+    if (r < lo || hi < l) return;
+    if (l <= lo && hi <= r) {
+        apply(st, node, lo, hi, add);
+        return;
+    }
+    push_down(st, node, lo, hi);
+    int mid = (lo + hi) / 2;
+    update(st, 2 * node, lo, mid, l, r, add);
+    update(st, 2 * node + 1, mid + 1, hi, l, r, add);
+    st->tree[node] = st->tree[2 * node] + st->tree[2 * node + 1];
+}
+
+void seg_update(LazySeg *st, int l, int r, long long add) {
+    update(st, 1, 0, st->n - 1, l, r, add);
+}
+
+static long long query(LazySeg *st, int node, int lo, int hi, int l, int r) {
+    if (r < lo || hi < l) return 0;
+    if (l <= lo && hi <= r) return st->tree[node];
+    push_down(st, node, lo, hi);
+    int mid = (lo + hi) / 2;
+    return query(st, 2 * node, lo, mid, l, r)
+         + query(st, 2 * node + 1, mid + 1, hi, l, r);
+}
+
+long long seg_query(LazySeg *st, int l, int r) {
+    return query(st, 1, 0, st->n - 1, l, r);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+class LazySegmentTree {
+    int n;
+    vector<long long> tree, lazy;
+
+    void build(const vector<int> &data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) / 2;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    void apply(int node, int lo, int hi, long long add) {
+        tree[node] += add * (hi - lo + 1);
+        lazy[node] += add;
+    }
+
+    void pushDown(int node, int lo, int hi) {
+        if (lazy[node] != 0) {
+            int mid = (lo + hi) / 2;
+            apply(2 * node, lo, mid, lazy[node]);
+            apply(2 * node + 1, mid + 1, hi, lazy[node]);
+            lazy[node] = 0;
+        }
+    }
+
+    void update(int node, int lo, int hi, int l, int r, long long add) {
+        if (r < lo || hi < l) return;
+        if (l <= lo && hi <= r) {
+            apply(node, lo, hi, add);
+            return;
+        }
+        pushDown(node, lo, hi);
+        int mid = (lo + hi) / 2;
+        update(2 * node, lo, mid, l, r, add);
+        update(2 * node + 1, mid + 1, hi, l, r, add);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    long long query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return 0;
+        if (l <= lo && hi <= r) return tree[node];
+        pushDown(node, lo, hi);
+        int mid = (lo + hi) / 2;
+        return query(2 * node, lo, mid, l, r)
+             + query(2 * node + 1, mid + 1, hi, l, r);
+    }
+
+public:
+    LazySegmentTree(const vector<int> &data)
+        : n(data.size()), tree(4 * data.size()), lazy(4 * data.size(), 0) {
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    void update(int l, int r, long long add) { update(1, 0, n - 1, l, r, add); }
+
+    long long query(int l, int r) { return query(1, 0, n - 1, l, r); }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Build | O(n) | O(n) |
+| Range update | O(log n) | O(log n) recursion |
+| Range query | O(log n) | O(log n) recursion |
+
+The lazy array doubles the memory to `2 * 4n` but keeps every operation logarithmic, no matter
+how wide the range.
+
+## When to use it
+
+<Callout type="idea" title="Add lazy propagation the moment you need range updates">
+A plain segment tree does range *queries* but only point *updates*. As soon as a single
+operation must touch a whole range — add a value, or assign one — lazy propagation is the fix.
+The subtle part is composing tags: two pending adds combine by addition, but if you mix
+"assign x" and "add d," you must define how they stack (an assign overwrites any pending add).
+Get the `apply` and `push_down` rules right and the rest is the same tree.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is `apply` allowed to skip the children, but recursion is not?">
+
+`apply` updates a node's *own* aggregate and records a debt in its tag — that's enough to keep
+the node itself correct and to answer any query that stops at this node. The children are only
+wrong until someone needs them; the tag remembers what they're owed. Recursion is different:
+descending means you're about to read a child's value directly, so any debt sitting on the
+parent must be paid first. That's exactly what `push_down` does before every descent.
+
+</Accordion>
+
+<Accordion title="How would you support range *assignment* (set every element to x) instead of range add?">
+
+Change the tag's meaning. For assignment, `apply(node, lo, hi, x)` sets `tree[node] = x * (hi - lo + 1)`
+and stores `x` as the pending value, plus a flag marking "a set is pending" (since setting to
+`0` is a real operation, a plain `0` sentinel won't do). `push_down` copies that pending value
+to both children. Assignment is simpler than add in one way — a new assign fully overrides any
+older pending tag rather than accumulating.
+
+</Accordion>
+
+<Accordion title="If you never query, do the lazy tags ever get pushed down?">
+
+No — and that's the point. Tags only flush when an operation needs to descend through the node.
+Untouched subtrees keep their debt indefinitely at no cost. The invariant is simply that any
+value you actually *read* has every tag above it applied first, which push-down-before-descend
+guarantees. Work you never observe is work you never do.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Lazy propagation makes **range updates O(log n)** by tagging fully-covered nodes and deferring
+  the work to their children until a later operation needs it.
+- `apply` updates a node's aggregate and stores a pending tag in O(1); `push_down` flushes that
+  tag to both children right before any descent.
+- It doubles memory (a lazy array) and demands care when composing different update types, but
+  keeps updates and queries both logarithmic.
+
+<Cards>
+  <Card title="Segment Trees" href="/docs/dsa/25-range-query/01-segment-tree-intro" description="The base structure lazy propagation extends." />
+  <Card title="Segment Tree Queries" href="/docs/dsa/25-range-query/02-segment-tree-queries" description="Swap the merge to answer min, max, XOR, and more." />
+  <Card title="Fenwick Trees" href="/docs/dsa/25-range-query/04-fenwick-tree" description="A lighter structure with a range-update trick of its own." />
+</Cards>

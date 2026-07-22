@@ -1,0 +1,337 @@
+---
+title: "Backtracking on Grids"
+description: "A rat in a maze, a word hidden in a letter grid, a knight touring a board — search the grid, backtrack at every wall."
+extractedReferences:
+  - href: /docs/dsa/11-backtracking/01-backtracking-intro
+  - href: /docs/dsa/11-backtracking/02-permutations-and-subsets
+  - href: /docs/dsa/11-backtracking/04-constraint-solving
+---
+
+## The problem
+
+Picture a rat dropped into the top-left corner of a maze, trying to reach the cheese in the bottom-right. It can move up, down, left, or right, but walls block some cells. The rat shuffles forward, hits a dead end, shuffles back to the last junction, and tries a different direction. Word searches feel identical: you spot the first letter of "CLAUDE", follow neighboring letters, and rewind the moment the next letter isn't there.
+
+The board is a grid, the moves are steps to neighboring cells, and every wall or wrong letter is a dead end you must retreat from. It is backtracking again — but now the "slots" are not a list, they are positions on a 2D board, and the trap that ruins beginners is walking in circles forever.
+
+## A first attempt
+
+The naive rat picks a direction, steps, and repeats — no memory of where it has been. On the first four-way junction it can step right, then left, then right, then left, oscillating between two cells until the stack overflows.
+
+```text
+(0,0) -> (0,1) -> (0,0) -> (0,1) -> ...   forever
+```
+
+Even if you *only* move forward, without marking visited cells a path can loop around a ring of open cells and revisit the start. Unbounded revisits make the search infinite, not just slow. Pure "try a direction and recurse" is not enough on a grid — you need a way to say "I am already standing here; don't come back."
+
+## The insight
+
+**Mark a cell as part of the current path before you recurse, and unmark it when you back out.** The mark is the eraser and the leash at once: while a cell is on your path it is off-limits, so you can never revisit it inside the same attempt; once you retreat past it, it is fair game for a *different* path.
+
+That single rule — mark on the way in, unmark on the way out — turns an infinite wander into a finite depth-first search. It is the grid version of choose / explore / un-choose, where "choose" also means "claim this cell" and "un-choose" means "release it."
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Define the moves
+
+List the neighbor offsets you allow. For a rat that is the four orthogonal directions `(-1,0), (1,0), (0,-1), (0,1)`; a knight would use its eight L-shaped jumps.
+
+</Step>
+
+<Step>
+
+### Check bounds and validity first
+
+Before stepping into a cell, confirm it is inside the grid, not a wall, not already on the current path, and (for word search) that it holds the letter you need. Rejecting early is the pruning that keeps the search finite and fast.
+
+</Step>
+
+<Step>
+
+### Mark the cell
+
+Claim the current cell — set `visited[r][c] = true` or overwrite it with a sentinel like `#`. This is the leash that forbids revisiting it while it is on your path.
+
+</Step>
+
+<Step>
+
+### Recurse into every valid neighbor
+
+For each move offset, try to extend the path from the neighbor. If any neighbor reaches the goal (the exit cell, or the last letter), you have a solution — propagate success upward.
+
+</Step>
+
+<Step>
+
+### Unmark on the way out
+
+After exploring all neighbors, release the cell (`visited[r][c] = false` or restore its letter). Now a different route is free to pass through it. Forgetting this step is the single most common grid-backtracking bug.
+
+</Step>
+
+</Steps>
+
+```text
+Word search for "CAT":
+  C A X          start at C(0,0)
+  X A T          C -> A(0,1) -> ... T not adjacent, back up
+  . . .          C -> (down) A(1,1) -> T(1,2)  found!
+```
+
+## The code
+
+Word search: does the `word` exist as a path of adjacent cells (no cell reused)?
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def exist(board, word):
+    rows, cols = len(board), len(board[0])
+
+    def backtrack(r, c, i):
+        if i == len(word):
+            return True                          # matched the whole word
+        if r < 0 or r >= rows or c < 0 or c >= cols:
+            return False                         # off the board
+        if board[r][c] != word[i]:
+            return False                         # wrong letter / visited
+
+        board[r][c] = "#"                        # mark (claim this cell)
+        found = (backtrack(r + 1, c, i + 1) or
+                 backtrack(r - 1, c, i + 1) or
+                 backtrack(r, c + 1, i + 1) or
+                 backtrack(r, c - 1, i + 1))
+        board[r][c] = word[i]                    # un-mark (restore)
+        return found
+
+    for r in range(rows):
+        for c in range(cols):
+            if backtrack(r, c, 0):
+                return True
+    return False
+
+
+grid = [["C", "A", "X"], ["X", "A", "T"]]
+print(exist(grid, "CAT"))  # True
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function exist(board: string[][], word: string): boolean {
+  const rows = board.length;
+  const cols = board[0].length;
+
+  function backtrack(r: number, c: number, i: number): boolean {
+    if (i === word.length) return true;          // matched the whole word
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return false; // off board
+    if (board[r][c] !== word[i]) return false;   // wrong letter / visited
+
+    const saved = board[r][c];
+    board[r][c] = "#";                           // mark (claim this cell)
+    const found =
+      backtrack(r + 1, c, i + 1) ||
+      backtrack(r - 1, c, i + 1) ||
+      backtrack(r, c + 1, i + 1) ||
+      backtrack(r, c - 1, i + 1);
+    board[r][c] = saved;                         // un-mark (restore)
+    return found;
+  }
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (backtrack(r, c, 0)) return true;
+    }
+  }
+  return false;
+}
+
+const grid = [["C", "A", "X"], ["X", "A", "T"]];
+console.log(exist(grid, "CAT")); // true
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+public class WordSearch {
+    public static boolean exist(char[][] board, String word) {
+        for (int r = 0; r < board.length; r++) {
+            for (int c = 0; c < board[0].length; c++) {
+                if (backtrack(board, word, r, c, 0)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean backtrack(char[][] board, String word,
+                                     int r, int c, int i) {
+        if (i == word.length()) return true;         // matched the whole word
+        if (r < 0 || r >= board.length ||
+            c < 0 || c >= board[0].length) return false; // off board
+        if (board[r][c] != word.charAt(i)) return false; // wrong / visited
+
+        char saved = board[r][c];
+        board[r][c] = '#';                           // mark
+        boolean found =
+            backtrack(board, word, r + 1, c, i + 1) ||
+            backtrack(board, word, r - 1, c, i + 1) ||
+            backtrack(board, word, r, c + 1, i + 1) ||
+            backtrack(board, word, r, c - 1, i + 1);
+        board[r][c] = saved;                         // un-mark
+        return found;
+    }
+
+    public static void main(String[] args) {
+        char[][] grid = {{'C', 'A', 'X'}, {'X', 'A', 'T'}};
+        System.out.println(exist(grid, "CAT")); // true
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+#define ROWS 2
+#define COLS 3
+
+static int backtrack(char board[ROWS][COLS], const char *word,
+                     int r, int c, int i) {
+    if (word[i] == '\0') return 1;               /* matched the whole word */
+    if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return 0; /* off board */
+    if (board[r][c] != word[i]) return 0;        /* wrong letter / visited */
+
+    char saved = board[r][c];
+    board[r][c] = '#';                           /* mark */
+    int found = backtrack(board, word, r + 1, c, i + 1) ||
+                backtrack(board, word, r - 1, c, i + 1) ||
+                backtrack(board, word, r, c + 1, i + 1) ||
+                backtrack(board, word, r, c - 1, i + 1);
+    board[r][c] = saved;                         /* un-mark */
+    return found;
+}
+
+int main(void) {
+    char board[ROWS][COLS] = {{'C', 'A', 'X'}, {'X', 'A', 'T'}};
+    for (int r = 0; r < ROWS; r++)
+        for (int c = 0; c < COLS; c++)
+            if (backtrack(board, "CAT", r, c, 0)) {
+                printf("true\n");
+                return 0;
+            }
+    printf("false\n");
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+using namespace std;
+
+bool backtrack(vector<vector<char>> &board, const string &word,
+               int r, int c, int i) {
+    if (i == (int)word.size()) return true;      // matched the whole word
+    int rows = board.size(), cols = board[0].size();
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return false; // off board
+    if (board[r][c] != word[i]) return false;    // wrong letter / visited
+
+    char saved = board[r][c];
+    board[r][c] = '#';                           // mark
+    bool found = backtrack(board, word, r + 1, c, i + 1) ||
+                 backtrack(board, word, r - 1, c, i + 1) ||
+                 backtrack(board, word, r, c + 1, i + 1) ||
+                 backtrack(board, word, r, c - 1, i + 1);
+    board[r][c] = saved;                         // un-mark
+    return found;
+}
+
+bool exist(vector<vector<char>> &board, const string &word) {
+    for (int r = 0; r < (int)board.size(); r++)
+        for (int c = 0; c < (int)board[0].size(); c++)
+            if (backtrack(board, word, r, c, 0)) return true;
+    return false;
+}
+
+int main() {
+    vector<vector<char>> grid = {{'C', 'A', 'X'}, {'X', 'A', 'T'}};
+    cout << (exist(grid, "CAT") ? "true" : "false") << "\n"; // true
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+For an `R x C` grid, `L` = word length, and 4 directions:
+
+| Measure | Cost | Why |
+| --- | --- | --- |
+| Time | `O(R * C * 4^L)` | Each of `R*C` starts branches up to 4 ways for `L` steps |
+| Space | `O(L)` | Recursion depth equals the path length |
+
+In practice the letter/wall check prunes most of the `4^L` branches instantly. Marking cells in place keeps extra space at just the recursion stack.
+
+## When to use it
+
+<Callout type="warn" title="Always restore the cell">
+The bug that sinks grid backtracking is forgetting to un-mark. Mark on the way in, restore on the way out — every time, on every return path. If you must count *all* paths (not just find one), do not stop at the first success: keep exploring and sum the results. And if you need the shortest path rather than any path, reach for BFS instead — backtracking finds a path, not necessarily the cheapest one.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the grid version need a visited mark when the subsets version did not?">
+
+Subsets move strictly forward through a list (`start = i + 1`), so a cell can never be reached twice — the structure itself prevents revisits. A grid has cycles: from a cell you can step to a neighbor and, a few moves later, step back. Without a mark the recursion would loop between adjacent cells forever. The mark encodes "this cell is on my current path," restoring the forward-only guarantee.
+
+</Accordion>
+
+<Accordion title="Why restore the cell after recursing instead of leaving it marked?">
+
+A marked cell is blocked only for the *current* path. Once you back out of it, a completely different route may legitimately need to pass through it. Leaving it marked would falsely block those routes and make you miss valid solutions. Restoring the original letter (or clearing the visited flag) is exactly the un-choose step — it hands the cell back to the search.
+
+</Accordion>
+
+<Accordion title="How does the time complexity change if diagonal moves are allowed?">
+
+The branching factor rises from 4 to 8, so the bound becomes `O(R * C * 8^L)`. The structure is unchanged — you just add four diagonal offsets to the move list. This is why grid searches with many directions (like a knight's tour, 8 moves) explode quickly and lean heavily on early pruning and, sometimes, heuristics to stay tractable.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Grid backtracking is choose / explore / un-choose where a cell is **claimed on entry and released on exit**.
+- The visited mark is essential — it prevents the infinite revisits that plague naive grid search.
+- Time is `O(R * C * b^L)` for branching factor `b`; space is just the `O(L)` recursion stack.
+
+<Cards>
+  <Card title="Backtracking" href="/docs/dsa/11-backtracking/01-backtracking-intro" description="The core choose / explore / un-choose technique." />
+  <Card title="Permutations & Subsets" href="/docs/dsa/11-backtracking/02-permutations-and-subsets" description="Backtracking over lists instead of boards." />
+  <Card title="Constraint Solving" href="/docs/dsa/11-backtracking/04-constraint-solving" description="N-Queens and Sudoku on a grid with harder rules." />
+</Cards>

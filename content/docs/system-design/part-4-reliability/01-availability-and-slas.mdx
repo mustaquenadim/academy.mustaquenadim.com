@@ -1,0 +1,148 @@
+---
+title: "Availability & SLAs"
+description: "What does \"99.99% uptime\" actually promise, and what does it cost? Reliability starts with agreeing on the target."
+extractedReferences:
+  - href: /docs/system-design/part-4-reliability/02-redundancy-and-failover
+  - href: /docs/system-design/part-4-reliability/03-monitoring-and-observability
+  - href: /docs/system-design/part-4-reliability/05-disaster-recovery
+---
+
+## The problem
+
+Your service went down for 20 minutes last Tuesday. In the incident review someone asks the only question that matters: "Is that bad?" Marketing thinks any downtime is a catastrophe. The on-call engineer who got paged at 3am thinks 20 minutes is a miracle. Nobody can agree, because nobody wrote down what "good enough" means.
+
+Without a number, every outage becomes an argument. You can't tell whether to invest six months making the system bulletproof or whether you're already over-engineering. Reliability work has no finish line until you draw one.
+
+## A first attempt
+
+The naive answer is "aim for 100% uptime." It sounds responsible. It's also a trap.
+
+The last stretch of reliability is astronomically expensive. Going from one server to two might double your availability cheaply. Going from 99.9% to 99.99% means redundant data centers, automatic failover, chaos testing, and a follow-the-sun on-call rotation. Each extra "nine" roughly multiplies your cost and complexity while removing an order of magnitude less downtime. Chasing 100% spends infinite money to eliminate a finite, shrinking risk — and you still can't beat a backhoe cutting a fiber line.
+
+So "as available as possible" is not a target. It's a way to burn budget forever.
+
+## The insight
+
+Availability is a **business decision expressed as a number**, not an engineering ideal. You pick a target that matches what users actually need, promise it, measure it, and spend exactly enough to hit it — no more.
+
+That number is usually written in "nines." Here is what each nine buys you, as allowed downtime:
+
+| Availability | Downtime / year | Downtime / month | Rough feel |
+| --- | --- | --- | --- |
+| 99% (two nines) | 3.65 days | 7.2 hours | Hobby project |
+| 99.9% (three nines) | 8.76 hours | 43 min | Typical SaaS |
+| 99.99% (four nines) | 52.6 min | 4.3 min | Serious platform |
+| 99.999% (five nines) | 5.26 min | 26 sec | Telco / payments |
+
+Notice the jump: three nines gives you 43 minutes a month to deploy, restart, and recover. Four nines gives you barely 4 minutes — a single bad deploy blows the whole budget.
+
+## How it works
+
+Three acronyms turn the target into something you can operate against.
+
+<Steps>
+
+<Step>
+
+### Define the SLI (what you measure)
+
+A Service Level Indicator is the raw metric. Pick something the user actually feels: the fraction of HTTP requests that return successfully in under 300ms, measured at the load balancer. Availability that users can't perceive isn't worth paying for.
+
+</Step>
+
+<Step>
+
+### Set the SLO (your internal goal)
+
+A Service Level Objective is the target for that SLI, e.g. "99.9% of requests succeed over a rolling 30 days." The SLO is stricter than anything you promise outsiders — it's the line that triggers action *before* customers complain.
+
+</Step>
+
+<Step>
+
+### Sign the SLA (the external promise)
+
+A Service Level Agreement is the contract with customers, with penalties attached (usually service credits). If your SLO is 99.95%, your SLA might be 99.9% — you keep a safety margin so you break your internal goal long before you owe anyone money.
+
+</Step>
+
+<Step>
+
+### Spend the error budget
+
+100% minus your SLO is your **error budget** — the downtime you're *allowed* to spend. At 99.9% you have 43 minutes a month to burn on risky deploys, migrations, and experiments. Budget left over? Ship faster. Budget gone? Freeze features and stabilize.
+
+</Step>
+
+</Steps>
+
+The relationship between the three, and where the error budget sits:
+
+```
+        stricter  ──────────────────────────►  looser
+        SLI target        SLO           SLA
+   e.g. 99.95% measured │ 99.9% goal │ 99.5% promised
+        │               │            │
+   ─────┴───────────────┴────────────┴──────────── 100%
+        └─ engineering ─┘└─ margin ──┘
+              ▲
+        error budget = 100% − SLO = 43 min / month
+```
+
+## Concrete numbers
+
+Say you run an API doing **10,000 requests per second**. That's about 25.9 billion requests a month.
+
+- A 99.9% SLO means you're allowed to fail **0.1%** of them: ~25.9 million failed requests, or about 43 minutes of total outage-equivalent.
+- Tighten to 99.99% and your budget shrinks 10x to ~4.3 minutes. One 6-minute deploy hiccup and you've already broken the month.
+- A single dependency at 99.9% caps *your* ceiling: chain three independent services at 99.9% each and your theoretical max is 0.999³ ≈ **99.7%**. Dependencies multiply, so your own target must account for everyone you call.
+
+## When to use it
+
+<Callout type="warn" title="More nines is not always better">
+Every extra nine roughly multiplies cost and slows delivery. A three-nines internal tool that's cheap and ships weekly may serve the business far better than a gold-plated four-nines version that freezes for months. Match the target to the blast radius, not to engineering pride.
+</Callout>
+
+<Callout type="idea" title="Error budgets align dev and ops">
+The error budget resolves the classic fight: developers want to ship, operators want stability. Frame it as a shared bank account. Budget remaining means you've *earned* the right to take risks. Budget spent means everyone stops and stabilizes — no politics, just the number.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Your SLA promises 99.9%, but last month you were down for 50 minutes. Did you breach it?">
+
+99.9% over a 30-day month allows about **43 minutes** of downtime. 50 minutes exceeds that, so yes — you breached the SLA and likely owe service credits. This is exactly why your internal SLO should be stricter (say 99.95%, ~21 min) so an alert fires with margin to spare before you ever touch the contractual line.
+
+</Accordion>
+
+<Accordion title="Why measure the SLI at the load balancer instead of inside each microservice?">
+
+Because availability is defined by what the *user* experiences, not what any internal component reports. A service can be "up" while returning 500s, timing out at the gateway, or being unreachable due to a DNS or network fault. Measuring at the edge — the last hop before the user — captures the real success/failure the customer sees. Internal metrics are for debugging *why*, not for defining the SLO.
+
+</Accordion>
+
+<Accordion title="You depend on a payment provider with a 99.9% SLA. Can your checkout flow promise 99.95%?">
+
+Not for the parts that hard-depend on that provider. Availabilities of serial dependencies multiply, so a synchronous call into a 99.9% service caps that path at 99.9% at best. To promise more, you must remove the hard dependency — queue the payment and confirm asynchronously, fail over to a second provider, or degrade gracefully (accept the order, settle payment later). Redundancy is the only way to beat a single dependency's ceiling.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Availability is a **business number**, not an ideal — pick a target that matches user need and stop there.
+- **SLI** = what you measure, **SLO** = your stricter internal goal, **SLA** = the looser external promise with penalties.
+- The **error budget** (100% − SLO) is downtime you're allowed to spend; it turns "ship vs. stabilize" into a math problem.
+
+<Cards>
+  <Card title="Redundancy & Failover" href="/docs/system-design/part-4-reliability/02-redundancy-and-failover" description="How spares keep you above your SLO when hardware dies." />
+  <Card title="Monitoring & Observability" href="/docs/system-design/part-4-reliability/03-monitoring-and-observability" description="Measuring the SLIs that your SLO is built on." />
+  <Card title="Disaster Recovery" href="/docs/system-design/part-4-reliability/05-disaster-recovery" description="What happens when downtime blows past the error budget entirely." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+Don't say "I'll make it highly available." Say "I'll target 99.9%, measured as successful requests under 300ms at the edge, which gives us a 43-minute monthly error budget." Then use that budget to justify each design choice — a single region if three nines is enough, multi-region only when the target demands it. Interviewers want to see you trade cost against a stated number, not chase nines blindly.
+</Callout>

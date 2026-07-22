@@ -1,0 +1,10 @@
+{
+  "title": "Queue",
+  "icon": "ArrowRightLeft",
+  "pages": [
+    "01-queue-intro",
+    "02-circular-queue",
+    "03-queue-from-stacks",
+    "04-queue-problems"
+  ]
+}

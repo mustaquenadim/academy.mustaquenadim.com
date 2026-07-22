@@ -1,0 +1,285 @@
+---
+title: "Stream Problems"
+description: "Reporting the first non-repeating character as a stream flows by is a queue quietly doing the bookkeeping."
+extractedReferences:
+  - href: /docs/dsa/14-queue/01-queue-intro
+  - href: /docs/dsa/14-queue/02-circular-queue
+  - href: /docs/dsa/15-deque/02-sliding-window-maximum
+---
+
+## The problem
+
+Characters are arriving one at a time — from a keyboard, a socket, a log tail. After **each** character arrives, you must instantly answer one question: *what is the first character so far that has appeared exactly once?* Type `a`, the answer is `a`. Type another `a`, and now `a` repeats — the answer changes to whatever unique character came next.
+
+You cannot wait for the stream to end; it may never end. You have to keep a running answer that updates in constant time as each character lands. The catch is that the "first unique" character can vanish the moment a duplicate arrives, and the *next* first-unique might be something you saw long ago.
+
+## A first attempt
+
+The obvious move: after each new character, scan everything seen so far, count each character, and return the first with count 1.
+
+```python
+seen = []
+def first_unique(c):
+    seen.append(c)
+    for ch in seen:                 # scan from the start
+        if seen.count(ch) == 1:     # count scans again!
+            return ch
+    return None
+```
+
+For a stream of length `n`, character number `k` triggers a scan of `k` characters, and each `count` is itself a scan. That's roughly `O(k²)` per character and `O(n³)` overall in the worst case. Even a modest live feed brings this to its knees. You are re-deriving the answer from scratch every single time.
+
+## The insight
+
+You don't need to rescan history — you need to remember **candidates in arrival order** and drop them the instant they stop qualifying. That is a queue.
+
+Keep a **frequency map** (how many times each character has appeared) and a **queue of candidate characters** in the order they first arrived. When a new character comes in, bump its count and push it to the back. Then, from the **front** of the queue, discard any character whose count is now above 1 — it can never be the answer again. Whatever sits at the front afterward is the first non-repeating character. Each character is enqueued once and dequeued at most once, so the whole stream is processed in `O(n)`.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Maintain a count map and a candidate queue
+
+`freq[c]` tracks how many times `c` has been seen. The queue holds characters that were unique *when they arrived*, front = earliest.
+
+</Step>
+
+<Step>
+
+### On each arrival, update the count and enqueue
+
+Increment `freq[c]` and push `c` onto the back of the queue. Every character enters the queue exactly once.
+
+```
+stream: a
+freq = {a:1}   queue = [a]   -> answer: a
+```
+
+</Step>
+
+<Step>
+
+### Evict stale candidates from the front
+
+While the front character has `freq > 1`, dequeue it — it has repeated and is disqualified forever. Stop at the first front element with `freq == 1`.
+
+```
+stream: a a b
+freq = {a:2, b:1}
+queue front 'a' has freq 2 -> pop it
+queue = [b]   -> answer: b
+```
+
+</Step>
+
+<Step>
+
+### Read the answer off the front
+
+If the queue is non-empty, its front is the first non-repeating character. If it's empty, every character so far has repeated — report "none" (often printed as `#`).
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque, defaultdict
+
+def first_non_repeating(stream):
+    freq = defaultdict(int)
+    q = deque()
+    result = []
+    for c in stream:
+        freq[c] += 1
+        q.append(c)
+        while q and freq[q[0]] > 1:   # evict repeated fronts
+            q.popleft()
+        result.append(q[0] if q else "#")
+    return result
+
+
+print(first_non_repeating("aabc"))
+# ['a', '#', 'b', 'b']
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function firstNonRepeating(stream: string): string[] {
+  const freq = new Map<string, number>();
+  const q: string[] = [];
+  let head = 0; // front index into q
+  const result: string[] = [];
+
+  for (const c of stream) {
+    freq.set(c, (freq.get(c) ?? 0) + 1);
+    q.push(c);
+    while (head < q.length && (freq.get(q[head]) ?? 0) > 1) {
+      head++; // evict repeated front
+    }
+    result.push(head < q.length ? q[head] : "#");
+  }
+  return result;
+}
+
+console.log(firstNonRepeating("aabc"));
+// [ 'a', '#', 'b', 'b' ]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
+
+class Stream {
+    static String firstNonRepeating(String stream) {
+        Map<Character, Integer> freq = new HashMap<>();
+        Deque<Character> q = new ArrayDeque<>();
+        StringBuilder result = new StringBuilder();
+
+        for (char c : stream.toCharArray()) {
+            freq.merge(c, 1, Integer::sum);
+            q.addLast(c);
+            while (!q.isEmpty() && freq.get(q.peekFirst()) > 1) {
+                q.pollFirst();
+            }
+            result.append(q.isEmpty() ? '#' : q.peekFirst());
+        }
+        return result.toString();
+    }
+
+    public static void main(String[] args) {
+        System.out.println(firstNonRepeating("aabc")); // a#bb
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+/* lowercase letters only, for brevity */
+int main(void) {
+    const char *stream = "aabc";
+    int freq[26] = {0};
+    char queue[256];
+    int front = 0, back = 0;
+
+    for (int i = 0; stream[i]; i++) {
+        int idx = stream[i] - 'a';
+        freq[idx]++;
+        queue[back++] = stream[i];
+        while (front < back && freq[queue[front] - 'a'] > 1)
+            front++;                       /* evict repeated front */
+        putchar(front < back ? queue[front] : '#');
+    }
+    putchar('\n');                          /* prints: a#bb */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <string>
+#include <unordered_map>
+
+std::string firstNonRepeating(const std::string& stream) {
+    std::unordered_map<char, int> freq;
+    std::queue<char> q;
+    std::string result;
+
+    for (char c : stream) {
+        freq[c]++;
+        q.push(c);
+        while (!q.empty() && freq[q.front()] > 1)
+            q.pop();                        // evict repeated front
+        result += q.empty() ? '#' : q.front();
+    }
+    return result;
+}
+
+int main() {
+    std::cout << firstNonRepeating("aabc") << "\n"; // a#bb
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Rescan every prefix | O(n³) worst case | O(n) |
+| Queue + frequency map | O(n) total | O(k) |
+
+Here `k` is the alphabet size (distinct characters). Each character is enqueued once and dequeued at most once, so the eviction loop does `O(n)` total work across the whole stream — amortized `O(1)` per arrival.
+
+## When to use it
+
+<Callout type="idea" title="A queue is the memory of a stream">
+This pattern — a queue of live candidates plus a small map of state — recurs across streaming problems: first-unique-in-stream, sliding-window statistics, rate limiting (evict timestamps older than the window), and level-order / BFS frontiers. The shared idea is that a queue remembers items **in arrival order** and lets you retire the stale ones from the front cheaply. When the window is fixed-size, a [circular queue](/docs/dsa/14-queue/02-circular-queue) keeps memory bounded; when you need the max or min of a window, reach for a [monotonic deque](/docs/dsa/15-deque/02-sliding-window-maximum) instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is it safe to permanently drop a character once it repeats?">
+
+Frequency only ever increases as the stream flows — a count never goes back down. So once a character's count passes 1, it can never return to 1, and it can never be a "first non-repeating" answer again. That monotonicity is what lets you dequeue it from the front once and never reconsider it, which is what makes the whole scan `O(n)`.
+
+</Accordion>
+
+<Accordion title="Trace the queue and answers for the stream 'a a b c'.">
+
+Read `a`: `freq{a:1}`, queue `[a]`, front `a` has count 1 → answer **a**. Read `a`: `freq{a:2}`, queue `[a,a]`; front `a` now count 2, evict twice → queue empty → answer **#**. Read `b`: `freq{a:2,b:1}`, queue `[b]`, answer **b**. Read `c`: `freq{...,c:1}`, queue `[b,c]`, front `b` count 1 → answer **b**. Output: `a # b b`.
+
+</Accordion>
+
+<Accordion title="How would you adapt this to a sliding window of the last k characters?">
+
+Track counts within the window and evict from the front not only when a count exceeds 1 but also when a character has slid out of the window (older than `k` positions). Store positions alongside characters so you can compare against the current index. This becomes a bounded-memory variant — a [circular queue](/docs/dsa/14-queue/02-circular-queue) fits naturally, and if you instead need the window's max or min, a monotonic deque gives O(1) amortized per step.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **queue** remembers stream items in arrival order so you can answer "first that still qualifies" instantly.
+- Pair it with a **frequency map** and evict disqualified candidates from the **front** — each item leaves at most once.
+- This turns a naive `O(n³)` rescan into a single **O(n)** pass — the core pattern behind many streaming problems.
+
+<Cards>
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="The FIFO foundation these problems rest on." />
+  <Card title="Circular Queues" href="/docs/dsa/14-queue/02-circular-queue" description="Bounded memory for fixed-size windows." />
+  <Card title="Sliding Window Maximum" href="/docs/dsa/15-deque/02-sliding-window-maximum" description="A monotonic deque for window extremes." />
+</Cards>

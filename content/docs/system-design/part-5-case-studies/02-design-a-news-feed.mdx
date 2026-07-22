@@ -1,0 +1,158 @@
+---
+title: "Design a News Feed"
+description: "How does a feed show you fresh posts from hundreds of people, instantly, at massive scale? The fan-out problem has no perfect answer."
+extractedReferences:
+  - href: /docs/system-design/part-3-architecture/03-message-queues
+  - href: /docs/system-design/part-1-networking/07-caching-fundamentals
+  - href: /docs/system-design/part-5-case-studies/03-design-a-chat-system
+---
+
+## The problem
+
+You open the app and, in under a second, you see the latest posts from the 500 people you follow, newest-ish first, mixed and ranked. It feels effortless. Behind that second, the system had to gather posts scattered across 500 different authors, some of whom posted while you were asleep, and assemble them into one list — for you, and for 300 million other people, each with a different 500.
+
+The naive version — "when Maria opens her feed, query every account she follows for their recent posts and merge" — is a beautiful idea that dies at scale. The hard part of a news feed isn't storing posts; it's the **fan-out**: matching a flood of writes to a flood of reads.
+
+## Requirements
+
+**Functional**
+
+- Publish a post.
+- Fetch a user's home feed (posts from people they follow), paginated.
+- Feed is roughly reverse-chronological, optionally ranked.
+
+**Non-functional**
+
+- Feed load must be fast (< 200 ms) — this is the read hot path.
+- Eventual consistency is fine; a post appearing a few seconds late is acceptable.
+- Handle highly skewed follower counts (you follow 500; a celebrity has 50 M followers).
+
+## A scale estimate
+
+- **300 M** daily active users, each loading the feed ~10×/day → ~35 K feed reads/sec average, **~100 K/sec** peak.
+- **2 M** posts/sec is unrealistic; assume **~5 K posts/sec**.
+- Average user follows ~200 accounts; average post has ~200 followers to reach.
+- Total fan-out work per post is "post rate × avg followers" — cheap on average, brutal in the tail.
+
+Reads outnumber writes ~20:1, but a single write can generate millions of feed updates. That asymmetry is the entire design tension.
+
+## The two approaches
+
+There are exactly two places you can do the merging work: at write time or at read time.
+
+**Fan-out on read (pull).** Store each post once. When a user opens their feed, query all the people they follow and merge on the fly. Writes are trivial; reads are expensive — merging 500 authors' timelines every single load, 100 K times a second. Feed latency suffers.
+
+**Fan-out on write (push).** When someone posts, immediately copy that post's ID into the precomputed feed of every follower. Reads become a single lookup ("give me my feed list"). But a celebrity posting to 50 M followers triggers 50 M writes — a *fan-out storm*.
+
+## The insight
+
+Neither pure approach wins. The trick is a **hybrid**: push for ordinary users (fast feeds, cheap writes), pull for the handful of celebrities (avoid the storm), and merge the two at read time.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Write a post
+
+Persist the post once in a posts store. Emit a "new post" event onto a [message queue](/docs/system-design/part-3-architecture/03-message-queues) so fan-out happens asynchronously — the author's request returns immediately.
+
+</Step>
+
+<Step>
+
+### Fan out to followers (push path)
+
+A worker reads the event and, for each follower, appends the post ID to that follower's feed list in a fast store (Redis list per user, capped at ~800 entries). Ordinary authors with thousands of followers fan out in the background within seconds.
+
+</Step>
+
+<Step>
+
+### Skip the storm for celebrities
+
+If an author's follower count exceeds a threshold (say 100 K), **do not** fan out. Their posts stay only in the posts store and are pulled at read time.
+
+</Step>
+
+<Step>
+
+### Assemble the feed (read path)
+
+On feed load: read the user's precomputed feed list (push results), then pull recent posts from the few celebrities they follow, merge, rank, and paginate. One cheap list read plus a handful of pulls — not 500.
+
+</Step>
+
+</Steps>
+
+```
+ POST ─▶ posts store
+   │
+   └─▶ [ queue ] ─▶ fan-out worker ──┐  (skip if celebrity)
+                                     ▼
+                          feed cache: user → [postId, postId, …]
+                                     ▲
+ GET feed ─▶ read my feed list ──────┘
+          + pull recent celebrity posts
+          → merge + rank + paginate → client
+```
+
+## Key decisions and trade-offs
+
+<Callout type="idea" title="Hybrid fan-out is the standard answer">
+Push gives readers O(1) feeds; pull gives writers relief from the celebrity storm. Splitting on follower count captures the best of both. The cost is complexity — you now run two code paths and merge them — but it's the design real systems (Twitter's timeline) converged on.
+</Callout>
+
+<Callout type="warn" title="Precomputed feeds can go stale">
+Push-based feeds are denormalized copies. If someone unfollows, or a post is deleted, those already-fanned-out entries are now wrong. Filter deleted/blocked content at read time, and accept that feeds are eventually consistent rather than trying to rewrite millions of lists.
+</Callout>
+
+Ranking (engagement, recency, affinity) happens at read time on the merged candidate set — keep it a bounded list (a few hundred candidates) so scoring stays cheap.
+
+## Bottlenecks and how to scale
+
+- **Fan-out storms:** the hybrid threshold is the primary defense. Fan-out workers scale horizontally off the queue, and slow followers don't block the author.
+- **Feed cache memory:** cap each feed at ~800 IDs and store only IDs, not full posts — hydrate post bodies from a [cache](/docs/system-design/part-1-networking/07-caching-fundamentals) on read.
+- **Hot celebrity posts:** these are pulled by millions; cache the celebrity's recent-posts list hard, close to the edge.
+- **Read fan-in:** limit how many celebrities you pull per load; if a user follows 50 celebrities, batch the pulls and cache the merged result briefly.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A celebrity with 50M followers posts. Trace what happens with pure fan-out on write, and why the hybrid avoids it.">
+
+Pure push would enqueue 50 million feed-append operations for one post. Even at 100 K writes/sec that's ~8 minutes of backlog, and it starves every other author's fan-out behind it. The hybrid detects the follower count is above threshold and simply doesn't fan out — the post sits in the posts store. Any follower who loads their feed pulls the celebrity's recent posts directly and merges them in. One post now costs a handful of reads instead of 50 million writes.
+
+</Accordion>
+
+<Accordion title="Why store post IDs in the feed list instead of full post content?">
+
+A post can appear in millions of feeds. Copying the full body (text, media URLs, counts) into every feed multiplies storage and makes edits impossible to propagate. Storing just the ID keeps each feed list tiny (~8 bytes × 800 entries per user) and lets you hydrate the current post body from a shared cache at read time — so edits and deletes are reflected instantly without touching any feed list.
+
+</Accordion>
+
+<Accordion title="How do you paginate a feed that's changing while the user scrolls?">
+
+Reverse-chronological offset pagination breaks when new posts shift everything down (you see duplicates). Use a cursor — the timestamp or post ID of the last item seen — and fetch "items older than this cursor." New posts arriving at the top don't disturb the cursor, so the user scrolls a stable window. This is the same cursor-pagination idea you'd use for any high-write timeline.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A news feed is a **fan-out** problem: reconciling many writes with many reads.
+- **Push** (fan-out on write) makes reads cheap; **pull** avoids the celebrity storm; the **hybrid** does both and merges.
+- Store **IDs not bodies**, fan out **asynchronously via a queue**, and rank a bounded candidate set at read time.
+
+<Cards>
+  <Card title="Message Queues" href="/docs/system-design/part-3-architecture/03-message-queues" description="Decoupling the post write from the fan-out work." />
+  <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="Hydrating post bodies and hot celebrity timelines." />
+  <Card title="Design a Chat System" href="/docs/system-design/part-5-case-studies/03-design-a-chat-system" description="Another real-time delivery problem, with strict ordering." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+Name both approaches, state their costs in one breath ("push = cheap reads, expensive writes; pull = the reverse"), then propose the hybrid and define the threshold. If you only remember one thing, remember the celebrity fan-out storm — being able to explain why it happens and how the split fixes it is what separates a strong answer from a textbook one.
+</Callout>

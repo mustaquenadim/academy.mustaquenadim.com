@@ -1,0 +1,272 @@
+---
+title: "The Matrix (2D Arrays)"
+description: "Grids are everywhere — images, game boards, spreadsheets. A matrix is just an array of arrays, with its own traversal tricks."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/07-2d-array-patterns
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+---
+
+## The problem
+
+You're writing a photo filter. A screen is a grid of pixels — 1920 columns by 1080 rows —
+and you need to reach the pixel at row 500, column 900 to brighten it. A chess engine has
+the same shape of problem: it asks "what's on square (row 3, column 5)?" thousands of times
+per move.
+
+Both are grids, and both need the same thing: address any cell by its `(row, column)`
+coordinates **instantly**, and sweep the whole grid in a predictable order. How do you lay a
+two-dimensional world into a machine that only really knows how to line things up in one?
+
+## A first attempt
+
+You might reach for a dictionary keyed by coordinate pairs: `grid[(500, 900)] = value`. It
+works, and lookups are roughly constant time — but every cell now carries the overhead of a
+hashed key, and there's no natural order to walk the neighbors of a pixel. Blurring a photo
+means touching each pixel and its neighbors; with a coordinate dictionary you're hashing
+your way around the neighborhood instead of just stepping one index over.
+
+The dictionary throws away the grid's best feature: the cells have a **regular, predictable
+layout**. We can exploit that directly.
+
+## The insight
+
+Store the grid as an **array of arrays** — `rows` arrays, each holding `cols` elements. The
+outer index picks a row; the inner index picks a column. Underneath, most languages lay
+these out in **row-major** order: row 0's cells, then row 1's, all contiguous. So reaching
+`matrix[r][c]` is still just address arithmetic:
+
+```text
+address(r, c) = base + (r × cols + c) × element_size
+```
+
+Constant-time access to any cell, and neighbors sit right next to each other in memory —
+which makes row-by-row sweeps fast and cache-friendly.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick the shape: rows × cols
+
+A matrix is defined by its dimensions. `matrix[r]` is the whole row `r` (itself an array);
+`matrix[r][c]` is one cell.
+
+</Step>
+
+<Step>
+
+### Address a cell with two indices
+
+`matrix[r][c]` reads row `r`, then column `c` within it. Two index operations, both `O(1)`.
+
+</Step>
+
+<Step>
+
+### Sweep in row-major order
+
+To visit every cell, loop rows on the outside and columns on the inside. This matches the
+memory layout, so it's the fast way to traverse.
+
+</Step>
+
+</Steps>
+
+```text
+        col0 col1 col2
+row0  [   1    2    3  ]
+row1  [   4    5    6  ]
+
+matrix[1][2] = 6
+row-major memory:  1  2  3  4  5  6
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+matrix = [
+    [1, 2, 3],
+    [4, 5, 6],
+]
+
+# Access a single cell — O(1)
+print(matrix[1][2])   # 6
+
+# Row-major traversal — O(rows * cols)
+total = 0
+for row in matrix:
+    for value in row:
+        total += value
+print(total)          # 21
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const matrix: number[][] = [
+  [1, 2, 3],
+  [4, 5, 6],
+];
+
+console.log(matrix[1][2]);   // 6
+
+let total = 0;
+for (let r = 0; r < matrix.length; r++) {
+  for (let c = 0; c < matrix[r].length; c++) {
+    total += matrix[r][c];
+  }
+}
+console.log(total);          // 21
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int[][] matrix = {
+    {1, 2, 3},
+    {4, 5, 6},
+};
+
+System.out.println(matrix[1][2]);   // 6
+
+int total = 0;
+for (int r = 0; r < matrix.length; r++) {
+    for (int c = 0; c < matrix[r].length; c++) {
+        total += matrix[r][c];
+    }
+}
+System.out.println(total);          // 21
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int matrix[2][3] = {
+        {1, 2, 3},
+        {4, 5, 6},
+    };
+
+    printf("%d\n", matrix[1][2]);   // 6
+
+    int total = 0;
+    for (int r = 0; r < 2; r++)
+        for (int c = 0; c < 3; c++)
+            total += matrix[r][c];  // row-major: fast
+    printf("%d\n", total);          // 21
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+using namespace std;
+
+int main() {
+    vector<vector<int>> matrix = {
+        {1, 2, 3},
+        {4, 5, 6},
+    };
+
+    cout << matrix[1][2] << "\n";   // 6
+
+    int total = 0;
+    for (size_t r = 0; r < matrix.size(); r++)
+        for (size_t c = 0; c < matrix[r].size(); c++)
+            total += matrix[r][c];
+    cout << total << "\n";          // 21
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation                | Time            | Why                                    |
+| ------------------------ | --------------- | -------------------------------------- |
+| Access `matrix[r][c]`    | `O(1)`          | two address computations               |
+| Full traversal           | `O(rows × cols)`| must touch every cell                  |
+| Space                    | `O(rows × cols)`| one slot per cell                      |
+
+For an `n × n` grid, a full sweep is `O(n²)` — quadratic in the side length, but linear in
+the number of cells. Don't let the two nested loops fool you into thinking it's wasteful;
+you simply can't visit every cell in fewer steps than there are cells.
+
+## When to use it
+
+<Callout type="idea" title="Loop rows outside, columns inside">
+Because memory is row-major, iterating with the **row** loop on the outside and the
+**column** loop on the inside walks memory in order and stays cache-friendly. Flipping the
+loops (column-major traversal) can be several times slower on large grids for the exact same
+work.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does looping rows-outside-columns-inside run faster than the reverse on a big matrix?">
+
+Row-major layout stores each row's cells contiguously. Walking columns within a row reads
+adjacent memory, so the CPU cache serves whole cache-lines of useful data. Column-major
+traversal jumps `cols` elements between reads, causing cache misses. Same number of
+operations, very different real-world speed on large grids.
+
+</Accordion>
+
+<Accordion title="How do you create an r × c matrix filled with zeros without accidentally sharing rows?">
+
+Build each row independently, e.g. `[[0] * c for _ in range(r)]` in Python. The tempting
+`[[0] * c] * r` makes `r` references to the **same** row list, so writing `m[0][0]`
+mysteriously changes every row. Same trap exists any time you replicate a mutable row.
+
+</Accordion>
+
+<Accordion title="A grid can be 'jagged' — rows of different lengths. Does matrix[r][c] still work?">
+
+Yes, as long as you check each row's own length (`matrix[r].length`) rather than assuming a
+fixed `cols`. Jagged arrays are just an array of arrays where the inner arrays vary in size.
+True rectangular matrices are the common case in grid problems like
+[2D Array Patterns](/docs/dsa/03-arrays-strings/07-2d-array-patterns).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A matrix is an array of arrays; `matrix[r][c]` is `O(1)` because it's two address
+  computations, one per dimension.
+- Most languages store matrices in row-major order, so a full sweep costs `O(rows × cols)`
+  and runs fastest with rows on the outer loop.
+- Watch the classic build trap: replicate rows independently so they don't secretly share
+  storage.
+
+<Cards>
+  <Card title="2D Array Patterns" href="/docs/dsa/03-arrays-strings/07-2d-array-patterns" description="Spiral order, transpose, and rotating a grid in place." />
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="The one-dimensional building block underneath." />
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="Index tricks that carry over to grids." />
+</Cards>

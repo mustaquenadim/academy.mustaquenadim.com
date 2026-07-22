@@ -1,0 +1,148 @@
+---
+title: "Disaster Recovery"
+description: "A whole data center goes dark — how long until you’re back, and how much data did you lose? DR is the plan you hope never to use."
+extractedReferences:
+  - href: /docs/system-design/part-4-reliability/02-redundancy-and-failover
+  - href: /docs/system-design/part-4-reliability/01-availability-and-slas
+  - href: /docs/system-design/part-2-databases/03-replication
+---
+
+## The problem
+
+A fiber cut, a flood, a botched config push, or a region-wide cloud outage takes an entire data center offline. Not one server — everything, all at once. Your redundant nodes were all in that building. Two questions land on you immediately, and the CEO wants numbers: **how long until we're back?** and **how much data did we just lose?**
+
+This is a different problem from a single server dying. Redundancy and failover handle *component* failure inside a healthy site. Disaster recovery is about surviving the loss of the *whole site* — the rare, correlated catastrophe that takes out everything you thought was independent. You hope to never run the plan. You must still have one.
+
+## A first attempt
+
+"We take nightly backups" is the classic answer, and it hides two fatal gaps.
+
+First, a nightly backup means that when the disaster hits at 4pm, you lose up to **16 hours** of data — every order, message, and sign-up since midnight is gone. Second — and this is the one that ends careers — **an untested backup is not a backup, it's a hope.** Teams discover during the real disaster that the backup was silently failing for months, or that restoring 2TB takes 11 hours, or that nobody knows the runbook. A backup you've never restored has an unknown, and usually terrible, recovery time.
+
+## The insight
+
+You can't talk about disaster recovery without two numbers that turn "how bad?" into a target you can design and budget against:
+
+- **RPO — Recovery Point Objective:** how much *data* you can afford to lose, measured in time. RPO of 5 minutes means backups/replication must be at most 5 minutes behind. It sets your *backup frequency*.
+- **RTO — Recovery Time Objective:** how *long* you can be down before you're back. RTO of 1 hour means recovery must complete within an hour. It sets your *recovery strategy*.
+
+Every DR design is just "how small do RPO and RTO need to be, and what am I willing to pay for that?" Smaller numbers cost exponentially more — so you pick per system, not one target for everything.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Set RPO and RTO per system
+
+Your ledger of financial transactions might need RPO ≈ 0 and RTO of minutes. Your analytics warehouse might tolerate RPO of a day and RTO of a week. Don't buy the strictest tier for data that doesn't need it — DR spend should track business impact.
+
+</Step>
+
+<Step>
+
+### Pick a DR strategy to match
+
+Four tiers, cheapest to costliest: **Backup & Restore** (restore from cold storage — cheap, RTO hours), **Pilot Light** (core data replicated, minimal infra always on, scale up on disaster), **Warm Standby** (a scaled-down full copy always running, scale up on failover), **Hot Standby / Multi-Region Active-Active** (full capacity in another region, failover in seconds). Cost climbs with each tier; RTO/RPO shrink.
+
+</Step>
+
+<Step>
+
+### Replicate across failure domains
+
+Backups and standbys must live in a *different* region, not the same building or even the same city. Replicate continuously to hit a small RPO. Store backups following 3-2-1: **3** copies, on **2** media types, with **1** off-site.
+
+</Step>
+
+<Step>
+
+### Automate the failover and the DNS cutover
+
+When the primary region is declared dead, promote the standby and repoint traffic — usually by updating DNS or a global load balancer to the standby region. Automate it; a manual region failover under pressure is where RTOs quietly triple.
+
+</Step>
+
+<Step>
+
+### Run the fire drill regularly
+
+Actually fail over to the DR region on a schedule (game days). This is the only way to *verify* your real RTO/RPO, catch config drift, and make sure the team knows the runbook. An untested DR plan has an effective RTO of infinity.
+
+</Step>
+
+</Steps>
+
+The DR strategy spectrum — cost vs. recovery:
+
+```
+   cheaper, slower ◄─────────────────────────────► costlier, faster
+   ┌──────────────┬─────────────┬──────────────┬─────────────────┐
+   │ Backup &     │ Pilot Light │ Warm Standby │ Hot / Multi-    │
+   │ Restore      │             │              │ region active   │
+   ├──────────────┼─────────────┼──────────────┼─────────────────┤
+   │ RTO: hours   │ RTO: ~10min │ RTO: minutes │ RTO: seconds    │
+   │ RPO: hours   │ RPO: minutes│ RPO: seconds │ RPO: ~0         │
+   │ $            │ $$          │ $$$          │ $$$$            │
+   └──────────────┴─────────────┴──────────────┴─────────────────┘
+         restore     scale-up      scale-up        already live
+         from cold   from seed     the warm copy   in region B
+```
+
+## Concrete numbers
+
+- **RPO drives backup frequency.** Nightly backup → up to 24h RPO. Hourly snapshots → 1h RPO. Continuous streaming replication → seconds. Each step up in freshness costs more storage, bandwidth, and infra.
+- **Restore time is real and often huge.** Restoring **2TB** over a **1 Gbps** link is ~4.5 hours *at line speed* — before decompression, index rebuild, and cache warm-up. If your RTO is 1 hour, a cold restore *cannot* meet it; you need a warm/hot standby instead.
+- **Cost ladder.** Backup & restore might cost ~5% of primary infra. A hot multi-region active-active setup can cost **~2x** your entire production footprint (you run it twice). That's the price of an RTO in seconds — only buy it where the business truly needs it.
+- **RPO ≈ 0 needs synchronous replication**, which adds cross-region write latency (tens of ms per commit). Near-zero data loss and low write latency pull against each other — you usually pick one.
+
+## When to use it
+
+<Callout type="warn" title="Backups don't protect against corruption and bad deploys">
+Redundancy replicates your data instantly — including the `DELETE FROM users` you just ran, or the ransomware that just encrypted everything. Live replicas faithfully copy the disaster. That's why you also need *point-in-time* backups you can rewind to a moment *before* the corruption. DR isn't only about hardware loss; it's about being able to go back in time.
+</Callout>
+
+<Callout type="idea" title="An untested DR plan is a liability, not an asset">
+The single most common DR failure is discovering, during the real disaster, that the plan doesn't work — the backup was corrupt, the runbook was stale, the standby's capacity was never provisioned. A DR plan's value is exactly equal to how recently you tested it. Schedule game days and treat a failed drill as a gift: it's a bug found on your terms instead of the disaster's.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What's the difference between RPO and RTO, and which one dictates your backup schedule?">
+
+**RPO (Recovery Point Objective)** is how much *data* you can lose, measured in time — it dictates your **backup/replication frequency**. If RPO is 5 minutes, you must capture data at least every 5 minutes, so nightly backups won't do; you need frequent snapshots or continuous replication. **RTO (Recovery Time Objective)** is how *long* you can be *down* — it dictates your **recovery strategy** (cold restore vs. warm/hot standby). You can have a tiny RPO but a large RTO (data is safe but takes hours to bring back online), or vice versa. They're independent targets and you budget each separately.
+
+</Accordion>
+
+<Accordion title="Your RTO is 1 hour, but restoring your 2TB database from backup takes 4 hours. What do you do?">
+
+Cold restore fundamentally can't meet a 1-hour RTO for that data size, so throwing more backup frequency at it won't help — that only improves RPO. You must change the *recovery strategy*: keep a **warm or hot standby** in the DR region that's already running with data continuously replicated, so recovery is a *failover* (promote + repoint DNS, minutes) rather than a *restore* (hours). The general rule: RPO is solved by how often you copy data; RTO is solved by how much standby infrastructure you keep running. A tight RTO essentially forces you up the cost ladder to warm/hot standby.
+
+</Accordion>
+
+<Accordion title="You have real-time replication to a second region. Why do you still need traditional backups?">
+
+Because replication protects against *infrastructure* loss but faithfully copies *logical* disasters. If someone runs a bad migration, a buggy deploy corrupts records, or ransomware encrypts your data, the replica instantly receives the exact same damage — both copies are now broken. Point-in-time backups let you rewind to a state *before* the corruption occurred, which a live replica can never do. Replication answers "the data center is gone"; backups answer "the data itself is wrong." You need both, and this is exactly why the 3-2-1 rule keeps an independent, offline copy.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Disaster recovery is about losing a *whole site*, not one component — measured by **RPO** (data you can lose) and **RTO** (time to recover).
+- Strategy is a cost ladder — Backup & Restore → Pilot Light → Warm Standby → Hot/Multi-region — where smaller RTO/RPO costs exponentially more; pick per system by business impact.
+- Replicate across regions *and* keep point-in-time backups (replication copies corruption), and **test the plan** with game days or your real RTO is unknown.
+
+<Cards>
+  <Card title="Redundancy & Failover" href="/docs/system-design/part-4-reliability/02-redundancy-and-failover" description="Surviving component failure within a site, before you need full DR." />
+  <Card title="Availability & SLAs" href="/docs/system-design/part-4-reliability/01-availability-and-slas" description="The uptime targets that set how strict your RTO must be." />
+  <Card title="Replication" href="/docs/system-design/part-2-databases/03-replication" description="The cross-region data copying that shrinks your RPO." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+Lead with the two numbers: "What's the RPO and RTO for this data?" It instantly frames the conversation and shows you know DR is a business trade-off, not a checkbox. Then map the requirement to a tier — "RPO near zero and RTO in minutes means cross-region replication with a warm standby, not nightly backups" — and always mention two things interviewers love: that replication copies corruption (so you still need point-in-time backups) and that an untested plan has an unknown RTO.
+</Callout>

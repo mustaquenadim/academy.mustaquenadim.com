@@ -1,0 +1,13 @@
+{
+  "title": "Part 1 · Networking",
+  "icon": "Network",
+  "pages": [
+    "01-how-the-internet-carries-a-request",
+    "02-dns",
+    "03-http-and-apis",
+    "04-latency-and-bandwidth",
+    "05-load-balancing",
+    "06-cdns",
+    "07-caching-fundamentals"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "title": "Range Queries",
+  "icon": "ChartColumn",
+  "pages": [
+    "01-segment-tree-intro",
+    "02-segment-tree-queries",
+    "03-lazy-propagation",
+    "04-fenwick-tree"
+  ]
+}

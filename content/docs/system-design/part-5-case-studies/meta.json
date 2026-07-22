@@ -1,0 +1,11 @@
+{
+  "title": "Part 5 · Case Studies",
+  "icon": "Layers",
+  "pages": [
+    "01-design-a-url-shortener",
+    "02-design-a-news-feed",
+    "03-design-a-chat-system",
+    "04-design-a-rate-limiter",
+    "05-design-a-video-platform"
+  ]
+}

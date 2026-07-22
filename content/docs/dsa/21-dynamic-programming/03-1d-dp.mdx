@@ -1,0 +1,246 @@
+---
+title: "1D Dynamic Programming"
+description: "Climbing stairs, robbing houses, making change — a surprising number of problems fill a single array left to right."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/02-memoization-vs-tabulation
+  - href: /docs/dsa/21-dynamic-programming/04-2d-dp
+  - href: /docs/dsa/21-dynamic-programming/05-subset-knapsack
+---
+
+## The problem
+
+You are standing at the bottom of a staircase with `n` steps. You can hop up one step or two
+steps at a time. How many different ways can you reach the top? For 3 steps you can list them:
+1+1+1, 1+2, 2+1 — three ways. For 5 steps you can still enumerate them if you are patient. For
+45 steps there are over a billion, and listing them by hand is hopeless.
+
+This looks like a counting puzzle, but underneath it is the same machine as robbing houses on
+a street, or making change for a total, or the maximum sum you can grab without picking two
+neighbors. All of them fill a **single array, left to right**, each cell depending on a few
+cells just behind it.
+
+## A first attempt
+
+The recursive definition writes itself: to reach step `n`, your last hop came from step `n-1`
+or step `n-2`. So the number of ways is the sum of the ways to reach each of those.
+
+```python
+def climb(n):
+    if n <= 2:
+        return n
+    return climb(n - 1) + climb(n - 2)
+```
+
+That is Fibonacci in disguise, and it has Fibonacci's disease: the same `climb(k)` is
+recomputed exponentially many times, giving **O(φⁿ)** time. `climb(45)` will keep your CPU
+busy for an uncomfortably long while.
+
+## The insight
+
+Every 1D DP shares one shape:
+
+> The answer for position `i` depends on a *constant number* of earlier positions. Store
+> those answers in an array, fill it once from left to right, and each cell costs O(1).
+
+The only thing that changes from problem to problem is the recurrence:
+
+- **Climbing stairs:** `dp[i] = dp[i-1] + dp[i-2]` (count of ways).
+- **House robber:** `dp[i] = max(dp[i-1], dp[i-2] + nums[i])` (skip this house or take it).
+- **Coin change:** `dp[a] = min(dp[a - c] + 1)` over every coin `c` (fewest coins for amount
+  `a`).
+
+Learn to spot "one dimension, a few steps back" and half the DP problems you meet become the
+same problem.
+
+## How it works
+
+Take **House Robber**: houses in a row each hold some cash, and you cannot rob two adjacent
+houses or the alarm trips. Maximize the take.
+
+<Steps>
+
+<Step>
+
+### Define the state
+
+`dp[i]` = the most money you can rob considering only houses `0..i`. The final answer is
+`dp[n-1]`.
+
+</Step>
+
+<Step>
+
+### Find the recurrence
+
+At house `i` you have two choices. **Skip it:** you keep `dp[i-1]`. **Rob it:** you take
+`nums[i]` plus whatever was safe two houses back, `dp[i-2]`. Take the better one:
+`dp[i] = max(dp[i-1], dp[i-2] + nums[i])`.
+
+</Step>
+
+<Step>
+
+### Nail the base cases
+
+`dp[0] = nums[0]` (only one house). `dp[1] = max(nums[0], nums[1])` (rob the richer of the
+first two). Every later cell is well-defined from here.
+
+</Step>
+
+<Step>
+
+### Collapse the array
+
+Notice `dp[i]` looks back exactly two cells. So you can keep two rolling variables instead of
+the whole array, cutting space from O(n) to O(1).
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def rob(nums):
+    prev2, prev1 = 0, 0  # dp[i-2], dp[i-1]
+    for x in nums:
+        prev2, prev1 = prev1, max(prev1, prev2 + x)
+    return prev1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function rob(nums: number[]): number {
+  let prev2 = 0, prev1 = 0;
+  for (const x of nums) {
+    const cur = Math.max(prev1, prev2 + x);
+    prev2 = prev1;
+    prev1 = cur;
+  }
+  return prev1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int rob(int[] nums) {
+        int prev2 = 0, prev1 = 0;
+        for (int x : nums) {
+            int cur = Math.max(prev1, prev2 + x);
+            prev2 = prev1;
+            prev1 = cur;
+        }
+        return prev1;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int rob(int *nums, int n) {
+    int prev2 = 0, prev1 = 0;
+    for (int i = 0; i < n; i++) {
+        int cur = prev1 > prev2 + nums[i] ? prev1 : prev2 + nums[i];
+        prev2 = prev1;
+        prev1 = cur;
+    }
+    return prev1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int rob(vector<int> &nums) {
+    int prev2 = 0, prev1 = 0;
+    for (int x : nums) {
+        int cur = max(prev1, prev2 + x);
+        prev2 = prev1;
+        prev1 = cur;
+    }
+    return prev1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | O(φⁿ) | O(n) stack |
+| DP array | O(n) | O(n) |
+| Rolling variables | O(n) | O(1) |
+
+Coin change is slightly bigger: `dp[a] = min over coins` makes it **O(amount × coins)** time
+and **O(amount)** space, since each amount looks back once per coin.
+
+## When to use it
+
+<Callout type="idea" title="One index, a few steps back">
+If you can phrase the answer as `dp[i]` depending only on a handful of earlier indices, it is
+a 1D DP. Whenever the recurrence reaches back a fixed distance, you can usually replace the
+array with a couple of variables and hit O(1) space.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How would you adapt House Robber if the houses are arranged in a circle, so the first and last are adjacent?">
+
+Split into two linear problems. Either you skip the last house (rob `nums[0..n-2]`) or you
+skip the first (rob `nums[1..n-1]`); you can never take both ends. Run the linear robber on
+each range and return the larger. It is still O(n) time, O(1) space.
+
+</Accordion>
+
+<Accordion title="For coin change, why do we loop coins in the inner loop and take a min, rather than counting like stairs?">
+
+Because we want the *fewest coins*, not the number of ways. For each amount `a`, every coin
+`c ≤ a` offers a candidate `dp[a - c] + 1`; the best is the minimum over all coins. Initialize
+`dp[0] = 0` and everything else to infinity so unreachable amounts stay unreachable.
+
+</Accordion>
+
+<Accordion title="Climbing stairs counts ways; House Robber maximizes value. What single change in the recurrence captures that difference?">
+
+The combine operator. Counting uses **sum** (`dp[i-1] + dp[i-2]` — every way to the previous
+steps is a distinct way here). Optimization uses **max** or **min** (`max(dp[i-1],
+dp[i-2] + nums[i])` — you keep only the best choice). Same skeleton, different operator.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A 1D DP fills a single array where each cell depends on a fixed number of earlier cells.
+- The skeleton is identical across problems; only the **recurrence and combine operator**
+  (sum vs max vs min) change.
+- When the look-back distance is constant, collapse the array into rolling variables for O(1)
+  space.
+
+<Cards>
+  <Card title="Memoization vs Tabulation" href="/docs/dsa/21-dynamic-programming/02-memoization-vs-tabulation" description="The two styles you can write any of these in." />
+  <Card title="2D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/04-2d-dp" description="When one index is not enough to describe the state." />
+  <Card title="The Knapsack Pattern" href="/docs/dsa/21-dynamic-programming/05-subset-knapsack" description="Choosing a subset under a capacity limit." />
+</Cards>

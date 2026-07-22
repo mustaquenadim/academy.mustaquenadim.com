@@ -1,0 +1,288 @@
+---
+title: "Subsets with Bitmasks"
+description: "Every subset of n items maps to an n-bit number — so counting from 0 to 2ⁿ generates them all."
+extractedReferences:
+  - href: /docs/dsa/06-bit-manipulation/01-bitwise-basics
+  - href: /docs/dsa/06-bit-manipulation/03-bits-with-arrays
+---
+
+## The problem
+
+You are packing for a trip. You have a handful of items — say a jacket, a book, an umbrella —
+and you want to consider every possible combination you might bring: nothing, just the book,
+the jacket and umbrella, all three, and so on. For code, this is the "generate all subsets"
+problem, and it powers everything from menu-configuration testing to brute-force optimization.
+
+Writing nested loops works for two or three items, but the moment the count is variable you
+cannot hand-write "n nested loops." You need a way to enumerate all `2ⁿ` combinations that
+does not depend on knowing `n` at the time you write the code.
+
+## A first attempt
+
+The natural instinct is recursion: for each item, branch into "take it" and "skip it."
+
+```python
+def subsets(items):
+    result = []
+    def backtrack(i, current):
+        if i == len(items):
+            result.append(current[:])
+            return
+        backtrack(i + 1, current)            # skip item i
+        current.append(items[i])
+        backtrack(i + 1, current)            # take item i
+        current.pop()
+    backtrack(0, [])
+    return result
+```
+
+This is correct and O(2ⁿ) — you cannot beat that, since there *are* `2ⁿ` subsets. But it
+carries recursion overhead and a call stack, and the control flow is easy to get subtly wrong.
+There is a flatter representation waiting.
+
+## The insight
+
+A subset is just a yes/no decision per item — and a yes/no decision per position is *exactly*
+what a binary number is. With `n` items, an `n`-bit number encodes one subset: bit `i` set
+means "include item `i`." There are `2ⁿ` such numbers, `0` through `2ⁿ - 1`, and they map
+one-to-one onto the subsets.
+
+```
+n = 3 items [a, b, c]
+mask 000 -> {}          mask 100 -> {c}
+mask 001 -> {a}         mask 101 -> {a, c}
+mask 010 -> {b}         mask 110 -> {b, c}
+mask 011 -> {a, b}      mask 111 -> {a, b, c}
+```
+
+So generating all subsets becomes a plain `for mask in range(2**n)` loop, with an inner check
+of each bit. No recursion, no stack — just counting.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Loop the mask from 0 to 2ⁿ − 1
+
+`1 << n` equals `2ⁿ`. Iterate `mask` over `range(1 << n)`; each value is one subset's blueprint.
+
+</Step>
+
+<Step>
+
+### Read each bit to decide membership
+
+For item `i`, test `(mask >> i) & 1`. If it is `1`, item `i` belongs to this subset. Loop `i`
+from `0` to `n - 1` and collect the chosen items.
+
+</Step>
+
+<Step>
+
+### Emit the subset
+
+After scanning all bits of one mask, you have a complete subset. Append it and move to the
+next mask. When the loop ends, you have produced all `2ⁿ` of them.
+
+```
+mask = 5 = 101, items = [a, b, c]
+bit 0 set -> take a
+bit 1 clear -> skip b
+bit 2 set -> take c
+subset = {a, c}
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def subsets(items):
+    n = len(items)
+    result = []
+    for mask in range(1 << n):           # 0 .. 2^n - 1
+        subset = []
+        for i in range(n):
+            if (mask >> i) & 1:
+                subset.append(items[i])
+        result.append(subset)
+    return result
+
+print(subsets(['a', 'b', 'c']))
+# [[], ['a'], ['b'], ['a','b'], ['c'], ['a','c'], ['b','c'], ['a','b','c']]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function subsets<T>(items: T[]): T[][] {
+    const n = items.length;
+    const result: T[][] = [];
+    for (let mask = 0; mask < (1 << n); mask++) {   // 0 .. 2^n - 1
+        const subset: T[] = [];
+        for (let i = 0; i < n; i++) {
+            if ((mask >> i) & 1) subset.push(items[i]);
+        }
+        result.push(subset);
+    }
+    return result;
+}
+
+console.log(subsets(['a', 'b', 'c']));
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class SubsetBits {
+    static List<List<String>> subsets(String[] items) {
+        int n = items.length;
+        List<List<String>> result = new ArrayList<>();
+        for (int mask = 0; mask < (1 << n); mask++) {   // 0 .. 2^n - 1
+            List<String> subset = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                if (((mask >> i) & 1) == 1) subset.add(items[i]);
+            }
+            result.add(subset);
+        }
+        return result;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(subsets(new String[]{"a", "b", "c"}));
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+void subsets(const char *items[], int n) {
+    for (int mask = 0; mask < (1 << n); mask++) {   /* 0 .. 2^n - 1 */
+        printf("{");
+        for (int i = 0; i < n; i++) {
+            if ((mask >> i) & 1) printf("%s ", items[i]);
+        }
+        printf("}\n");
+    }
+}
+
+int main(void) {
+    const char *items[] = {"a", "b", "c"};
+    subsets(items, 3);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <string>
+
+std::vector<std::vector<std::string>> subsets(const std::vector<std::string> &items) {
+    int n = items.size();
+    std::vector<std::vector<std::string>> result;
+    for (int mask = 0; mask < (1 << n); mask++) {   // 0 .. 2^n - 1
+        std::vector<std::string> subset;
+        for (int i = 0; i < n; i++) {
+            if ((mask >> i) & 1) subset.push_back(items[i]);
+        }
+        result.push_back(subset);
+    }
+    return result;
+}
+
+int main() {
+    auto all = subsets({"a", "b", "c"});
+    std::cout << all.size() << " subsets\n"; // 8 subsets
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Metric | Value |
+| --- | --- |
+| Time | O(n · 2ⁿ) |
+| Space (output) | O(n · 2ⁿ) |
+| Space (working) | O(n) per subset |
+
+There are `2ⁿ` subsets and each costs O(n) to build, so O(n · 2ⁿ) is optimal for listing them all.
+
+## When to use it
+
+<Callout type="idea" title="Bitmasks make exponential enumeration flat and cheap">
+This pattern is the backbone of bitmask dynamic programming (traveling salesman, assignment
+problems) where a subset of visited nodes *is* a DP state. The hard limit is `n`: at `n = 20`
+you already have a million masks, and around `n = 26` a signed 32-bit `1 << n` overflows —
+use a 64-bit type or `long`. Beyond roughly `n = 25`, enumerating all subsets is infeasible
+regardless of representation, so switch strategies rather than pushing the loop harder.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How many subsets does a set of 4 items have, and which mask represents {item0, item3}?">
+
+A set of 4 items has `2⁴ = 16` subsets. The subset `{item0, item3}` sets bits 0 and 3, giving
+the mask `1001` in binary, which is `9` in decimal (`(1 << 0) | (1 << 3)`).
+
+</Accordion>
+
+<Accordion title="How would you iterate only over subsets of a fixed size k?">
+
+Iterate all `2ⁿ` masks and keep only those whose set-bit count equals `k` — check with
+`bin(mask).count('1')` (Python), `Integer.bitCount(mask)` (Java), or `__builtin_popcount`
+(C/C++). For large `n` where filtering is wasteful, use Gosper's hack to step directly from one
+`k`-bit mask to the next without visiting the others.
+
+</Accordion>
+
+<Accordion title="Why does the mask loop go up to 1 << n exactly, not 1 << n minus 1, as the range bound?">
+
+The masks run from `0` to `2ⁿ - 1` inclusive — that is `2ⁿ` distinct values. A half-open loop
+`mask < (1 << n)` stops *after* producing `2ⁿ - 1`, covering all of them. Writing the bound as
+`1 << n` (which equals `2ⁿ`) with a strict `<` gives exactly the right count; the all-ones mask
+`2ⁿ - 1` is the last one emitted.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Each of the `2ⁿ` subsets of `n` items maps one-to-one to an `n`-bit mask.
+- Loop `mask` from `0` to `2ⁿ − 1` and test `(mask >> i) & 1` to read membership — no recursion.
+- It is O(n · 2ⁿ), optimal for listing all subsets, and the foundation of bitmask DP; mind overflow past `n = 25`.
+
+<Cards>
+  <Card title="Bitwise Basics" href="/docs/dsa/06-bit-manipulation/01-bitwise-basics" description="The shifts and masks this lesson leans on." />
+  <Card title="Bits Meet Arrays" href="/docs/dsa/06-bit-manipulation/03-bits-with-arrays" description="XOR tricks over whole arrays." />
+</Cards>

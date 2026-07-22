@@ -1,0 +1,328 @@
+---
+title: "Binary Search on the Answer"
+description: "Sometimes you’re not searching an array at all — you’re searching a range of possible answers, and binary search still applies."
+extractedReferences:
+  - href: /docs/dsa/04-searching/03-binary-search
+  - href: /docs/dsa/04-searching/04-binary-search-variants
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+A cargo ship must carry a line of packages across the ocean, in order, in **D days**. Each
+day it loads packages onto the belt up to the ship's weight capacity, then sails. Bigger
+capacity means fewer days but a pricier ship. You want the **smallest capacity** that still
+delivers everything within `D` days.
+
+Notice there's no array of answers to look through. The thing you're searching for — the
+capacity — is a *number in a range*. It could be as small as the heaviest single package (you
+must be able to carry it) or as large as the sum of all weights (carry everything in one day).
+Somewhere in that range is the smallest capacity that works.
+
+## A first attempt
+
+Just try every capacity, smallest first. Start at `max(weights)`, simulate the voyage, and
+if it takes more than `D` days, bump the capacity by one and try again. The first capacity
+that fits is your answer.
+
+It's correct, but the range of capacities can be enormous — up to the total weight, which
+might be millions. Each trial re-simulates all `n` packages. That's `O(range × n)`, far too
+slow when the range is huge.
+
+## The insight
+
+Ask a yes/no question instead of a value question: *"Can we deliver in `D` days with capacity
+`C`?"* Write a helper `feasible(C)` that simulates the voyage and returns true or false.
+
+Now look at how `feasible` behaves as `C` grows:
+
+```text
+capacity:  5    6    7    8    9   10   11   12
+feasible:  N    N    N    F    T    T    T    T
+                            └── the boundary we want
+```
+
+It's **monotonic** — once a capacity works, every larger capacity also works. A sorted line
+of `false`s followed by `true`s is exactly what binary search eats. We binary-search the
+*capacity range* for the leftmost `C` where `feasible(C)` flips to true. That's **binary
+search on the answer**.
+
+<Callout type="idea" title="The tell">
+Any time a problem says "minimize the maximum" or "maximize the minimum" or "smallest X that
+still works", check for monotonic feasibility. If `feasible(x)` being true implies
+`feasible(x+1)` is true, you can binary-search `x` — even though nothing is stored in a
+sorted array.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Bound the answer range
+
+The smallest sensible capacity is `max(weights)` (you must carry the heaviest package). The
+largest is `sum(weights)` (everything in one day). The answer lives in `[lo, hi]`.
+
+</Step>
+
+<Step>
+
+### Write the feasibility check
+
+`feasible(C)`: sweep the packages, greedily filling each day until adding the next would
+exceed `C`, then start a new day. Count the days; return `days <= D`.
+
+</Step>
+
+<Step>
+
+### Binary-search the range
+
+Take `mid = lo + (hi - lo) / 2`. If `feasible(mid)`, this capacity works but a smaller one
+might too — keep it and search left (`hi = mid`). Otherwise search right (`lo = mid + 1`).
+
+</Step>
+
+<Step>
+
+### Return the boundary
+
+When `lo == hi`, that's the smallest feasible capacity. Because `feasible` is monotonic, it's
+guaranteed to be a true value.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def min_capacity(weights, days):
+    def feasible(cap):
+        d, load = 1, 0
+        for w in weights:
+            if load + w > cap:
+                d += 1
+                load = 0
+            load += w
+        return d <= days
+
+    lo, hi = max(weights), sum(weights)
+    while lo < hi:
+        mid = lo + (hi - lo) // 2
+        if feasible(mid):
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function minCapacity(weights: number[], days: number): number {
+  const feasible = (cap: number): boolean => {
+    let d = 1;
+    let load = 0;
+    for (const w of weights) {
+      if (load + w > cap) {
+        d += 1;
+        load = 0;
+      }
+      load += w;
+    }
+    return d <= days;
+  };
+
+  let lo = Math.max(...weights);
+  let hi = weights.reduce((a, b) => a + b, 0);
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (feasible(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean feasible(int[] weights, int cap, int days) {
+    int d = 1, load = 0;
+    for (int w : weights) {
+        if (load + w > cap) {
+            d++;
+            load = 0;
+        }
+        load += w;
+    }
+    return d <= days;
+}
+
+int minCapacity(int[] weights, int days) {
+    int lo = 0, hi = 0;
+    for (int w : weights) {
+        lo = Math.max(lo, w);
+        hi += w;
+    }
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (feasible(weights, mid, days)) hi = mid;
+        else lo = mid + 1;
+    }
+    return lo;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+
+bool feasible(const int weights[], int n, int cap, int days) {
+    int d = 1, load = 0;
+    for (int i = 0; i < n; i++) {
+        if (load + weights[i] > cap) {
+            d++;
+            load = 0;
+        }
+        load += weights[i];
+    }
+    return d <= days;
+}
+
+int min_capacity(const int weights[], int n, int days) {
+    int lo = 0, hi = 0;
+    for (int i = 0; i < n; i++) {
+        if (weights[i] > lo) lo = weights[i];
+        hi += weights[i];
+    }
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (feasible(weights, n, mid, days)) hi = mid;
+        else lo = mid + 1;
+    }
+    return lo;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+bool feasible(const std::vector<int>& weights, int cap, int days) {
+    int d = 1, load = 0;
+    for (int w : weights) {
+        if (load + w > cap) {
+            d++;
+            load = 0;
+        }
+        load += w;
+    }
+    return d <= days;
+}
+
+int minCapacity(const std::vector<int>& weights, int days) {
+    int lo = 0, hi = 0;
+    for (int w : weights) {
+        lo = std::max(lo, w);
+        hi += w;
+    }
+    while (lo < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (feasible(weights, mid, days)) hi = mid;
+        else lo = mid + 1;
+    }
+    return lo;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost               | Why                                                        |
+| ------ | ------------------ | ---------------------------------------------------------- |
+| Time   | `O(n · log(range))`| `log(range)` binary-search steps, each an `O(n)` check     |
+| Space  | `O(1)`             | the greedy check uses a couple of counters                 |
+
+Here `range = sum(weights) − max(weights)`. Compare that to the naive `O(range · n)` — the
+`log` turns millions of trials into ~20.
+
+## When to use it
+
+<Callout type="warn" title="The check must be monotonic — verify it">
+Binary search on the answer is only valid when `feasible` never flips back: true must stay
+true as the parameter moves toward the "easier" end. If feasibility can turn true, then false,
+then true again, the search can land on the wrong boundary. Also mind the direction — for
+"maximize the minimum" the true/false pattern is reversed, so you keep the *right* half on
+success. This pattern powers Koko eating bananas, splitting an array to minimize the largest
+sum, the smallest divisor, and aggressive-cows spacing.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why start `lo` at max(weights) instead of 1 or 0?">
+
+Because any capacity below the heaviest package is impossible — that one package can never be
+loaded, so `feasible` is false for every such value. Starting at `max(weights)` skips a whole
+block of guaranteed-false answers, and it also keeps the greedy check correct: with a smaller
+cap the single package would loop forever without ever fitting. `hi = sum(weights)` is the
+other extreme — one day carries everything — so the true answer is always inside `[lo, hi]`.
+
+</Accordion>
+
+<Accordion title="How is this different from ordinary binary search on a sorted array?">
+
+Structurally it's identical — you're still finding the boundary between "no" and "yes" by
+halving a range. The difference is that the "array" is **virtual**: element `i` isn't stored,
+it's *computed on demand* by `feasible(i)`. You never materialise the range of capacities;
+you only ever evaluate the midpoint. It's the same
+[boundary-finding idea](/docs/dsa/04-searching/04-binary-search-variants), applied to an
+implicit sorted sequence of booleans.
+
+</Accordion>
+
+<Accordion title="Koko can eat K bananas per hour from piles and must finish in H hours. Find the smallest K. How does the shape carry over?">
+
+Identical shape. `feasible(K)` = total hours to eat all piles at speed `K` is `<= H`, where a
+pile of `p` bananas takes `ceil(p / K)` hours. It's monotonic (a faster eater never needs
+more hours), so binary-search `K` in `[1, max(pile)]` for the leftmost true. Only the
+feasibility function's body changes; the binary-search skeleton is exactly the same.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- When the unknown is a **number in a range** and "does value `x` work?" is monotonic, you
+  can binary-search the answer — no array required.
+- Write a boolean `feasible(x)`, bound the range, and find the boundary where false flips to
+  true; keep the half that could hold a better answer.
+- Cost is `O(n · log(range))` — the `log` collapses a huge search space, but only if the
+  feasibility check is genuinely monotonic.
+
+<Cards>
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The halving idea this generalises." />
+  <Card title="Binary Search Variants" href="/docs/dsa/04-searching/04-binary-search-variants" description="Finding the boundary between no and yes." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why log(range) beats scanning the range." />
+</Cards>

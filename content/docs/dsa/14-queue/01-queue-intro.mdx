@@ -1,0 +1,333 @@
+---
+title: "Queues"
+description: "A print line, a support queue — first come, first served — is a data structure with its own rules."
+extractedReferences:
+  - href: /docs/dsa/14-queue/02-circular-queue
+  - href: /docs/dsa/14-queue/03-queue-from-stacks
+  - href: /docs/dsa/13-stack/01-stack-intro
+---
+
+## The problem
+
+You send three documents to a shared office printer. So does everyone else on your floor. Nobody expects their *third* page to come out first — the printer serves jobs in the order they arrived. The person who clicked "print" at 9:01 gets their pages before the person who clicked at 9:02.
+
+That fairness is the whole point. A support desk, a ticket line at the bank, packets arriving on a network card — they all share one rule: **whoever got here first, gets served first.** You need a structure that remembers arrival order and hands things back in that exact order.
+
+## A first attempt
+
+Reach for a plain array. New jobs go on the end with `append`. To serve the oldest, you take index `0`:
+
+```python
+jobs = []
+jobs.append("doc-A")   # arrives first
+jobs.append("doc-B")
+first = jobs.pop(0)    # serve "doc-A"
+```
+
+It works, and `append` is cheap. But `pop(0)` is the trap. Removing the front element forces every remaining item to shift down one slot to fill the gap. Serve one job out of `n` and you pay `O(n)`. Drain the whole line and you have paid `O(n²)` for what should be simple bookkeeping. On a busy printer that is the difference between instant and sluggish.
+
+## The insight
+
+The slowness comes from *insisting the front lives at index 0*. But nothing says it has to. Keep **two pointers** — one marking the front, one marking the back. To remove, read the front and move the front pointer forward. To add, write at the back and move the back pointer forward. Nothing shifts. Both operations touch a single slot, so both are `O(1)`.
+
+That two-ended discipline — add at one end, remove at the other — is a **queue**, and the rule it enforces is **FIFO: first in, first out.** A stack is LIFO; a queue is its mirror image.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start empty
+
+Picture a strip of slots. Two markers, `front` and `back`, both point at the start. Size is zero.
+
+```
+front,back
+   v
+[ _ ][ _ ][ _ ][ _ ]
+```
+
+</Step>
+
+<Step>
+
+### Enqueue adds at the back
+
+Write the value where `back` points, then advance `back`. This is "getting in line."
+
+```
+ front        back
+   v           v
+[ A ][ B ][ C ][ _ ]
+```
+
+</Step>
+
+<Step>
+
+### Dequeue removes from the front
+
+Read the value `front` points at, then advance `front`. `A` leaves; `B` is now the oldest waiting.
+
+```
+      front   back
+        v      v
+[ _ ][ B ][ C ][ _ ]
+```
+
+</Step>
+
+<Step>
+
+### Peek and empty check
+
+`peek` returns the front value without moving anything. The queue is empty when `front == back` (front caught up to back).
+
+</Step>
+
+</Steps>
+
+## The code
+
+A ready-made structure keeps the pointers for you: Python's `collections.deque`, a doubly linked list, or the language's built-in queue. Both ends stay `O(1)`.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+class Queue:
+    def __init__(self):
+        self._data = deque()
+
+    def enqueue(self, x):
+        self._data.append(x)
+
+    def dequeue(self):
+        if not self._data:
+            raise IndexError("dequeue from empty queue")
+        return self._data.popleft()   # O(1)
+
+    def peek(self):
+        return self._data[0]
+
+    def is_empty(self):
+        return len(self._data) == 0
+
+
+q = Queue()
+q.enqueue("doc-A")
+q.enqueue("doc-B")
+print(q.dequeue())   # doc-A
+print(q.peek())      # doc-B
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Queue<T> {
+  private data: T[] = [];
+  private head = 0; // index of the front
+
+  enqueue(x: T): void {
+    this.data.push(x);
+  }
+
+  dequeue(): T {
+    if (this.isEmpty()) throw new Error("dequeue from empty queue");
+    const x = this.data[this.head];
+    this.head++;
+    // occasionally compact so memory does not grow forever
+    if (this.head > 32 && this.head * 2 >= this.data.length) {
+      this.data = this.data.slice(this.head);
+      this.head = 0;
+    }
+    return x;
+  }
+
+  peek(): T {
+    return this.data[this.head];
+  }
+
+  isEmpty(): boolean {
+    return this.head === this.data.length;
+  }
+}
+
+const q = new Queue<string>();
+q.enqueue("doc-A");
+q.enqueue("doc-B");
+console.log(q.dequeue()); // doc-A
+console.log(q.peek());    // doc-B
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+class Queue<T> {
+    private final Deque<T> data = new ArrayDeque<>();
+
+    void enqueue(T x) {
+        data.addLast(x);
+    }
+
+    T dequeue() {
+        if (data.isEmpty()) throw new IllegalStateException("empty");
+        return data.pollFirst();   // O(1)
+    }
+
+    T peek() {
+        return data.peekFirst();
+    }
+
+    boolean isEmpty() {
+        return data.isEmpty();
+    }
+
+    public static void main(String[] args) {
+        Queue<String> q = new Queue<>();
+        q.enqueue("doc-A");
+        q.enqueue("doc-B");
+        System.out.println(q.dequeue()); // doc-A
+        System.out.println(q.peek());    // doc-B
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+typedef struct {
+    Node *front;
+    Node *back;
+} Queue;
+
+void init(Queue *q) { q->front = q->back = NULL; }
+
+void enqueue(Queue *q, int x) {
+    Node *n = malloc(sizeof(Node));
+    n->value = x;
+    n->next = NULL;
+    if (q->back) q->back->next = n;
+    else q->front = n;
+    q->back = n;
+}
+
+int dequeue(Queue *q) {
+    Node *n = q->front;          /* assumes non-empty */
+    int x = n->value;
+    q->front = n->next;
+    if (!q->front) q->back = NULL;
+    free(n);
+    return x;
+}
+
+int main(void) {
+    Queue q;
+    init(&q);
+    enqueue(&q, 10);
+    enqueue(&q, 20);
+    printf("%d\n", dequeue(&q)); /* 10 */
+    printf("%d\n", q.front->value); /* 20 (peek) */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+
+int main() {
+    std::queue<std::string> q;
+    q.push("doc-A");   // enqueue
+    q.push("doc-B");
+
+    std::cout << q.front() << "\n"; // peek -> doc-A
+    q.pop();                        // dequeue doc-A
+    std::cout << q.front() << "\n"; // doc-B
+
+    std::cout << "empty? " << q.empty() << "\n";
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Enqueue | O(1) | O(1) |
+| Dequeue | O(1) | O(1) |
+| Peek | O(1) | O(1) |
+| Whole queue | — | O(n) |
+
+The `pop(0)` array approach was `O(n)` per dequeue and `O(n²)` to drain. Two pointers (or a linked list) fixes both.
+
+## When to use it
+
+<Callout type="idea" title="Reach for a queue when order matters">
+Use a queue whenever items must be processed in arrival order: task and job schedulers, print spoolers, request buffers, and — most famously — **breadth-first search**, where the queue holds the frontier of nodes to visit. If you need fast access at *both* ends, look at a [deque](/docs/dsa/15-deque/01-deque-intro) instead. And never dequeue with `array.pop(0)` in a hot loop — that quietly turns O(1) into O(n).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is dequeuing with array.pop(0) so much slower than it looks?">
+
+`pop(0)` removes index `0`, but an array stores elements contiguously. To keep them contiguous, every element after the removed one shifts down by one — that is `O(n)` work per call. Do it for all `n` elements and you pay `O(n²)` total. A linked list or a moving `front` pointer removes in `O(1)` because nothing else has to move.
+
+</Accordion>
+
+<Accordion title="How do you know when a two-pointer array queue is empty versus full?">
+
+Empty is when `front == back` — the front has caught up to the back, so nothing waits between them. If you keep a running `size` counter (increment on enqueue, decrement on dequeue) you can also just test `size == 0`. The size counter is the simplest and least error-prone check, which is why most real implementations keep one.
+
+</Accordion>
+
+<Accordion title="You need to process nodes level by level in a tree. Stack or queue?">
+
+A queue. Breadth-first traversal visits all nodes at the current depth before going deeper, and a FIFO queue naturally holds that frontier: you dequeue a node, enqueue its children at the back, and they come out only after the rest of the current level. A stack would give you depth-first order instead.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **queue** enforces **FIFO** — first in, first out — the mirror of a stack's LIFO.
+- Enqueue at the back, dequeue at the front; both are **O(1)** with a linked list or two pointers.
+- Never dequeue with `pop(0)` on a plain array — it shifts everything and costs O(n).
+
+<Cards>
+  <Card title="Circular Queues" href="/docs/dsa/14-queue/02-circular-queue" description="Reuse a fixed array by wrapping the ends around." />
+  <Card title="Queues from Stacks" href="/docs/dsa/14-queue/03-queue-from-stacks" description="Build FIFO out of two LIFO stacks." />
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="The LIFO mirror image of the queue." />
+</Cards>

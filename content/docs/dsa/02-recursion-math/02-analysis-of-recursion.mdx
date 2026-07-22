@@ -1,0 +1,233 @@
+---
+title: "Analyzing Recursion"
+description: "A recursive function has no visible loop, so how fast is it? Recurrence relations turn the calls into a number."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/01-recursion
+  - href: /docs/dsa/02-recursion-math/03-recursion-patterns
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You wrote a tidy recursive Fibonacci function. It returns `fib(10)` instantly. Feeling good, you ask for `fib(45)` — and your terminal just sits there. Seconds pass. Your laptop fan spins up. For a function that is four lines long, something has gone badly wrong.
+
+There is no loop in the code, so the usual trick of "count the iterations" gives you nothing to count. How do you put a Big-O on a function whose only visible operation is calling itself?
+
+## A first attempt
+
+Here is the function that is hanging:
+
+```python
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+```
+
+You might guess it is linear — after all, each call looks like it does a constant amount of work. But guessing is not analysis. To really count, you would have to draw the entire tree of calls `fib(45)` triggers and tally the nodes. Do that by hand and you will fill a page before you reach depth 6. The naive eyeball approach does not scale, so you need a tool that summarizes the whole tree at once.
+
+## The insight
+
+Describe the running time *recursively*, just like the function. Let `T(n)` be the number of operations `fib(n)` performs. Reading the code straight off:
+
+```text
+T(n) = T(n - 1) + T(n - 2) + O(1)
+```
+
+The base cases cost `O(1)`. That equation is a **recurrence relation** — the cost of a problem written in terms of the cost of its subproblems. Solve the recurrence and you have the Big-O, no tree-drawing required.
+
+Two shapes cover most recursive code you will meet:
+
+- **Linear recursion** — one call to a smaller input: `T(n) = T(n - 1) + O(1)`, which unrolls to **O(n)**.
+- **Branching recursion** — two calls: `T(n) = T(n - 1) + T(n - 2) + O(1)`, which grows like **O(φⁿ)**, roughly **O(2ⁿ)**.
+
+Fibonacci is branching, and that exponential is exactly why `fib(45)` melts your CPU.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Write the recurrence from the code
+
+Read the function and translate it literally. One recursive call on `n - 1` plus constant work becomes `T(n) = T(n - 1) + O(1)`. Two calls become a sum of two terms. The base case sets `T(0)` or `T(1)` to `O(1)`.
+
+</Step>
+
+<Step>
+
+### Unroll a few levels
+
+Substitute the recurrence into itself and look for the pattern:
+
+```text
+T(n) = T(n-1) + c
+     = T(n-2) + c + c
+     = T(n-3) + c + c + c
+     ...
+     = T(0) + n*c   ->  O(n)
+```
+
+</Step>
+
+<Step>
+
+### Count the shape of the tree
+
+For branching recursion, count nodes instead. Each `fib` node spawns two children, so the tree nearly doubles every level — about `2ⁿ` nodes total. The number of *leaves* of the Fibonacci tree is `fib(n)` itself, which grows like `φⁿ ≈ 1.618ⁿ`.
+
+</Step>
+
+<Step>
+
+### Don't forget space
+
+Time counts every node in the tree; space counts only the deepest single path, because that is the most frames alive at once. Fibonacci recurses `n` deep before unwinding, so space is **O(n)** even though time is exponential.
+
+</Step>
+
+</Steps>
+
+## The code
+
+The instrumented version below counts its own calls, so you can *see* the explosion.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+calls = 0
+
+def fib(n):
+    global calls
+    calls += 1
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+
+fib(20)
+print(calls)  # 13529 calls for n = 20
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+let calls = 0;
+
+function fib(n: number): number {
+  calls++;
+  if (n < 2) return n;
+  return fib(n - 1) + fib(n - 2);
+}
+
+fib(20);
+console.log(calls); // 13529 calls for n = 20
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static long calls = 0;
+
+static int fib(int n) {
+    calls++;
+    if (n < 2) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+// fib(20) -> 13529 calls
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+long calls = 0;
+
+int fib(int n) {
+    calls++;
+    if (n < 2) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+/* fib(20) -> 13529 calls */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+long long calls = 0;
+
+int fib(int n) {
+    calls++;
+    if (n < 2) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+// fib(20) -> 13529 calls
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Function shape            | Recurrence                  | Time     | Space |
+| ------------------------- | --------------------------- | -------- | ----- |
+| Linear (factorial, sum)   | T(n) = T(n-1) + O(1)        | O(n)     | O(n)  |
+| Halving (binary search)   | T(n) = T(n/2) + O(1)        | O(log n) | O(log n) |
+| Two-way split (merge sort)| T(n) = 2·T(n/2) + O(n)      | O(n log n) | O(log n) |
+| Branching (naive fib)     | T(n) = T(n-1) + T(n-2) + O(1)| O(φⁿ)   | O(n)  |
+
+## When to use it
+
+<Callout type="warn" title="Exponential recurrences are a red flag">
+When your recurrence branches into overlapping subproblems — `fib(n-1)` and `fib(n-2)` both recompute `fib(n-3)` — you are doing the same work over and over. That is the signal to add memoization or switch to dynamic programming, which collapses the exponential tree back down to linear time.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What is the time complexity of T(n) = 2·T(n/2) + O(n)?">
+
+This is the merge-sort recurrence. Each level splits the work in half but there are `O(n)` merge operations across every level, and there are `log n` levels. Multiply: **O(n log n)**. The Master Theorem gives the same result directly.
+
+</Accordion>
+
+<Accordion title="Why is naive Fibonacci's space only O(n) when its time is exponential?">
+
+Time counts *every* node the recursion ever creates — that whole exponential tree. Space counts only the frames alive *simultaneously*, which is a single root-to-leaf path. The deepest path in `fib(n)` is `n` calls long, so at most `n` frames sit on the stack at once: **O(n)** space.
+
+</Accordion>
+
+<Accordion title="How does memoization change fib's recurrence?">
+
+With a cache, each `fib(k)` is computed once and reused. There are only `n` distinct values, and each costs `O(1)` after the first time, so the recurrence collapses to `T(n) = T(n-1) + O(1)` — **O(n)** time. The exponential vanishes because you stop recomputing the same subproblems.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **recurrence relation** expresses a function's running time in terms of its subproblems.
+- Unroll linear recurrences and count the tree for branching ones; watch for exponential blowups.
+- Time counts every node; space counts only the deepest live path.
+
+<Cards>
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The base-case-plus-recursive-case pattern you are now measuring." />
+  <Card title="Recursion Patterns" href="/docs/dsa/02-recursion-math/03-recursion-patterns" description="Reusable recursive skeletons and their complexities." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="The notation these recurrences resolve into." />
+</Cards>

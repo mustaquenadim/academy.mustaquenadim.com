@@ -1,0 +1,352 @@
+---
+title: "Searching Across Two Arrays"
+description: "Finding the median of two sorted arrays without merging them is a classic — and binary search cracks it in log time."
+extractedReferences:
+  - href: /docs/dsa/04-searching/03-binary-search
+  - href: /docs/dsa/04-searching/04-binary-search-variants
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+Two game servers each keep a sorted leaderboard of player scores — one with `m` scores, the
+other with `n`. You need the **median** of all the players combined: the middle score if you
+imagined both boards merged into one sorted list. But the boards are huge and live on
+separate machines, and you'd rather not ship and merge millions of scores just to read the
+one value in the middle.
+
+Both lists are already sorted. That's a lot of structure. Surely you don't have to touch
+every element to find a single middle value?
+
+## A first attempt
+
+The direct approach: merge the two sorted arrays like the merge step of merge sort, then pick
+the middle element. It's simple and correct.
+
+```text
+A = [1, 3, 8]   B = [2, 4, 6, 10]
+merged = [1, 2, 3, 4, 6, 8, 10]   median = 4
+```
+
+But merging walks **every** element: `O(m + n)` time, and `O(m + n)` extra space for the
+merged list. For two boards of a million each, that's two million steps to read one number.
+The sortedness is barely used — we're still doing a full linear pass.
+
+## The insight
+
+Forget merging. The median just splits the combined data into two equal halves: a **left
+half** holding the smaller elements and a **right half** holding the larger ones. If you knew
+where to cut each array so that the two left parts together are exactly half of everything,
+you'd have the answer from just four boundary elements.
+
+A cut in array `A` after `i` elements forces the cut in `B`: it must take `half - i` elements
+so the left side has exactly `half` total. The cut is **correct** when every element left of
+both cuts is `<=` every element right of both cuts — which reduces to two comparisons across
+the seam:
+
+```text
+A: ... A[i-1] | A[i] ...        need  A[i-1] <= B[j]
+B: ... B[j-1] | B[j] ...        and   B[j-1] <= A[i]
+```
+
+If `A[i-1] > B[j]`, your cut in `A` is too far right — move it left. That's **binary search on
+the cut position** `i`, over the *smaller* array, in `O(log(min(m, n)))`.
+
+<Callout type="idea" title="Search the partition, not the values">
+The clever move is that we don't binary-search for a value — we binary-search for *where to
+split*. Each guess for the cut in `A` is checked with two comparisons at the seam, and each
+wrong guess halves the remaining cut positions. It's the same boundary hunt as the
+[binary search variants](/docs/dsa/04-searching/04-binary-search-variants), applied to a
+partition index.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Always binary-search the smaller array
+
+Swap so `A` is the shorter one. The cut `i` in `A` ranges over `[0, m]`, and searching the
+shorter array keeps the log factor as small as possible.
+
+</Step>
+
+<Step>
+
+### Derive the partner cut
+
+Pick a cut `i` in `A`; the cut in `B` is forced: `j = half - i`, where
+`half = (m + n + 1) / 2`. Together the left parts hold exactly `half` elements.
+
+</Step>
+
+<Step>
+
+### Read the four seam values
+
+`aLeft = A[i-1]`, `aRight = A[i]`, `bLeft = B[j-1]`, `bRight = B[j]`. When a cut sits at an
+edge, treat the missing neighbour as `-∞` on the left or `+∞` on the right.
+
+</Step>
+
+<Step>
+
+### Check and adjust the cut
+
+If `aLeft <= bRight` and `bLeft <= aRight`, the partition is correct. Otherwise, if
+`aLeft > bRight`, move `A`'s cut left (`hi = i - 1`); else move it right (`lo = i + 1`).
+
+</Step>
+
+<Step>
+
+### Read off the median
+
+For an odd total, the median is `max(aLeft, bLeft)`. For an even total, it's the average of
+`max(aLeft, bLeft)` and `min(aRight, bRight)`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def median_two_sorted(a, b):
+    if len(a) > len(b):
+        a, b = b, a
+    m, n = len(a), len(b)
+    lo, hi = 0, m
+    half = (m + n + 1) // 2
+    INF = float("inf")
+    while lo <= hi:
+        i = (lo + hi) // 2      # cut in a
+        j = half - i            # cut in b
+        a_left = a[i - 1] if i > 0 else -INF
+        a_right = a[i] if i < m else INF
+        b_left = b[j - 1] if j > 0 else -INF
+        b_right = b[j] if j < n else INF
+        if a_left <= b_right and b_left <= a_right:
+            if (m + n) % 2 == 1:
+                return max(a_left, b_left)
+            return (max(a_left, b_left) + min(a_right, b_right)) / 2
+        elif a_left > b_right:
+            hi = i - 1
+        else:
+            lo = i + 1
+    return 0.0
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function medianTwoSorted(a: number[], b: number[]): number {
+  if (a.length > b.length) [a, b] = [b, a];
+  const m = a.length;
+  const n = b.length;
+  let lo = 0;
+  let hi = m;
+  const half = Math.floor((m + n + 1) / 2);
+  while (lo <= hi) {
+    const i = Math.floor((lo + hi) / 2); // cut in a
+    const j = half - i;                  // cut in b
+    const aLeft = i > 0 ? a[i - 1] : -Infinity;
+    const aRight = i < m ? a[i] : Infinity;
+    const bLeft = j > 0 ? b[j - 1] : -Infinity;
+    const bRight = j < n ? b[j] : Infinity;
+    if (aLeft <= bRight && bLeft <= aRight) {
+      if ((m + n) % 2 === 1) return Math.max(aLeft, bLeft);
+      return (Math.max(aLeft, bLeft) + Math.min(aRight, bRight)) / 2;
+    } else if (aLeft > bRight) {
+      hi = i - 1;
+    } else {
+      lo = i + 1;
+    }
+  }
+  return 0;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+double medianTwoSorted(int[] a, int[] b) {
+    if (a.length > b.length) { int[] t = a; a = b; b = t; }
+    int m = a.length, n = b.length;
+    int lo = 0, hi = m;
+    int half = (m + n + 1) / 2;
+    while (lo <= hi) {
+        int i = (lo + hi) / 2;   // cut in a
+        int j = half - i;        // cut in b
+        double aLeft  = i > 0 ? a[i - 1] : Double.NEGATIVE_INFINITY;
+        double aRight = i < m ? a[i]     : Double.POSITIVE_INFINITY;
+        double bLeft  = j > 0 ? b[j - 1] : Double.NEGATIVE_INFINITY;
+        double bRight = j < n ? b[j]     : Double.POSITIVE_INFINITY;
+        if (aLeft <= bRight && bLeft <= aRight) {
+            if ((m + n) % 2 == 1) return Math.max(aLeft, bLeft);
+            return (Math.max(aLeft, bLeft) + Math.min(aRight, bRight)) / 2.0;
+        } else if (aLeft > bRight) {
+            hi = i - 1;
+        } else {
+            lo = i + 1;
+        }
+    }
+    return 0.0;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <math.h>
+#include <float.h>
+
+double median_two_sorted(const int *a, int m, const int *b, int n) {
+    if (m > n) {                 /* ensure a is the shorter array */
+        const int *t = a; a = b; b = t;
+        int tm = m; m = n; n = tm;
+    }
+    int lo = 0, hi = m;
+    int half = (m + n + 1) / 2;
+    while (lo <= hi) {
+        int i = (lo + hi) / 2;   /* cut in a */
+        int j = half - i;        /* cut in b */
+        double a_left  = i > 0 ? a[i - 1] : -INFINITY;
+        double a_right = i < m ? a[i]     :  INFINITY;
+        double b_left  = j > 0 ? b[j - 1] : -INFINITY;
+        double b_right = j < n ? b[j]     :  INFINITY;
+        if (a_left <= b_right && b_left <= a_right) {
+            double max_left = a_left > b_left ? a_left : b_left;
+            if ((m + n) % 2 == 1) return max_left;
+            double min_right = a_right < b_right ? a_right : b_right;
+            return (max_left + min_right) / 2.0;
+        } else if (a_left > b_right) {
+            hi = i - 1;
+        } else {
+            lo = i + 1;
+        }
+    }
+    return 0.0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <limits>
+
+double medianTwoSorted(std::vector<int> a, std::vector<int> b) {
+    if (a.size() > b.size()) std::swap(a, b);
+    int m = (int)a.size(), n = (int)b.size();
+    int lo = 0, hi = m;
+    int half = (m + n + 1) / 2;
+    const double INF = std::numeric_limits<double>::infinity();
+    while (lo <= hi) {
+        int i = (lo + hi) / 2;   // cut in a
+        int j = half - i;        // cut in b
+        double aLeft  = i > 0 ? a[i - 1] : -INF;
+        double aRight = i < m ? a[i]     :  INF;
+        double bLeft  = j > 0 ? b[j - 1] : -INF;
+        double bRight = j < n ? b[j]     :  INF;
+        if (aLeft <= bRight && bLeft <= aRight) {
+            double maxLeft = std::max(aLeft, bLeft);
+            if ((m + n) % 2 == 1) return maxLeft;
+            return (maxLeft + std::min(aRight, bRight)) / 2.0;
+        } else if (aLeft > bRight) {
+            hi = i - 1;
+        } else {
+            lo = i + 1;
+        }
+    }
+    return 0.0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost                 | Why                                                   |
+| ------ | -------------------- | ----------------------------------------------------- |
+| Time   | `O(log(min(m, n)))`  | binary-search the cut over the smaller array only     |
+| Space  | `O(1)`               | just indices and four seam values — no merged copy    |
+
+Against the merge approach's `O(m + n)` time and space, this reads a handful of elements
+instead of all of them.
+
+## When to use it
+
+<Callout type="warn" title="Correctness lives in the edges">
+This is one of the most edge-case-heavy algorithms around. Always binary-search the **shorter**
+array (or `j` can fall out of range), use `±∞` sentinels when a cut sits at an array's edge,
+and get the `half = (m + n + 1) / 2` rounding right so the odd case reads from the left side.
+Beyond medians, the same partition idea finds the overall **k-th smallest** across two sorted
+arrays. In everyday code where an `O(m + n)` merge is fast enough, prefer the simpler merge —
+save this for tight constraints or the interview where it's explicitly asked.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must you binary-search the smaller array rather than either one?">
+
+Because `j = half - i` must stay a valid index into `B`. If you searched the *longer* array,
+`i` could range so wide that `j` goes negative or past `B`'s end, breaking the seam reads. By
+searching the shorter array `A`, `i` is bounded by the smaller length, so `j = half - i`
+always lands inside `B`. It also makes the log factor `log(min(m, n))` — as small as possible.
+
+</Accordion>
+
+<Accordion title="What do the ±∞ sentinels actually do?">
+
+They handle cuts at the very edge of an array, where a neighbour doesn't exist. If the cut in
+`A` is at `0`, there's no `aLeft`, so we treat it as `-∞` — it can never violate
+`aLeft <= bRight`. If the cut is at `m`, there's no `aRight`, so it's `+∞` — it never violates
+`bLeft <= aRight`. The sentinels let the same two comparisons work uniformly without special
+branches for empty sides.
+
+</Accordion>
+
+<Accordion title="How would you adapt this to find the k-th smallest element across both arrays?">
+
+Same partition trick, different target size. Instead of splitting the left half to hold
+`(m + n + 1) / 2` elements, make the left parts hold exactly `k` elements: set the cut in `A`
+to `i` and in `B` to `k - i`, then binary-search `i` for the seam where
+`max(aLeft, bLeft) <= min(aRight, bRight)`. The k-th smallest is `max(aLeft, bLeft)`. The
+median is just the special case `k = (m + n + 1) / 2`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Merging two sorted arrays to read one middle value is `O(m + n)` — it ignores the
+  sortedness we're handed.
+- The median only needs the right **partition**: cut each array so the left halves hold half
+  the elements and the seam satisfies `aLeft <= bRight` and `bLeft <= aRight`.
+- Binary-search that cut over the **shorter** array for `O(log(min(m, n)))` time and `O(1)`
+  space — with careful `±∞` sentinels and half-length rounding.
+
+<Cards>
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The halving engine underneath the partition search." />
+  <Card title="Binary Search Variants" href="/docs/dsa/04-searching/04-binary-search-variants" description="Boundary-finding, the skill this reuses." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why log(min(m,n)) crushes O(m+n)." />
+</Cards>

@@ -1,0 +1,147 @@
+---
+title: "How a Request Travels the Internet"
+description: "You type a URL and a page appears — but between your keystroke and the pixels, your request crossed the planet and back. Let’s follow it."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/02-dns
+  - href: /docs/system-design/part-1-networking/03-http-and-apis
+  - href: /docs/system-design/part-1-networking/04-latency-and-bandwidth
+---
+
+## The problem
+
+You type `example.com` into your browser and hit Enter. A quarter of a second later, a full page is staring back at you. It feels instant, like flipping a light switch.
+
+But nothing about it was instant, and nothing was direct. Your request was chopped into pieces, handed a numeric address, routed through a dozen machines you will never see, answered by a server that may be on another continent, and reassembled on your screen — all before you could blink. To design systems that stay fast, you first have to *see* that journey.
+
+## A first attempt
+
+Imagine the naive mental model: your computer has a wire that runs straight to `example.com`, and the whole page travels down it in one gulp.
+
+That falls apart the moment you ask three questions. *Which* wire? There is no dedicated cable from your laptop to every website on Earth. What address? "example.com" is a name for humans; the network only moves numbers. And what if the page is 2 MB but a single network frame carries ~1,500 bytes? A single, direct, whole-page transfer is a fiction. The real internet is a mesh of independent hops, and your data is split into thousands of small **packets** that each find their own way.
+
+## The insight
+
+The internet works because nobody tries to solve the whole problem at once. It is built in **layers**, and each layer only worries about one job and trusts the layer below it.
+
+- **Names → numbers.** DNS turns `example.com` into an IP like `93.184.216.34`.
+- **A reliable stream.** TCP takes your byte stream, cuts it into packets, numbers them, and guarantees they arrive in order — retransmitting anything lost.
+- **Routing.** IP moves each packet hop-by-hop toward its destination, no single hop knowing the full path.
+- **Meaning.** HTTP rides on top and says what you actually want: "GET me this page."
+
+Peel the layers and the magic disappears. What is left is a chain of small, boring, reliable steps.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Resolve the name
+
+Your browser asks a DNS resolver, "what is the IP for example.com?" After a few lookups it gets back `93.184.216.34`. This is the internet's phone book, and it is covered next lesson.
+
+</Step>
+
+<Step>
+
+### Open a connection
+
+Your machine performs a TCP handshake with that IP: SYN → SYN-ACK → ACK. Three messages, one round trip, and now both sides agree they are talking. If the site uses HTTPS, a TLS handshake follows to encrypt the channel.
+
+</Step>
+
+<Step>
+
+### Send the HTTP request
+
+Over that connection your browser sends a small text request: `GET / HTTP/1.1`, plus headers. It is only a few hundred bytes.
+
+</Step>
+
+<Step>
+
+### Route the packets
+
+Each packet is stamped with source and destination IPs and released into the network. Routers read the destination, consult their tables, and forward it one hop closer — through your ISP, across internet exchange points, maybe across an ocean.
+
+</Step>
+
+<Step>
+
+### Server responds, browser reassembles
+
+The server sends the page back as its own stream of packets. TCP on your side reorders them, fills any gaps, and hands a clean byte stream to the browser, which paints the page.
+
+</Step>
+
+</Steps>
+
+Here is the whole trip in one picture:
+
+```
+  You (browser)                                    Server
+  ┌──────────┐   1. DNS: name → IP                ┌────────┐
+  │  laptop  │ ─────────────► [ Resolver ]        │  web   │
+  └────┬─────┘   2. TCP + TLS handshake           │ server │
+       │         3. HTTP GET /                    └───▲────┘
+       │                                              │
+       ▼   packets hop router → router → router       │
+   [ ISP ] ─► [ IXP ] ─► [ backbone ] ─► [ ISP ] ─────┘
+              (each hop only knows the *next* hop)
+```
+
+## The numbers
+
+A rough budget for a page load from the US East Coast to a server in the same region:
+
+- **DNS lookup:** ~20–120 ms (0 ms if cached locally).
+- **TCP handshake:** 1 round trip ≈ 30–50 ms regional, ~150 ms transcontinental.
+- **TLS handshake:** +1 round trip (TLS 1.3), so roughly another 30–50 ms.
+- **First byte of HTML:** after the request round trip, ~50 ms more.
+- **Speed of light floor:** light in fiber travels ~200,000 km/s, so a New York ↔ London round trip (~11,000 km) can never beat ~55 ms — no amount of money buys past physics.
+
+Notice how much of the budget is *round trips*, not data volume. That distinction drives the whole networking track.
+
+<Callout type="warn" title="Every round trip is a tax">
+Latency is dominated by the number of back-and-forth trips, not the size of the payload. That is why we reuse connections, cache DNS, and put servers physically near users. Cutting one round trip on a slow link can beat compressing a megabyte.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is data split into packets instead of sent as one big chunk?">
+
+Links have a maximum frame size (the MTU, typically ~1,500 bytes on Ethernet), so a large payload physically cannot travel as one unit. Packets also let the network route around congestion and failures independently, and let TCP retransmit just the lost pieces instead of the whole page. Small, independent units make the network resilient.
+
+</Accordion>
+
+<Accordion title="If two servers are equally powerful, why might one feel far slower from where you sit?">
+
+Distance. A server 8,000 km away pays a speed-of-light penalty on every round trip that a nearby server does not. Even with identical CPUs, the far server adds ~80–150 ms per round trip, and a page load involves several. This is exactly why CDNs push content closer to users — you will meet them later in this part.
+
+</Accordion>
+
+<Accordion title="Which layer would you blame if pages load but images randomly fail to appear?">
+
+Probably not the routing or TCP layers — if those were broken, nothing would load. Intermittent failures of *specific* resources point higher up: DNS for a separate image host, an application/HTTP error (a 404 or 5xx), or an overloaded CDN edge. Reasoning in layers lets you narrow "it's slow/broken" to one suspect quickly.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A request is not a direct transfer — it is **layers** (DNS, TCP/IP, TLS, HTTP) each doing one small job.
+- Data travels as **packets** that route hop-by-hop; TCP makes that unreliable mesh look like a clean, ordered stream.
+- The cost of a page load is dominated by **round trips and distance**, not raw bandwidth.
+
+<Cards>
+  <Card title="DNS: The Internet's Phone Book" href="/docs/system-design/part-1-networking/02-dns" description="How names become the IP addresses packets actually need." />
+  <Card title="HTTP & APIs" href="/docs/system-design/part-1-networking/03-http-and-apis" description="The language riding on top of the connection." />
+  <Card title="Latency vs Bandwidth" href="/docs/system-design/part-1-networking/04-latency-and-bandwidth" description="Why round trips, not pipe size, decide how fast it feels." />
+</Cards>
+
+<Callout type="idea" title="In an interview">
+When asked "what happens when you type a URL and press Enter?", do not dump every detail. Narrate the arc — DNS, TCP/TLS handshake, HTTP request, routing, response, render — and then pause to say which steps cost round trips. Showing you know *where the time goes* matters more than reciting layer names.
+</Callout>

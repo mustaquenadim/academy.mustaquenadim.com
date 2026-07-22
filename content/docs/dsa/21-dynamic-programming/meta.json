@@ -1,0 +1,16 @@
+{
+  "title": "Dynamic Programming",
+  "icon": "Grid3x3",
+  "pages": [
+    "01-what-is-dp",
+    "02-memoization-vs-tabulation",
+    "03-1d-dp",
+    "04-2d-dp",
+    "05-subset-knapsack",
+    "06-grid-dp",
+    "07-string-dp",
+    "08-stock-problems",
+    "09-lis",
+    "10-partition-dp"
+  ]
+}

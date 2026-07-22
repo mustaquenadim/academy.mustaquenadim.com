@@ -1,0 +1,243 @@
+---
+title: "Arrays"
+description: "You need to store a million readings and grab any one instantly — arrays give you that superpower, with one big catch."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+  - href: /docs/dsa/03-arrays-strings/03-matrix
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You're building a weather logger. Every second a sensor spits out a temperature reading,
+and by the end of the day you have a million of them. Later, someone asks: *"What was the
+temperature at reading number 750,000?"* You want that answer **instantly** — not after the
+program grinds through three-quarters of a million values first.
+
+So the question isn't just "where do I put a million numbers?" It's "where do I put them so
+that jumping to any one of them costs the same tiny amount of work, whether it's the first
+or the last?"
+
+## A first attempt
+
+Imagine you stored each reading in a little box, and each box only knew where the *next* box
+was — a chain. To reach reading 750,000 you'd start at box 0 and follow the chain 750,000
+times. Grabbing "any one instantly" becomes a walk of `O(n)` steps. The bigger the log, the
+slower the lookup. That's exactly the trap we wanted to avoid.
+
+The chain wastes something: it never uses the fact that our readings have a **fixed size**
+and could sit **right next to each other** in memory.
+
+## The insight
+
+Put every element in one contiguous block of memory, each the same size. Now the address of
+element `i` is pure arithmetic:
+
+```text
+address(i) = base_address + i × element_size
+```
+
+No walking. One multiply, one add, and you're standing on element `i`. That's an **array**,
+and that constant-time jump is called *random access*. The catch: because everything is
+packed tight, inserting in the middle means **shifting** everything after it to make room.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Reserve one contiguous block
+
+The array grabs a single run of memory big enough for `n` equal-sized slots. It remembers
+just the `base_address` of slot 0.
+
+</Step>
+
+<Step>
+
+### Index by arithmetic, not by searching
+
+To read `arr[i]`, the machine computes `base_address + i × element_size` and reads that
+spot. Same cost for `arr[0]` or `arr[999999]` — that's `O(1)`.
+
+</Step>
+
+<Step>
+
+### Pay for structural changes
+
+Inserting or deleting in the middle forces every later element to slide over by one slot to
+keep the block contiguous. That sliding is `O(n)` — the price of random access.
+
+</Step>
+
+</Steps>
+
+```text
+index:    0    1    2    3    4
+        ┌────┬────┬────┬────┬────┐
+value:  │ 12 │ 15 │  9 │ 22 │ 30 │
+        └────┴────┴────┴────┴────┘
+insert 99 at index 2 → 9, 22, 30 all shift right (O(n))
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+readings = [12, 15, 9, 22, 30]
+
+# Random access — O(1), no scanning
+print(readings[3])          # 22
+
+# Insert in the middle — O(n), everything after shifts right
+readings.insert(2, 99)      # [12, 15, 99, 9, 22, 30]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const readings: number[] = [12, 15, 9, 22, 30];
+
+// Random access — O(1)
+console.log(readings[3]);      // 22
+
+// Insert in the middle — O(n)
+readings.splice(2, 0, 99);     // [12, 15, 99, 9, 22, 30]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int[] readings = {12, 15, 9, 22, 30};
+
+// Random access — O(1)
+System.out.println(readings[3]);   // 22
+
+// A fixed array can't grow, so inserting means copying into a bigger one — O(n)
+int[] bigger = new int[readings.length + 1];
+int pos = 2;
+for (int i = 0; i < pos; i++) bigger[i] = readings[i];
+bigger[pos] = 99;
+for (int i = pos; i < readings.length; i++) bigger[i + 1] = readings[i];
+// bigger = {12, 15, 99, 9, 22, 30}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int main(void) {
+    int readings[6] = {12, 15, 9, 22, 30};  // one extra slot for growth
+    int size = 5;
+
+    printf("%d\n", readings[3]);   // 22 — O(1) access
+
+    int pos = 2;
+    for (int i = size; i > pos; i--)   // shift right — O(n)
+        readings[i] = readings[i - 1];
+    readings[pos] = 99;
+    size++;                            // {12, 15, 99, 9, 22, 30}
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+using namespace std;
+
+int main() {
+    vector<int> readings = {12, 15, 9, 22, 30};
+
+    cout << readings[3] << "\n";               // 22 — O(1) access
+
+    readings.insert(readings.begin() + 2, 99); // O(n) shift
+    // {12, 15, 99, 9, 22, 30}
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation             | Time     | Why                                          |
+| --------------------- | -------- | -------------------------------------------- |
+| Access `arr[i]`       | `O(1)`   | address is computed, not searched            |
+| Search (unsorted)     | `O(n)`   | may have to look at every element            |
+| Insert/delete at end  | `O(1)`\* | nothing shifts (\*amortized for dynamic arrays) |
+| Insert/delete middle  | `O(n)`   | later elements slide over                    |
+| Space                 | `O(n)`   | one slot per element                         |
+
+## When to use it
+
+<Callout type="idea" title="Reach for an array when...">
+You need fast **random access** and mostly append or overwrite in place — pixels in an
+image, samples in audio, a lookup table. Avoid it when you insert and delete in the middle
+constantly; a linked list or a hash-based structure fits that better.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is accessing arr[999999] just as fast as arr[0]?">
+
+Because access is arithmetic, not a search. The machine computes
+`base_address + i × element_size` and reads that one location. The index `i` is just a
+number plugged into a formula, so `0` and `999999` cost the same — that's what `O(1)` means.
+
+</Accordion>
+
+<Accordion title="If arrays are so fast, why not use them for everything?">
+
+The tight packing that gives `O(1)` access is the same thing that makes middle insertions
+`O(n)` — every later element must slide over. Fixed-size arrays also can't grow past their
+capacity. When your workload is dominated by insert/delete in the middle, or the size is
+wildly unpredictable, other structures win.
+
+</Accordion>
+
+<Accordion title="A 'dynamic array' (Python list, Java ArrayList, C++ vector) grows on demand. How is append still O(1)?">
+
+It over-allocates. When the array fills up it grabs a new block **twice** the size and
+copies everything over — an occasional `O(n)` hit. But because doublings are rare, the cost
+spread across many appends averages out to `O(1)`. That averaged cost is called *amortized*
+`O(1)`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- An array is one contiguous block of equal-sized slots, so `arr[i]` is a constant-time
+  address computation — `O(1)` random access.
+- The price of that packing is `O(n)` insertion and deletion in the middle, because later
+  elements have to shift.
+- Dynamic arrays hide fixed capacity by doubling and copying, giving amortized `O(1)`
+  appends.
+
+<Cards>
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="Reverse, rotate, and enumerate subarrays with index tricks." />
+  <Card title="The Matrix (2D Arrays)" href="/docs/dsa/03-arrays-strings/03-matrix" description="What happens when an array holds other arrays." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Where O(1) and O(n) come from." />
+</Cards>

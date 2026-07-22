@@ -1,0 +1,284 @@
+---
+title: "Binary Search Trees"
+description: "What if a tree kept itself sorted, so every lookup could throw away half the remaining nodes? That’s a BST."
+extractedReferences:
+  - href: /docs/dsa/17-binary-search-tree/02-bst-operations
+  - href: /docs/dsa/16-binary-tree/01-binary-tree-intro
+  - href: /docs/dsa/04-searching/03-binary-search
+---
+
+## The problem
+
+You are building a contacts app. Every time someone types a name, you need the matching
+record — fast. A plain array of contacts works until you hit a few hundred thousand entries,
+then each lookup scans the whole list and the search box starts to lag on every keystroke.
+
+You could keep the array sorted and binary-search it. That makes lookups quick, but the
+moment someone adds a new contact you have to shift thousands of elements to keep the order.
+Reads are fast and writes are slow. You want both to be cheap.
+
+## A first attempt
+
+The obvious fix is a sorted array plus binary search. Lookups become O(log n) — lovely.
+
+But inserting into a sorted array means finding the spot (O(log n)) and then sliding every
+later element over by one to make room (O(n)). Deletion has the same problem. So a workload
+that mixes reads and writes still costs **O(n) per update**. The sorted array optimized the
+wrong half of the job.
+
+The array is rigid: its order lives in *positions*, so changing the order means moving data.
+What if the order lived in *links* instead, so inserting was just re-pointing?
+
+## The insight
+
+Take the binary-search idea — "compare, then discard half" — and freeze it into structure.
+Store each value in a node with two children. Put everything **smaller** than a node in its
+left subtree and everything **larger** in its right subtree. That single invariant is the
+whole idea:
+
+> For every node: all keys in the left subtree < node's key < all keys in the right subtree.
+
+Now a search *is* a binary search that walks pointers. At each node you compare once and step
+left or right, throwing away an entire subtree. And inserting is cheap: walk to where the key
+belongs and hang a new leaf there — no shifting. This is a **Binary Search Tree (BST)**.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Anchor at the root
+
+The tree has one entry point, the root. Every search and insert starts here and compares the
+target against the current node's key.
+
+</Step>
+
+<Step>
+
+### Compare and branch
+
+If the target equals the node's key, you found it. If it's smaller, go left; if larger, go
+right. Each comparison eliminates the entire subtree you didn't enter.
+
+</Step>
+
+<Step>
+
+### Fall off the bottom
+
+Keep branching until you hit the key or reach an empty spot (a null child). An empty spot is
+exactly where that key *would* live — so it's where a new node gets attached.
+
+</Step>
+
+<Step>
+
+### Read the tree left-to-right
+
+Because left < node < right everywhere, an in-order walk visits keys in sorted order for
+free. The sortedness you paid for on insert pays you back on every ordered query.
+
+</Step>
+
+</Steps>
+
+Here is the tree you get by inserting `8, 3, 10, 1, 6, 14, 4, 7`:
+
+```text
+          8
+        /   \
+       3      10
+      / \       \
+     1   6       14
+        / \
+       4   7
+```
+
+Searching for `7`: `7 < 8` go left, `7 > 3` go right, `7 > 6` go right, found. Three
+comparisons instead of scanning eight values.
+
+## The code
+
+A BST is just nodes plus the compare-and-branch rule. Here is the node type and a search.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+
+def search(root, target):
+    node = root
+    while node is not None:
+        if target == node.key:
+            return node
+        node = node.left if target < node.key else node.right
+    return None  # not found
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class BSTNode {
+  key: number;
+  left: BSTNode | null = null;
+  right: BSTNode | null = null;
+  constructor(key: number) {
+    this.key = key;
+  }
+}
+
+function search(root: BSTNode | null, target: number): BSTNode | null {
+  let node = root;
+  while (node !== null) {
+    if (target === node.key) return node;
+    node = target < node.key ? node.left : node.right;
+  }
+  return null; // not found
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int key;
+    Node left, right;
+    Node(int key) { this.key = key; }
+}
+
+Node search(Node root, int target) {
+    Node node = root;
+    while (node != null) {
+        if (target == node.key) return node;
+        node = target < node.key ? node.left : node.right;
+    }
+    return null; // not found
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+struct Node {
+    int key;
+    struct Node *left, *right;
+};
+
+struct Node *search(struct Node *root, int target) {
+    struct Node *node = root;
+    while (node != NULL) {
+        if (target == node->key) return node;
+        node = target < node->key ? node->left : node->right;
+    }
+    return NULL; /* not found */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+struct Node {
+    int key;
+    Node *left = nullptr, *right = nullptr;
+    Node(int k) : key(k) {}
+};
+
+Node *search(Node *root, int target) {
+    Node *node = root;
+    while (node != nullptr) {
+        if (target == node->key) return node;
+        node = target < node->key ? node->left : node->right;
+    }
+    return nullptr; // not found
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Balanced tree | Worst case (degenerate) |
+| --------- | ------------- | ----------------------- |
+| Search    | O(log n)      | O(n)                    |
+| Insert    | O(log n)      | O(n)                    |
+| Delete    | O(log n)      | O(n)                    |
+| Space     | O(n)          | O(n)                    |
+
+The `log n` only holds while the tree stays roughly balanced. Insert already-sorted keys and
+each new value goes to the far right — the tree degrades into a linked list of height n.
+
+## When to use it
+
+<Callout type="info" title="Reach for a BST when order matters">
+A BST shines when you need fast lookups **and** ordered operations — min, max, successor,
+range queries, sorted iteration. If you only need membership and never order, a hash table
+gives O(1) average lookups instead. And a plain BST has no balance guarantee: for production
+you'd use a self-balancing variant (red-black or AVL), which is exactly what `std::map`,
+`TreeMap`, and `SortedDict`-style structures use under the hood.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is an in-order traversal of a BST always sorted?">
+
+The BST invariant says left subtree < node < right subtree at *every* node. In-order
+traversal visits left subtree, then the node, then the right subtree — recursively. So it
+emits everything smaller than a node before the node, and everything larger after it, all the
+way down. That's the definition of sorted order.
+
+</Accordion>
+
+<Accordion title="You insert 1, 2, 3, 4, 5 in that order. What shape is the tree, and how fast is search now?">
+
+Every value is larger than the last, so each goes to the right child of the previous node.
+You get a straight right-leaning chain — a linked list of height 5. Search is now O(n). This
+degenerate case is the whole reason self-balancing trees exist.
+
+</Accordion>
+
+<Accordion title="How many comparisons to find a key in a balanced BST of 1,000,000 nodes?">
+
+About log₂(1,000,000) ≈ 20 comparisons. Each step halves the remaining candidates, so a
+million nodes collapse to roughly 20 steps — the same payoff as binary search on a sorted
+array, but with cheap inserts.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A BST stores keys so that **left < node < right** at every node, turning binary search into
+  a pointer walk.
+- Search, insert, and delete are all O(log n) **when the tree is balanced**, and O(n) when
+  insertion order makes it degenerate into a list.
+- Its superpower over a hash table is **order**: sorted iteration, min/max, and range queries
+  come almost for free.
+
+<Cards>
+  <Card title="BST Operations" href="/docs/dsa/17-binary-search-tree/02-bst-operations" description="Search, insert, and the tricky delete case." />
+  <Card title="Binary Trees" href="/docs/dsa/16-binary-tree/01-binary-tree-intro" description="The general tree structure a BST specializes." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The array algorithm a BST freezes into structure." />
+</Cards>

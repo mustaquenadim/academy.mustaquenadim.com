@@ -1,0 +1,295 @@
+---
+title: "Binary Search Variants"
+description: "The real power isn’t the exact match — it’s finding the first, the last, or the boundary. The trap is the off-by-one."
+extractedReferences:
+  - href: /docs/dsa/04-searching/03-binary-search
+  - href: /docs/dsa/04-searching/05-search-on-answer
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+A logging system stores millions of timestamped events, sorted by time. A user asks: *"When
+did the errors start?"* There isn't one error — there are thousands, all with the same error
+code, packed into a contiguous run. You don't want *an* error. You want the **first** one:
+the boundary where normal turns into failure.
+
+Plain [binary search](/docs/dsa/04-searching/03-binary-search) finds *some* matching event
+and stops. But "some match" is useless here. The value of binary search on real data is
+almost never the exact hit — it's locating a **boundary**: the first occurrence, the last,
+or the insertion point. And that's exactly where the off-by-one bugs breed.
+
+## A first attempt
+
+The tempting fix: run ordinary binary search, land on any matching element, then walk left
+one step at a time until the value changes. That finds the first occurrence — but if the
+match run is huge (say half the array is the same value), that walk is `O(n)`. You've
+degraded your `O(log n)` search back to linear.
+
+```text
+[..., 5, 5, 5, 5, 5, 5, 5, 5, 5, ...]
+              ^ landed here, now crawl left across the whole run — O(n)
+```
+
+The crawl is the problem. We need the search itself to home in on the boundary.
+
+## The insight
+
+When `arr[mid]` equals the target, don't stop. A match is not the end of the search — it's a
+**candidate**. Record it, then keep searching the side where an even-*earlier* match might
+hide. For the first occurrence, that's the **left** half: set `high = mid - 1` and continue.
+The search still halves each step, so you converge on the boundary in `O(log n)`.
+
+This reframes binary search from "find the target" to "find the **leftmost index** whose
+value is `>= target`" — the classic **lower bound**. Once you think in bounds, first
+occurrence, last occurrence, and insertion point are all the same tool with tiny tweaks.
+
+<Callout type="warn" title="The off-by-one is the whole game">
+Every variant lives or dies on three choices: the loop condition (`<` vs `<=`), whether you
+move `mid` or `mid ± 1`, and which side you keep after a match. Get one wrong and you loop
+forever or skip the boundary. Pick one convention and hold it rigidly.
+</Callout>
+
+## How it works
+
+Lower bound — the first index `i` with `arr[i] >= target`:
+
+<Steps>
+
+<Step>
+
+### Search a half-open range
+
+Use `low = 0` and `high = n` (one past the end). The answer can legitimately be `n`, meaning
+"target is larger than everything — it belongs at the end."
+
+</Step>
+
+<Step>
+
+### Probe the middle
+
+`mid = low + (high - low) / 2`. Compare `arr[mid]` to the target.
+
+</Step>
+
+<Step>
+
+### Shrink toward the boundary
+
+If `arr[mid] < target`, the boundary is strictly to the right — set `low = mid + 1`.
+Otherwise `arr[mid] >= target`, so `mid` itself might be the answer — keep it by setting
+`high = mid`.
+
+</Step>
+
+<Step>
+
+### Converge
+
+When `low == high`, the range is empty and both point at the boundary — the first index
+whose value is `>= target`. Return it.
+
+</Step>
+
+</Steps>
+
+Finding the first `5` in `[1, 3, 5, 5, 5, 8]`:
+
+```text
+index:   0   1   2   3   4   5
+value:   1   3   5   5   5   8
+        low=0 high=6  mid=3 → arr[3]=5 ≥ 5, keep left half → high=3
+        low=0 high=3  mid=1 → arr[1]=3 < 5, go right       → low=2
+        low=2 high=3  mid=2 → arr[2]=5 ≥ 5, keep left half → high=2
+        low=2 high=2  → boundary at index 2  ✓
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def lower_bound(arr, target):
+    low, high = 0, len(arr)          # half-open: [low, high)
+    while low < high:
+        mid = low + (high - low) // 2
+        if arr[mid] < target:
+            low = mid + 1
+        else:
+            high = mid
+    return low                        # first index with arr[i] >= target
+
+
+def first_occurrence(arr, target):
+    i = lower_bound(arr, target)
+    return i if i < len(arr) and arr[i] == target else -1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function lowerBound(arr: number[], target: number): number {
+  let low = 0;
+  let high = arr.length; // half-open: [low, high)
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2);
+    if (arr[mid] < target) low = mid + 1;
+    else high = mid;
+  }
+  return low; // first index with arr[i] >= target
+}
+
+function firstOccurrence(arr: number[], target: number): number {
+  const i = lowerBound(arr, target);
+  return i < arr.length && arr[i] === target ? i : -1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int lowerBound(int[] arr, int target) {
+    int low = 0, high = arr.length;      // half-open: [low, high)
+    while (low < high) {
+        int mid = low + (high - low) / 2;
+        if (arr[mid] < target) low = mid + 1;
+        else high = mid;
+    }
+    return low;                          // first index with arr[i] >= target
+}
+
+int firstOccurrence(int[] arr, int target) {
+    int i = lowerBound(arr, target);
+    return (i < arr.length && arr[i] == target) ? i : -1;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int lower_bound(const int arr[], int n, int target) {
+    int low = 0, high = n;               /* half-open: [low, high) */
+    while (low < high) {
+        int mid = low + (high - low) / 2;
+        if (arr[mid] < target) low = mid + 1;
+        else high = mid;
+    }
+    return low;                          /* first index with arr[i] >= target */
+}
+
+int first_occurrence(const int arr[], int n, int target) {
+    int i = lower_bound(arr, n, target);
+    return (i < n && arr[i] == target) ? i : -1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int lowerBound(const std::vector<int>& arr, int target) {
+    int low = 0, high = (int)arr.size(); // half-open: [low, high)
+    while (low < high) {
+        int mid = low + (high - low) / 2;
+        if (arr[mid] < target) low = mid + 1;
+        else high = mid;
+    }
+    return low;                          // first index with arr[i] >= target
+}
+
+int firstOccurrence(const std::vector<int>& arr, int target) {
+    int i = lowerBound(arr, target);
+    return (i < (int)arr.size() && arr[i] == target) ? i : -1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="idea" title="Upper bound is one character away">
+Change `arr[mid] < target` to `arr[mid] <= target` and the same loop returns the **upper
+bound** — the first index strictly *greater* than the target. Then `upper_bound - 1` is the
+**last** occurrence, and `upper_bound - lower_bound` is the **count** of the target. Three
+answers from one skeleton.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                              |
+| ------ | ---------- | ------------------------------------------------ |
+| Time   | `O(log n)` | the range still halves every iteration           |
+| Space  | `O(1)`     | two pointers, iterative                           |
+
+The naive "find any match, then crawl" approach is `O(log n + k)` where `k` is the run
+length — `O(n)` in the worst case. The bound-based search stays `O(log n)` regardless.
+
+## When to use it
+
+<Callout type="info" title="Reach for a bound variant when…">
+You need the first or last of many equal keys, a count of a value in a sorted array, an
+insertion point that keeps the array sorted, or a floor/ceiling ("largest value ≤ x").
+Library functions like C++'s `lower_bound`/`upper_bound` and Python's `bisect_left`/
+`bisect_right` are exactly these — prefer them in real code and reserve the hand-written loop
+for interviews and learning.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the loop use `low < high` and move `high = mid` (not `mid - 1`) here, when plain binary search used `low <= high` and `high = mid - 1`?">
+
+Because the two searches use different range conventions. Plain binary search treats
+`[low, high]` as **inclusive** on both ends, so it needs `<=` to check the last element and
+`mid - 1` to exclude a rejected `mid`. The lower-bound loop uses a **half-open** range
+`[low, high)`: `high` is never a valid answer position, `low == high` means empty, and
+`high = mid` keeps `mid` as a live candidate. Mixing the two conventions is the fastest way
+to an infinite loop.
+
+</Accordion>
+
+<Accordion title="How do you get the LAST occurrence of a target from these building blocks?">
+
+Compute `upper_bound(arr, target)` — the first index strictly greater than the target — then
+subtract one. If `upper_bound` returns `i`, the last occurrence is at `i - 1`, provided
+`i - 1 >= 0` and `arr[i - 1] == target`. Equivalently, `count = upper_bound - lower_bound`;
+if the count is zero the target is absent.
+
+</Accordion>
+
+<Accordion title="The array is sorted then rotated, like [5, 7, 9, 1, 3]. Can you still binary search it?">
+
+Yes, in `O(log n)`. At each step one half is guaranteed to be sorted: compare `arr[low]` to
+`arr[mid]` to find which. Then check whether the target falls inside that sorted half's range
+— if so, search it; otherwise search the other half. The halving structure survives the
+rotation; only the "which side?" decision gets an extra check.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- The useful power of binary search is finding **boundaries** — first, last, insertion
+  point — not exact hits.
+- On a match, treat `mid` as a candidate and keep searching the side that could hold a better
+  one; this stays `O(log n)` even across long runs of equal values.
+- Lock in one range convention (inclusive vs half-open). The off-by-one in the condition and
+  the `mid` update is where every bug lives.
+
+<Cards>
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The exact-match search these variants extend." />
+  <Card title="Binary Search on the Answer" href="/docs/dsa/04-searching/05-search-on-answer" description="Bounds over a range of possible answers, not an array." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why the crawl fallback ruins O(log n)." />
+</Cards>

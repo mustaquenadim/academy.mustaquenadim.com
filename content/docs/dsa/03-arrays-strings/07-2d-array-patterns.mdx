@@ -1,0 +1,259 @@
+---
+title: "2D Array Patterns"
+description: "Spiral order, transpose, rotate 90° — grid problems have a vocabulary of moves worth knowing cold."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/03-matrix
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+---
+
+## The problem
+
+You're building a photo app, and the phone reports it was held sideways. Every picture needs
+to rotate 90° before it's shown. Each image is a grid of pixels — for a 12-megapixel photo,
+that's twelve million of them. The phone has limited memory, so you'd rather not allocate a
+whole second image just to turn the first one.
+
+Rotating a grid is one of a small family of grid *moves* — transpose, rotate, spiral
+traversal — that come up constantly. Learn the vocabulary once and grid problems stop
+looking scary.
+
+## A first attempt
+
+The obvious rotate: make a fresh matrix and copy each cell to its rotated home. For a
+clockwise turn, the cell at `(r, c)` lands at `(c, n − 1 − r)`.
+
+```python
+def rotate_copy(m):
+    n = len(m)
+    out = [[0] * n for _ in range(n)]
+    for r in range(n):
+        for c in range(n):
+            out[c][n - 1 - r] = m[r][c]
+    return out
+```
+
+It's correct and easy to read, but it needs a **second full grid** — `O(n²)` extra memory.
+On a memory-tight phone rotating twelve-million-pixel images, doubling the storage is exactly
+what we're trying to dodge.
+
+## The insight
+
+A clockwise rotation factors into two moves you already understand, both done **in place**:
+
+1. **Transpose** — flip the grid over its main diagonal, swapping `m[r][c]` with `m[c][r]`.
+   Rows become columns.
+2. **Reverse each row** — the two-pointer reversal from
+   [Array Traversal Tricks](/docs/dsa/03-arrays-strings/04-array-traversal-tricks).
+
+Transpose then reverse-each-row equals a 90° clockwise rotation, using only a handful of
+temp variables — `O(1)` extra space.
+
+## How it works
+
+Rotate `[[1,2,3],[4,5,6],[7,8,9]]` clockwise. The answer is `[[7,4,1],[8,5,2],[9,6,3]]`.
+
+<Steps>
+
+<Step>
+
+### Transpose across the main diagonal
+
+Swap `m[r][c]` with `m[c][r]` for every `c > r`. Only the upper triangle is visited so each
+pair swaps once. Rows turn into columns.
+
+</Step>
+
+<Step>
+
+### Reverse each row
+
+Reverse every row left-to-right with two pointers. This slides the transposed values into
+their final rotated positions.
+
+</Step>
+
+<Step>
+
+### Read the rotated grid
+
+The grid now holds the 90° clockwise rotation, and you never allocated a second matrix.
+
+</Step>
+
+</Steps>
+
+```text
+original          transpose         reverse each row
+1 2 3             1 4 7             7 4 1
+4 5 6      ->     2 5 8      ->     8 5 2
+7 8 9             3 6 9             9 6 3
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def rotate(matrix):
+    n = len(matrix)
+    # transpose in place — only the upper triangle
+    for r in range(n):
+        for c in range(r + 1, n):
+            matrix[r][c], matrix[c][r] = matrix[c][r], matrix[r][c]
+    # reverse each row
+    for row in matrix:
+        row.reverse()
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function rotate(matrix: number[][]): void {
+  const n = matrix.length;
+  for (let r = 0; r < n; r++) {
+    for (let c = r + 1; c < n; c++) {
+      [matrix[r][c], matrix[c][r]] = [matrix[c][r], matrix[r][c]];
+    }
+  }
+  for (const row of matrix) row.reverse();
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void rotate(int[][] matrix) {
+    int n = matrix.length;
+    for (int r = 0; r < n; r++) {
+        for (int c = r + 1; c < n; c++) {
+            int tmp = matrix[r][c];
+            matrix[r][c] = matrix[c][r];
+            matrix[c][r] = tmp;
+        }
+    }
+    for (int r = 0; r < n; r++) {
+        for (int lo = 0, hi = n - 1; lo < hi; lo++, hi--) {
+            int tmp = matrix[r][lo];
+            matrix[r][lo] = matrix[r][hi];
+            matrix[r][hi] = tmp;
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void rotate(int n, int matrix[n][n]) {
+    for (int r = 0; r < n; r++)
+        for (int c = r + 1; c < n; c++) {
+            int tmp = matrix[r][c];
+            matrix[r][c] = matrix[c][r];
+            matrix[c][r] = tmp;
+        }
+    for (int r = 0; r < n; r++)
+        for (int lo = 0, hi = n - 1; lo < hi; lo++, hi--) {
+            int tmp = matrix[r][lo];
+            matrix[r][lo] = matrix[r][hi];
+            matrix[r][hi] = tmp;
+        }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+void rotate(vector<vector<int>>& matrix) {
+    int n = (int)matrix.size();
+    for (int r = 0; r < n; r++)
+        for (int c = r + 1; c < n; c++)
+            swap(matrix[r][c], matrix[c][r]);
+    for (auto& row : matrix)
+        reverse(row.begin(), row.end());
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Pattern              | Time      | Space  | Note                                      |
+| -------------------- | --------- | ------ | ----------------------------------------- |
+| Transpose in place   | `O(n²)`   | `O(1)` | swaps the upper triangle                  |
+| Rotate 90° in place  | `O(n²)`   | `O(1)` | transpose + reverse each row              |
+| Spiral traversal     | `O(n²)`   | `O(1)` | four shrinking boundaries                 |
+
+Every move must touch all `n²` cells, so `O(n²)` time is unavoidable — but the in-place
+versions bring space down from `O(n²)` to `O(1)`.
+
+## When to use it
+
+<Callout type="idea" title="Decompose grid moves into simpler ones">
+Hard-looking grid transforms usually factor into moves you already know. Clockwise rotation
+= transpose + reverse rows. Counter-clockwise = transpose + reverse **columns** (or reverse
+rows first, then transpose). Reach for that decomposition before writing index gymnastics.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the transpose loop start c at r + 1 instead of 0?">
+
+Transposing swaps `m[r][c]` with `m[c][r]`. If you let `c` run over the full range you'd swap
+each pair **twice** — undoing your own work and leaving the matrix unchanged. Restricting to
+`c > r` visits only the upper triangle, so each off-diagonal pair swaps exactly once and the
+diagonal (where `r == c`) is correctly left alone.
+
+</Accordion>
+
+<Accordion title="How would you rotate 90° counter-clockwise instead of clockwise?">
+
+Two easy options. Either transpose then reverse each **column** (swap top and bottom rows),
+or reverse each **row first** and then transpose. Both are the mirror of the clockwise
+recipe and stay `O(1)` in space. Rotating 180° is simplest of all: reverse the order of the
+rows and reverse each row.
+
+</Accordion>
+
+<Accordion title="Sketch how spiral traversal visits an n × m grid without revisiting cells.">
+
+Keep four boundaries: `top`, `bottom`, `left`, `right`. Walk `left → right` along `top`, then
+`top → bottom` along `right`, then `right → left` along `bottom`, then `bottom → top` along
+`left` — shrinking the matching boundary inward after each edge. Stop when the boundaries
+cross. Each cell is printed once, so it's `O(n·m)`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Grid transforms have a reusable vocabulary: transpose, rotate, and spiral traversal, each
+  `O(n²)` time because every cell must be touched.
+- A 90° clockwise rotation factors into an in-place transpose followed by reversing each row
+  — `O(1)` extra space instead of a whole second grid.
+- Transpose only the upper triangle (`c > r`) so pairs aren't swapped twice.
+
+<Cards>
+  <Card title="The Matrix (2D Arrays)" href="/docs/dsa/03-arrays-strings/03-matrix" description="How grids are stored and addressed." />
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="The row-reversal sweep reused here." />
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="The one-dimensional foundation." />
+</Cards>

@@ -1,0 +1,33 @@
+{
+  "title": "Data Structures & Algorithms, A Story",
+  "icon": "Binary",
+  "root": true,
+  "pages": [
+    "index",
+    "01-fundamentals",
+    "02-recursion-math",
+    "03-arrays-strings",
+    "04-searching",
+    "05-sorting",
+    "06-bit-manipulation",
+    "07-hashing",
+    "08-two-pointer",
+    "09-sliding-window",
+    "10-prefix-sum",
+    "11-backtracking",
+    "12-linked-list",
+    "13-stack",
+    "14-queue",
+    "15-deque",
+    "16-binary-tree",
+    "17-binary-search-tree",
+    "18-heap",
+    "19-graph",
+    "20-greedy",
+    "21-dynamic-programming",
+    "22-number-theory",
+    "23-trie",
+    "24-string-matching",
+    "25-range-query"
+  ]
+}

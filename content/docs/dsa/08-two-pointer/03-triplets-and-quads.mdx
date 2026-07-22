@@ -1,0 +1,308 @@
+---
+title: "Triplets & Quadruplets"
+description: "The 3-Sum and 4-Sum problems look like nested-loop nightmares until you fix one pointer and two-pointer the rest."
+extractedReferences:
+  - href: /docs/dsa/08-two-pointer/02-opposite-ends
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+  - href: /docs/dsa/05-sorting/01-sorting-intro
+---
+
+## The problem
+
+Your analytics job flags accounts whose three most recent adjustments cancel out to zero — a common signature of a laundered transaction. Given a list of signed amounts, you need every distinct triple `a + b + c = 0`. Not just whether one exists: all of them, no duplicates.
+
+Two pointers gave you pairs in linear time. But a triple has three moving parts. The moment you reach for three nested loops, the numbers explode — and so does your runtime.
+
+## A first attempt
+
+Check every triple directly.
+
+```python
+def three_sum_naive(nums):
+    n = len(nums)
+    res = set()
+    for i in range(n):
+        for j in range(i + 1, n):
+            for k in range(j + 1, n):
+                if nums[i] + nums[j] + nums[k] == 0:
+                    res.add(tuple(sorted((nums[i], nums[j], nums[k]))))
+    return [list(t) for t in res]
+```
+
+Three nested loops is **O(n³)**. At 3,000 elements that's 27 billion iterations — minutes of CPU for a job that should take a blink. The `set` of sorted tuples patches over duplicates but does nothing for the runtime.
+
+## The insight
+
+You already know how to make a *pair* sum to a target in **O(n)** with opposite-ends pointers — but that trick needs a sorted array. So **sort first**.
+
+Now **fix one element** `nums[i]`. The rest of the problem becomes: find two numbers in the remaining sorted slice that sum to `-nums[i]`. That's exactly the two-pointer pair search from the previous lesson. One fixed index (an O(n) loop) times a linear inner scan gives **O(n²)** — a whole order of magnitude cheaper. Sorting also makes duplicates adjacent, so you can skip them cleanly instead of leaning on a set.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Sort the array
+
+Sorting unlocks the two-pointer scan and lines equal values up next to each other so duplicates are easy to skip. This costs O(n log n), dwarfed by the O(n²) main work.
+
+</Step>
+
+<Step>
+
+### Fix the first number
+
+Loop `i` from the start. Treat `nums[i]` as fixed and search the slice to its right for a pair summing to `-nums[i]`. Skip `i` when it equals the previous fixed value — that would only regenerate triples you already have.
+
+</Step>
+
+<Step>
+
+### Two-pointer the remainder
+
+Set `lo = i + 1` and `hi = n - 1`. If the three-way sum is too small, `lo++`; too big, `hi--`; exactly zero, record the triple.
+
+</Step>
+
+<Step>
+
+### Skip duplicate partners
+
+After recording a triple, advance `lo` past any repeats of the value just used and pull `hi` back past its repeats. This keeps each distinct triple exactly once.
+
+```text
+sorted: [-4, -1, -1, 0, 1, 2]
+i=-4:   lo→        ←hi   need pair = 4
+i=-1:   lo→    ←hi        (-1)+(0)+(1)=0 ✓ , (-1)+(2)... 
+found:  [-1, -1, 2], [-1, 0, 1]
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def three_sum(nums):
+    nums.sort()
+    n = len(nums)
+    res = []
+    for i in range(n - 2):
+        if i > 0 and nums[i] == nums[i - 1]:
+            continue
+        lo, hi = i + 1, n - 1
+        while lo < hi:
+            s = nums[i] + nums[lo] + nums[hi]
+            if s < 0:
+                lo += 1
+            elif s > 0:
+                hi -= 1
+            else:
+                res.append([nums[i], nums[lo], nums[hi]])
+                lo += 1
+                hi -= 1
+                while lo < hi and nums[lo] == nums[lo - 1]:
+                    lo += 1
+                while lo < hi and nums[hi] == nums[hi + 1]:
+                    hi -= 1
+    return res
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function threeSum(nums: number[]): number[][] {
+  nums.sort((a, b) => a - b);
+  const n = nums.length;
+  const res: number[][] = [];
+  for (let i = 0; i < n - 2; i++) {
+    if (i > 0 && nums[i] === nums[i - 1]) continue;
+    let lo = i + 1;
+    let hi = n - 1;
+    while (lo < hi) {
+      const s = nums[i] + nums[lo] + nums[hi];
+      if (s < 0) {
+        lo++;
+      } else if (s > 0) {
+        hi--;
+      } else {
+        res.push([nums[i], nums[lo], nums[hi]]);
+        lo++;
+        hi--;
+        while (lo < hi && nums[lo] === nums[lo - 1]) lo++;
+        while (lo < hi && nums[hi] === nums[hi + 1]) hi--;
+      }
+    }
+  }
+  return res;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Solution {
+    public List<List<Integer>> threeSum(int[] nums) {
+        Arrays.sort(nums);
+        int n = nums.length;
+        List<List<Integer>> res = new ArrayList<>();
+        for (int i = 0; i < n - 2; i++) {
+            if (i > 0 && nums[i] == nums[i - 1]) continue;
+            int lo = i + 1, hi = n - 1;
+            while (lo < hi) {
+                int s = nums[i] + nums[lo] + nums[hi];
+                if (s < 0) {
+                    lo++;
+                } else if (s > 0) {
+                    hi--;
+                } else {
+                    res.add(Arrays.asList(nums[i], nums[lo], nums[hi]));
+                    lo++;
+                    hi--;
+                    while (lo < hi && nums[lo] == nums[lo - 1]) lo++;
+                    while (lo < hi && nums[hi] == nums[hi + 1]) hi--;
+                }
+            }
+        }
+        return res;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+static int cmp(const void* a, const void* b) {
+    return (*(int*)a > *(int*)b) - (*(int*)a < *(int*)b);
+}
+
+// Prints each triple summing to zero; sorts nums in place.
+void threeSum(int* nums, int numsSize) {
+    qsort(nums, numsSize, sizeof(int), cmp);
+    for (int i = 0; i < numsSize - 2; i++) {
+        if (i > 0 && nums[i] == nums[i - 1]) continue;
+        int lo = i + 1, hi = numsSize - 1;
+        while (lo < hi) {
+            int s = nums[i] + nums[lo] + nums[hi];
+            if (s < 0) {
+                lo++;
+            } else if (s > 0) {
+                hi--;
+            } else {
+                printf("%d %d %d\n", nums[i], nums[lo], nums[hi]);
+                lo++;
+                hi--;
+                while (lo < hi && nums[lo] == nums[lo - 1]) lo++;
+                while (lo < hi && nums[hi] == nums[hi + 1]) hi--;
+            }
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+vector<vector<int>> threeSum(vector<int>& nums) {
+    sort(nums.begin(), nums.end());
+    int n = (int)nums.size();
+    vector<vector<int>> res;
+    for (int i = 0; i < n - 2; i++) {
+        if (i > 0 && nums[i] == nums[i - 1]) continue;
+        int lo = i + 1, hi = n - 1;
+        while (lo < hi) {
+            int s = nums[i] + nums[lo] + nums[hi];
+            if (s < 0) {
+                lo++;
+            } else if (s > 0) {
+                hi--;
+            } else {
+                res.push_back({nums[i], nums[lo], nums[hi]});
+                lo++;
+                hi--;
+                while (lo < hi && nums[lo] == nums[lo - 1]) lo++;
+                while (lo < hi && nums[hi] == nums[hi + 1]) hi--;
+            }
+        }
+    }
+    return res;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute-force triples | O(n³) | O(1) extra |
+| Sort + fix-one + two pointers | O(n²) | O(1) extra |
+| 4-Sum (fix two, two-pointer rest) | O(n³) | O(1) extra |
+
+Sorting is O(n log n), then the fixed loop runs n times and each inner two-pointer scan is O(n), giving O(n²) overall. Space is O(1) beyond the output (ignoring the sort's stack).
+
+## When to use it
+
+<Callout type="idea" title="Fix-and-two-pointer scales to k-Sum">
+This pattern is a ladder. Each extra number you must sum adds one fixed outer loop: 2-Sum is O(n), 3-Sum is O(n²), 4-Sum is O(n³) — fix `k − 2` indices and two-pointer the last two. Always **sort once up front** and **skip duplicate values** at every level, or you'll drown in repeated results. Beyond `k ≈ 4` the polynomial blowup usually means a hashing or meet-in-the-middle approach is the better tool.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does sorting first actually pay for itself here?">
+
+Sorting costs O(n log n), but it enables the O(n²) two-pointer scan that replaces the O(n³) triple loop. Since O(n²) dominates O(n log n), the sort is essentially free relative to the win. It also makes equal values adjacent, so duplicate triples are skipped with a simple `nums[i] == nums[i-1]` check instead of a hash set.
+
+</Accordion>
+
+<Accordion title="Where exactly do the duplicate-skipping checks go, and why three of them?">
+
+One at the outer level (`if i > 0 && nums[i] == nums[i-1]`) so you don't fix the same first value twice. Two more after recording a hit: advance `lo` past repeats and pull `hi` past repeats, so the same second/third values aren't paired again. Miss any of the three and you emit the same triple multiple times.
+
+</Accordion>
+
+<Accordion title="How would you extend this to 4-Sum with target t?">
+
+Add one more outer loop. Fix `nums[i]`, then fix `nums[j]` (with `j` starting at `i + 1`), then two-pointer `lo`/`hi` over the rest for a pair summing to `t - nums[i] - nums[j]`. Apply the same duplicate-skip at each of the two fixed levels. The result is O(n³) time, O(1) extra space.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Sort the array, **fix one element**, and reduce a triple to the pair search you already know — turning O(n³) into O(n²).
+- Sorting does double duty: it enables the two-pointer scan *and* lines up duplicates so you can skip them cleanly at every level.
+- The pattern **generalizes to k-Sum**: fix `k − 2` indices, two-pointer the final two, and always skip repeated values.
+
+<Cards>
+  <Card title="Pointers from Both Ends" href="/docs/dsa/08-two-pointer/02-opposite-ends" description="The pair-sum scan this lesson builds on." />
+  <Card title="The Two-Pointer Technique" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="Where the two-pointer idea begins." />
+  <Card title="Sorting" href="/docs/dsa/05-sorting/01-sorting-intro" description="The preprocessing step that makes it all work." />
+</Cards>

@@ -1,0 +1,334 @@
+---
+title: "Bit Tricks"
+description: "Swap two numbers without a temp, check a power of two, count set bits — the classic sleight-of-hand of bit manipulation."
+extractedReferences:
+  - href: /docs/dsa/06-bit-manipulation/01-bitwise-basics
+  - href: /docs/dsa/06-bit-manipulation/03-bits-with-arrays
+---
+
+## The problem
+
+You are optimizing a hot loop that runs millions of times a second. Profiling points at three
+tiny operations: swapping two values, checking whether a size is a power of two before
+resizing a buffer, and counting how many features a user has enabled. Each looks harmless, but
+multiplied by millions, the temp variables and loops start to show up on the flame graph.
+
+These three chores share a secret. Once you see numbers as rows of bits, each one has a
+branch-free, allocation-free form that a single CPU can chew through in a handful of cycles.
+They feel like magic tricks the first time you see them — and then like old friends.
+
+## A first attempt
+
+The straightforward versions all lean on extra work. Swapping needs a temp:
+
+```python
+def swap(a, b):
+    tmp = a
+    a = b
+    b = tmp
+    return a, b
+
+def is_power_of_two(n):
+    if n <= 0:
+        return False
+    while n % 2 == 0:
+        n //= 2
+    return n == 1
+
+def count_bits(n):
+    count = 0
+    while n > 0:
+        count += n & 1
+        n >>= 1
+    return count
+```
+
+The temp variable is cheap but noisy. `is_power_of_two` loops up to O(log n) times.
+`count_bits` also loops O(number of bits) times — 32 iterations even for a value with a single
+bit set. None of these is slow in isolation, but each has a tighter form.
+
+## The insight
+
+Powers of two have exactly one bit set: `1000`, `0100`, `0010`. Subtracting one flips that bit
+off and turns every lower bit on: `1000 - 1 = 0111`. So `n` and `n - 1` share *no* bits, which
+means `n & (n - 1) == 0` for powers of two. That same `n & (n - 1)` expression clears the
+lowest set bit — repeat it and you count set bits in as many steps as there are ones, not as
+many as there are bits.
+
+And XOR is its own inverse: `a ^ b ^ b == a`. Apply it three times and two variables trade
+places with no temp at all.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Swap with three XORs
+
+`a ^= b` folds b into a. `b ^= a` now sets `b = b ^ (a ^ b) = a`. Finally `a ^= b` sets
+`a = (a ^ b) ^ a = b`. The values are swapped, no temp used.
+
+```
+a=0011 b=0101
+a ^= b -> a=0110
+b ^= a -> b=0011  (original a)
+a ^= b -> a=0101  (original b)
+```
+
+</Step>
+
+<Step>
+
+### Detect a power of two with one AND
+
+A positive power of two has a single set bit. `n & (n - 1)` clears that bit, giving `0`. So
+`n > 0 && (n & (n - 1)) == 0` is the whole test — no loop, no division.
+
+</Step>
+
+<Step>
+
+### Count set bits by clearing the lowest one
+
+`n & (n - 1)` erases the lowest set bit each time. Loop until `n` is `0`, counting iterations.
+A number with 3 set bits takes exactly 3 iterations, regardless of its magnitude. This is
+**Kernighan's algorithm**.
+
+```
+n = 1101  -> clear lowest -> 1100  (count 1)
+n = 1100  -> clear lowest -> 1000  (count 2)
+n = 1000  -> clear lowest -> 0000  (count 3)
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def swap_xor(a, b):
+    a ^= b
+    b ^= a
+    a ^= b
+    return a, b
+
+def is_power_of_two(n):
+    return n > 0 and (n & (n - 1)) == 0
+
+def count_bits(n):
+    count = 0
+    while n:
+        n &= n - 1      # clear lowest set bit
+        count += 1
+    return count
+
+print(swap_xor(3, 5))        # (5, 3)
+print(is_power_of_two(16))   # True
+print(count_bits(13))        # 3  (1101)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function swapXor(a: number, b: number): [number, number] {
+    a ^= b;
+    b ^= a;
+    a ^= b;
+    return [a, b];
+}
+
+const isPowerOfTwo = (n: number): boolean => n > 0 && (n & (n - 1)) === 0;
+
+function countBits(n: number): number {
+    let count = 0;
+    while (n) {
+        n &= n - 1;     // clear lowest set bit
+        count++;
+    }
+    return count;
+}
+
+console.log(swapXor(3, 5));      // [5, 3]
+console.log(isPowerOfTwo(16));   // true
+console.log(countBits(13));      // 3  (1101)
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Tricks {
+    static int[] swapXor(int a, int b) {
+        a ^= b;
+        b ^= a;
+        a ^= b;
+        return new int[]{a, b};
+    }
+
+    static boolean isPowerOfTwo(int n) {
+        return n > 0 && (n & (n - 1)) == 0;
+    }
+
+    static int countBits(int n) {
+        int count = 0;
+        while (n != 0) {
+            n &= n - 1;   // clear lowest set bit
+            count++;
+        }
+        return count;
+    }
+
+    public static void main(String[] args) {
+        int[] s = swapXor(3, 5);
+        System.out.println(s[0] + "," + s[1]); // 5,3
+        System.out.println(isPowerOfTwo(16));  // true
+        System.out.println(countBits(13));     // 3
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+void swap_xor(int *a, int *b) {
+    *a ^= *b;
+    *b ^= *a;
+    *a ^= *b;
+}
+
+bool is_power_of_two(int n) {
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+int count_bits(int n) {
+    int count = 0;
+    while (n) {
+        n &= n - 1;   /* clear lowest set bit */
+        count++;
+    }
+    return count;
+}
+
+int main(void) {
+    int a = 3, b = 5;
+    swap_xor(&a, &b);
+    printf("%d,%d\n", a, b);        /* 5,3 */
+    printf("%d\n", is_power_of_two(16)); /* 1 */
+    printf("%d\n", count_bits(13)); /* 3 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+
+void swapXor(int &a, int &b) {
+    a ^= b;
+    b ^= a;
+    a ^= b;
+}
+
+bool isPowerOfTwo(int n) {
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+int countBits(int n) {
+    int count = 0;
+    while (n) {
+        n &= n - 1;   // clear lowest set bit
+        count++;
+    }
+    return count;
+}
+
+int main() {
+    int a = 3, b = 5;
+    swapXor(a, b);
+    std::cout << a << "," << b << "\n";       // 5,3
+    std::cout << isPowerOfTwo(16) << "\n";    // 1
+    std::cout << countBits(13) << "\n";       // 3
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Trick | Time | Space |
+| --- | --- | --- |
+| XOR swap | O(1) | O(1) |
+| Power-of-two test | O(1) | O(1) |
+| Count set bits (Kernighan) | O(set bits) | O(1) |
+
+Kernighan's loop runs once per set bit — at most the word width, often far fewer.
+
+## When to use it
+
+<Callout type="warn" title="Prefer clarity unless the trick earns its place">
+The power-of-two check and Kernighan's count are genuinely useful and readable once known.
+The XOR swap, though, has a fatal edge case: if `a` and `b` are the *same* memory location,
+it zeroes the value out. In real code, prefer `std::swap`, tuple unpacking, or the language
+built-in (`popcount`, `Integer.bitCount`, `Number` intrinsics). Keep these tricks for
+interviews and truly hot paths where you have measured a win.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the XOR swap break when a and b alias the same variable?">
+
+If `a` and `b` point to the same location, the first `a ^= b` sets that single value to
+`x ^ x = 0`. Every later step operates on `0`, so both "variables" end up `0`. Distinct
+temp-based swaps and language built-ins do not have this flaw.
+
+</Accordion>
+
+<Accordion title="How would you check if only bit i of n is set and no others?">
+
+That means `n` equals exactly `1 << i`, which is a power of two whose single bit is at
+position `i`. Test `n == (1 << i)`, or more generally `n > 0 && (n & (n - 1)) == 0` to confirm
+a single bit, then `(n >> i) & 1` to confirm it is the right one.
+
+</Accordion>
+
+<Accordion title="Given n = 12 (1100), how many times does Kernighan's loop run, and what values does n take?">
+
+`12` is `1100` with two set bits, so the loop runs twice. First `12 & 11` = `1100 & 1011`
+= `1000` (8). Then `8 & 7` = `1000 & 0111` = `0000`. Two iterations, count is 2.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- `n & (n - 1)` clears the lowest set bit — the basis for both the power-of-two test and Kernighan's bit count.
+- XOR is self-inverse (`a ^ b ^ b == a`), which powers the temp-free swap.
+- These are O(1) or O(set bits); reach for language built-ins in production, keep the tricks for hot paths.
+
+<Cards>
+  <Card title="Bitwise Basics" href="/docs/dsa/06-bit-manipulation/01-bitwise-basics" description="AND, OR, XOR, and shifts from the ground up." />
+  <Card title="Bits Meet Arrays" href="/docs/dsa/06-bit-manipulation/03-bits-with-arrays" description="Turn XOR loose on a whole array." />
+</Cards>

@@ -1,0 +1,8 @@
+{
+  "title": "Deque",
+  "icon": "MoveHorizontal",
+  "pages": [
+    "01-deque-intro",
+    "02-sliding-window-maximum"
+  ]
+}

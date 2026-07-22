@@ -1,0 +1,312 @@
+---
+title: "Cycle Detection"
+description: "Does this network of dependencies contain a loop that makes it impossible to satisfy? DFS can tell you."
+extractedReferences:
+  - href: /docs/dsa/19-graph/03-dfs
+  - href: /docs/dsa/19-graph/05-topological-sort
+  - href: /docs/dsa/19-graph/09-union-find
+---
+
+## The problem
+
+Your build system says module A needs B compiled first, B needs C, and — somehow — C needs
+A. Now nothing can be built: each waits on another, forever. Or a spreadsheet where cell
+`X = Y + 1` and `Y = X + 1`; the values never settle. These are **dependency cycles**, and
+they turn a solvable plan into an impossible one.
+
+The dependencies form a directed [graph](/docs/dsa/19-graph/01-graph-representations): an
+edge `A → B` means "A depends on B." A cycle is a path that returns to where it started. You
+need to answer one yes/no question reliably — *does a cycle exist?* — before you trust the
+graph to be schedulable.
+
+## A first attempt
+
+You might reuse a plain [DFS](/docs/dsa/19-graph/03-dfs) with a single visited set: if you
+ever reach an already-visited vertex, call it a cycle. But that's wrong for directed graphs.
+Consider `A → B`, `A → C`, `C → B`. DFS visits `A → B` (mark B), backtracks, then `A → C →
+B` and finds B already visited — yet there's **no cycle**; B was simply reached by two
+different paths. A single "have I seen this before?" flag can't tell a *re-visit* from a
+*loop back onto the current path*.
+
+## The insight
+
+A cycle exists only if DFS reaches a vertex that is **still on the current recursion stack** —
+an ancestor in the path you're actively exploring. Reaching a vertex that's fully finished
+(explored and backed out of) is harmless.
+
+So track three states per vertex, classically drawn as colors:
+
+- **White** — not visited yet.
+- **Gray** — visited, still being explored (on the current DFS path).
+- **Black** — fully explored, done.
+
+An edge to a **gray** vertex is a **back edge**: it closes a loop. That's a cycle. An edge to
+a black vertex is fine.
+
+<Callout type="idea" title="Undirected graphs are simpler">
+In an **undirected** graph you don't need three colors: during DFS, a cycle exists if you
+reach an already-visited neighbor that **isn't the parent** you came from. Every non-parent
+back edge means a loop. [Union-Find](/docs/dsa/19-graph/09-union-find) also detects
+undirected cycles by spotting an edge whose two endpoints are already connected.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Color everything white
+
+No vertex has been touched. Cycle flag is false.
+
+</Step>
+
+<Step>
+
+### On entering a vertex, paint it gray
+
+Gray means "this vertex is an ancestor on the path I'm currently walking." It stays gray for
+as long as its DFS call is on the stack.
+
+</Step>
+
+<Step>
+
+### Inspect each outgoing edge
+
+If a neighbor is **white**, recurse into it. If a neighbor is **gray**, you've found a back
+edge to an active ancestor — **a cycle exists**. If it's black, ignore it; that subtree is
+finished and safe.
+
+</Step>
+
+<Step>
+
+### On leaving a vertex, paint it black
+
+All of its descendants are explored; it's no longer on the active path. Painting it black
+prevents future false alarms from cross edges.
+
+</Step>
+
+</Steps>
+
+Here the extra edge `C → A` (dashed) creates a cycle; DFS from `A` paints `A, B, C` gray and
+then sees `C → A` pointing at a gray vertex:
+
+```text
+   (A) ---> (B) ---> (C)
+    ^                 |
+    '- - - - - - - - -'   back edge C->A hits GRAY A  => cycle
+
+path stack while at C:  A(gray) B(gray) C(gray)
+edge C->A targets A, which is GRAY  ->  cycle detected
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+WHITE, GRAY, BLACK = 0, 1, 2
+
+def has_cycle(adj):
+    n = len(adj)
+    color = [WHITE] * n
+
+    def dfs(u):
+        color[u] = GRAY
+        for v in adj[u]:
+            if color[v] == GRAY:        # back edge -> cycle
+                return True
+            if color[v] == WHITE and dfs(v):
+                return True
+        color[u] = BLACK
+        return False
+
+    return any(color[u] == WHITE and dfs(u) for u in range(n))
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function hasCycle(adj: number[][]): boolean {
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = new Array(adj.length).fill(WHITE);
+
+  function dfs(u: number): boolean {
+    color[u] = GRAY;
+    for (const v of adj[u]) {
+      if (color[v] === GRAY) return true;
+      if (color[v] === WHITE && dfs(v)) return true;
+    }
+    color[u] = BLACK;
+    return false;
+  }
+
+  for (let u = 0; u < adj.length; u++) {
+    if (color[u] === WHITE && dfs(u)) return true;
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+boolean hasCycle(List<List<Integer>> adj) {
+    int n = adj.size();
+    int[] color = new int[n]; // 0=white, 1=gray, 2=black
+    for (int u = 0; u < n; u++) {
+        if (color[u] == 0 && dfs(adj, u, color)) return true;
+    }
+    return false;
+}
+
+boolean dfs(List<List<Integer>> adj, int u, int[] color) {
+    color[u] = 1;
+    for (int v : adj.get(u)) {
+        if (color[v] == 1) return true;
+        if (color[v] == 0 && dfs(adj, v, color)) return true;
+    }
+    color[u] = 2;
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+
+int color[100000]; /* 0=white, 1=gray, 2=black */
+
+bool dfs(int adj[][100], int deg[], int u) {
+    color[u] = 1;
+    for (int i = 0; i < deg[u]; i++) {
+        int v = adj[u][i];
+        if (color[v] == 1) return true;
+        if (color[v] == 0 && dfs(adj, deg, v)) return true;
+    }
+    color[u] = 2;
+    return false;
+}
+
+bool has_cycle(int adj[][100], int deg[], int n) {
+    for (int u = 0; u < n; u++)
+        if (color[u] == 0 && dfs(adj, deg, u)) return true;
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+bool dfs(const std::vector<std::vector<int>>& adj, int u, std::vector<int>& color) {
+    color[u] = 1; // gray
+    for (int v : adj[u]) {
+        if (color[v] == 1) return true;
+        if (color[v] == 0 && dfs(adj, v, color)) return true;
+    }
+    color[u] = 2; // black
+    return false;
+}
+
+bool hasCycle(const std::vector<std::vector<int>>& adj) {
+    std::vector<int> color(adj.size(), 0);
+    for (int u = 0; u < (int)adj.size(); u++)
+        if (color[u] == 0 && dfs(adj, u, color)) return true;
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Don't confuse 'visited' with 'on the path'">
+The classic bug is using one boolean visited array for a directed graph. That flags harmless
+re-visits (cross/forward edges) as cycles. You need the *gray* state — "still on the active
+path" — to be distinct from *black* — "finished." Two booleans or three colors, but never
+one.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                              |
+| ------ | ---------- | ------------------------------------------------ |
+| Time   | `O(n + m)` | a single DFS touching each vertex and edge once  |
+| Space  | `O(n)`     | color array plus recursion stack                 |
+
+It's just DFS with bookkeeping, so it inherits DFS's linear cost.
+
+## When to use it
+
+<Callout type="info" title="Where cycle checks matter">
+Use directed cycle detection before any **scheduling** or **dependency resolution**: build
+systems, task graphs, course prerequisites, spreadsheet formulas, package managers. A graph
+is **topologically sortable if and only if it has no cycle** — so this check is the gate for
+[topological sort](/docs/dsa/19-graph/05-topological-sort). For undirected connectivity
+cycles, [Union-Find](/docs/dsa/19-graph/09-union-find) is often the cleaner tool.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Give a concrete directed graph where a plain single-visited-set DFS wrongly reports a cycle.">
+
+Edges `A → B`, `A → C`, `C → B`. DFS goes `A → B`, marks B visited, backtracks to `A`, then
+`A → C → B`. With one visited set, reaching B (already visited) looks like a cycle — but
+there is none; B was just reached by two paths. With colors, B is **black** by then, so the
+edge `C → B` is correctly ignored.
+
+</Accordion>
+
+<Accordion title="How would you not just detect a cycle but print the vertices in it?">
+
+Keep a `parent` array set when you recurse, plus the color states. When you hit a gray
+neighbor `v` from `u`, `v` is the top of the cycle: walk `parent` pointers from `u` back up
+to `v`, collecting vertices, then add `v`. Reverse the list to read the loop in order. Extra
+cost is just `O(n)` space.
+
+</Accordion>
+
+<Accordion title="For an undirected graph, why is 'reached an already-visited non-parent' enough — why no colors?">
+
+In an undirected DFS the only edges are tree edges (to new vertices) and back edges (to an
+ancestor). There are no cross or forward edges to cause false alarms. So any visited neighbor
+that isn't the immediate parent must be an ancestor you can loop back to — a genuine cycle.
+That's why a single visited set plus a parent check suffices.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A directed cycle is a **back edge to a vertex still on the DFS path** — detect it with
+  three colors (white/gray/black), not a single visited flag.
+- In **undirected** graphs, a cycle is any visited non-parent neighbor.
+- The check is one DFS: `O(n + m)` time, `O(n)` space, and it gates topological sorting.
+
+<Cards>
+  <Card title="Depth-First Search" href="/docs/dsa/19-graph/03-dfs" description="The traversal cycle detection is built on." />
+  <Card title="Topological Sort" href="/docs/dsa/19-graph/05-topological-sort" description="Possible exactly when there's no cycle." />
+  <Card title="Union-Find" href="/docs/dsa/19-graph/09-union-find" description="Detect undirected cycles by connectivity." />
+</Cards>

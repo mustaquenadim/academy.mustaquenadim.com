@@ -1,0 +1,550 @@
+---
+title: "Trie Applications"
+description: "Search suggestions, counting distinct substrings — problems where a trie beats a hash table."
+extractedReferences:
+  - href: /docs/dsa/23-trie/01-trie-intro
+  - href: /docs/dsa/23-trie/03-bitwise-trie
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+---
+
+## The problem
+
+You built a working trie in the last lesson. Now the product team wants real features: an autocomplete dropdown that shows the top suggestions as the user types, a search box that tolerates a single typo, and an analytics job that counts how many *distinct* substrings appear in a document.
+
+Each of these sounds like a different problem. But if you already have a trie, most of the hard work is done — you just need to walk it a little differently. The trick is seeing which shape of query maps onto which walk.
+
+## A first attempt
+
+Take autocomplete. The naive plan is: on each keystroke, scan every stored word, keep the ones matching the prefix, sort them by popularity, and show the top few.
+
+```python
+def suggest(words, prefix, k):
+    hits = [w for w in words if w.startswith(prefix)]
+    hits.sort(key=lambda w: -popularity[w])
+    return hits[:k]
+```
+
+For `n` words that is `O(n · L)` to filter plus `O(m log m)` to sort the `m` matches — on *every* keystroke. And "count distinct substrings" is even worse naively: a string of length `n` has `O(n²)` substrings, and dumping them all into a hash set costs `O(n²)` space and `O(n³)` time to build (each substring copy is `O(n)`). For a modest 10 000-character document that is a trillion operations. It does not scale.
+
+## The insight
+
+A trie already groups everything by shared prefix, so the answers you want are *positions in the tree*, not scans over data.
+
+- **Autocomplete** = walk to the prefix node, then collect flagged descendants (optionally carrying each word's frequency so you can pick the top `k`).
+- **Wildcard / one-typo search** = the same walk, but at a `.` you branch into *all* children instead of one.
+- **Counting distinct substrings** = insert every suffix of the string into one trie; each new node created is exactly one distinct substring, because a path from the root spells a unique substring.
+
+One structure, three walks. Let's build the two most useful ones.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Autocomplete: walk, then gather
+
+Walk the trie one character per prefix letter to reach the prefix node. From there, run a depth-first traversal collecting every node flagged as a word end, rebuilding the string as you descend. Those are your candidates.
+
+```
+prefix "ca":
+
+     c
+     |
+     a  <- prefix node, start gathering here
+    / \
+   r   t
+   |   |
+   (car) (cat)   -> ["car", "cat"]
+```
+
+</Step>
+
+<Step>
+
+### Rank and cut
+
+If you store a frequency on each word-end node, carry it up during the gather and keep only the top `k` — a small heap does this without sorting everything. The gather touches only nodes under the prefix, never unrelated words.
+
+</Step>
+
+<Step>
+
+### Wildcard search: branch on the dot
+
+For a pattern like `c.t`, walk normally on real letters. When you hit a `.`, recurse into *every* child and continue matching the rest of the pattern from each. It is a bounded fan-out — the recursion depth is still the pattern length.
+
+</Step>
+
+<Step>
+
+### Distinct substrings: insert every suffix
+
+Every substring is a prefix of some suffix. So insert all `n` suffixes into a fresh trie and count how many nodes get created. Each created node corresponds to one distinct substring, because each root-to-node path spells a distinct string.
+
+```
+"aba" -> suffixes "aba", "ba", "a"
+new nodes: a, b, a  (under "aba")
+           b, a     (under "ba")
+           (a already exists)
+distinct substrings = 5  ("a","b","ab","ba","aba")
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self):
+        self.children = {}
+        self.is_word = False
+
+
+class Trie:
+    def __init__(self):
+        self.root = Node()
+
+    def insert(self, word):
+        node = self.root
+        for ch in word:
+            node = node.children.setdefault(ch, Node())
+        node.is_word = True
+
+    def autocomplete(self, prefix):
+        node = self.root
+        for ch in prefix:
+            if ch not in node.children:
+                return []
+            node = node.children[ch]
+        out = []
+        self._gather(node, prefix, out)
+        return out
+
+    def _gather(self, node, path, out):
+        if node.is_word:
+            out.append(path)
+        for ch, child in node.children.items():
+            self._gather(child, path + ch, out)
+
+    def wildcard(self, pattern):
+        return self._match(self.root, pattern, 0)
+
+    def _match(self, node, pattern, i):
+        if i == len(pattern):
+            return node.is_word
+        ch = pattern[i]
+        if ch == ".":
+            return any(self._match(c, pattern, i + 1)
+                       for c in node.children.values())
+        nxt = node.children.get(ch)
+        return nxt is not None and self._match(nxt, pattern, i + 1)
+
+
+def count_distinct_substrings(s):
+    root = Node()
+    total = 0
+    for start in range(len(s)):
+        node = root
+        for ch in s[start:]:
+            if ch not in node.children:
+                node.children[ch] = Node()
+                total += 1
+            node = node.children[ch]
+    return total
+
+
+t = Trie()
+for w in ["car", "cat", "cart", "dog"]:
+    t.insert(w)
+print(sorted(t.autocomplete("ca")))  # ['car', 'cart', 'cat']
+print(t.wildcard("c.t"))             # True
+print(count_distinct_substrings("aba"))  # 5
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Node {
+  children: Map<string, Node> = new Map();
+  isWord = false;
+}
+
+class Trie {
+  private root = new Node();
+
+  insert(word: string): void {
+    let node = this.root;
+    for (const ch of word) {
+      if (!node.children.has(ch)) node.children.set(ch, new Node());
+      node = node.children.get(ch)!;
+    }
+    node.isWord = true;
+  }
+
+  autocomplete(prefix: string): string[] {
+    let node = this.root;
+    for (const ch of prefix) {
+      const next = node.children.get(ch);
+      if (!next) return [];
+      node = next;
+    }
+    const out: string[] = [];
+    this.gather(node, prefix, out);
+    return out;
+  }
+
+  private gather(node: Node, path: string, out: string[]): void {
+    if (node.isWord) out.push(path);
+    for (const [ch, child] of node.children) this.gather(child, path + ch, out);
+  }
+
+  wildcard(pattern: string): boolean {
+    return this.match(this.root, pattern, 0);
+  }
+
+  private match(node: Node, pattern: string, i: number): boolean {
+    if (i === pattern.length) return node.isWord;
+    const ch = pattern[i];
+    if (ch === ".") {
+      for (const child of node.children.values())
+        if (this.match(child, pattern, i + 1)) return true;
+      return false;
+    }
+    const next = node.children.get(ch);
+    return next !== undefined && this.match(next, pattern, i + 1);
+  }
+}
+
+function countDistinctSubstrings(s: string): number {
+  const root = new Node();
+  let total = 0;
+  for (let start = 0; start < s.length; start++) {
+    let node = root;
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i];
+      if (!node.children.has(ch)) {
+        node.children.set(ch, new Node());
+        total++;
+      }
+      node = node.children.get(ch)!;
+    }
+  }
+  return total;
+}
+
+const t = new Trie();
+["car", "cat", "cart", "dog"].forEach((w) => t.insert(w));
+console.log(t.autocomplete("ca").sort());  // ['car', 'cart', 'cat']
+console.log(t.wildcard("c.t"));            // true
+console.log(countDistinctSubstrings("aba")); // 5
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Node {
+    Map<Character, Node> children = new HashMap<>();
+    boolean isWord = false;
+}
+
+class Trie {
+    private final Node root = new Node();
+
+    public void insert(String word) {
+        Node node = root;
+        for (char ch : word.toCharArray())
+            node = node.children.computeIfAbsent(ch, k -> new Node());
+        node.isWord = true;
+    }
+
+    public List<String> autocomplete(String prefix) {
+        Node node = root;
+        for (char ch : prefix.toCharArray()) {
+            node = node.children.get(ch);
+            if (node == null) return new ArrayList<>();
+        }
+        List<String> out = new ArrayList<>();
+        gather(node, new StringBuilder(prefix), out);
+        return out;
+    }
+
+    private void gather(Node node, StringBuilder path, List<String> out) {
+        if (node.isWord) out.add(path.toString());
+        for (Map.Entry<Character, Node> e : node.children.entrySet()) {
+            path.append(e.getKey());
+            gather(e.getValue(), path, out);
+            path.deleteCharAt(path.length() - 1);
+        }
+    }
+
+    public boolean wildcard(String pattern) {
+        return match(root, pattern, 0);
+    }
+
+    private boolean match(Node node, String pattern, int i) {
+        if (i == pattern.length()) return node.isWord;
+        char ch = pattern.charAt(i);
+        if (ch == '.') {
+            for (Node child : node.children.values())
+                if (match(child, pattern, i + 1)) return true;
+            return false;
+        }
+        Node next = node.children.get(ch);
+        return next != null && match(next, pattern, i + 1);
+    }
+
+    public static int countDistinctSubstrings(String s) {
+        Node root = new Node();
+        int total = 0;
+        for (int start = 0; start < s.length(); start++) {
+            Node node = root;
+            for (int i = start; i < s.length(); i++) {
+                char ch = s.charAt(i);
+                if (!node.children.containsKey(ch)) {
+                    node.children.put(ch, new Node());
+                    total++;
+                }
+                node = node.children.get(ch);
+            }
+        }
+        return total;
+    }
+
+    public static void main(String[] args) {
+        Trie t = new Trie();
+        for (String w : new String[] {"car", "cat", "cart", "dog"}) t.insert(w);
+        List<String> hits = t.autocomplete("ca");
+        Collections.sort(hits);
+        System.out.println(hits);                   // [car, cart, cat]
+        System.out.println(t.wildcard("c.t"));      // true
+        System.out.println(countDistinctSubstrings("aba")); // 5
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define ALPHABET 26
+
+typedef struct Node {
+    struct Node *children[ALPHABET];
+    bool is_word;
+} Node;
+
+Node *new_node(void) { return calloc(1, sizeof(Node)); }
+
+void insert(Node *root, const char *word) {
+    Node *node = root;
+    for (const char *p = word; *p; p++) {
+        int i = *p - 'a';
+        if (!node->children[i]) node->children[i] = new_node();
+        node = node->children[i];
+    }
+    node->is_word = true;
+}
+
+bool wildcard(Node *node, const char *pattern) {
+    if (!*pattern) return node->is_word;
+    if (*pattern == '.') {
+        for (int i = 0; i < ALPHABET; i++)
+            if (node->children[i] && wildcard(node->children[i], pattern + 1))
+                return true;
+        return false;
+    }
+    Node *next = node->children[*pattern - 'a'];
+    return next && wildcard(next, pattern + 1);
+}
+
+int count_distinct_substrings(const char *s) {
+    Node *root = new_node();
+    int total = 0, n = (int) strlen(s);
+    for (int start = 0; start < n; start++) {
+        Node *node = root;
+        for (int i = start; i < n; i++) {
+            int c = s[i] - 'a';
+            if (!node->children[c]) { node->children[c] = new_node(); total++; }
+            node = node->children[c];
+        }
+    }
+    return total;
+}
+
+int main(void) {
+    Node *root = new_node();
+    insert(root, "car");
+    insert(root, "cat");
+    insert(root, "cart");
+    printf("%d\n", wildcard(root, "c.t"));           // 1
+    printf("%d\n", count_distinct_substrings("aba")); // 5
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <unordered_map>
+#include <vector>
+#include <string>
+#include <algorithm>
+
+struct Node {
+    std::unordered_map<char, Node*> children;
+    bool isWord = false;
+};
+
+class Trie {
+    Node* root = new Node();
+
+    void gather(Node* node, std::string& path, std::vector<std::string>& out) {
+        if (node->isWord) out.push_back(path);
+        for (auto& [ch, child] : node->children) {
+            path.push_back(ch);
+            gather(child, path, out);
+            path.pop_back();
+        }
+    }
+
+    bool match(Node* node, const std::string& pat, size_t i) {
+        if (i == pat.size()) return node->isWord;
+        if (pat[i] == '.') {
+            for (auto& [ch, child] : node->children)
+                if (match(child, pat, i + 1)) return true;
+            return false;
+        }
+        auto it = node->children.find(pat[i]);
+        return it != node->children.end() && match(it->second, pat, i + 1);
+    }
+
+public:
+    void insert(const std::string& word) {
+        Node* node = root;
+        for (char ch : word) {
+            if (!node->children.count(ch)) node->children[ch] = new Node();
+            node = node->children[ch];
+        }
+        node->isWord = true;
+    }
+
+    std::vector<std::string> autocomplete(const std::string& prefix) {
+        Node* node = root;
+        for (char ch : prefix) {
+            auto it = node->children.find(ch);
+            if (it == node->children.end()) return {};
+            node = it->second;
+        }
+        std::vector<std::string> out;
+        std::string path = prefix;
+        gather(node, path, out);
+        return out;
+    }
+
+    bool wildcard(const std::string& pattern) { return match(root, pattern, 0); }
+};
+
+int countDistinctSubstrings(const std::string& s) {
+    Node* root = new Node();
+    int total = 0;
+    for (size_t start = 0; start < s.size(); start++) {
+        Node* node = root;
+        for (size_t i = start; i < s.size(); i++) {
+            char ch = s[i];
+            if (!node->children.count(ch)) { node->children[ch] = new Node(); total++; }
+            node = node->children[ch];
+        }
+    }
+    return total;
+}
+
+int main() {
+    Trie t;
+    for (const std::string& w : {"car", "cat", "cart", "dog"}) t.insert(w);
+    auto hits = t.autocomplete("ca");
+    std::sort(hits.begin(), hits.end());
+    for (auto& h : hits) std::cout << h << " ";       // car cart cat
+    std::cout << "\n" << t.wildcard("c.t") << "\n";   // 1
+    std::cout << countDistinctSubstrings("aba") << "\n"; // 5
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Let `L` be a query/prefix length, `m` the number of matches, `Σ` the alphabet size, and `n` the string length.
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Autocomplete (walk + gather) | O(L + total chars in matches) | O(m · L) output |
+| Wildcard with `d` dots | O(Σ^d · L) worst case | O(L) recursion |
+| Count distinct substrings | O(n²) | O(n²) nodes |
+
+Autocomplete never touches a word outside the prefix, so it beats the `O(n · L)` scan. The suffix-trie substring count is `O(n²)` — good enough for moderate strings and far simpler than a suffix automaton, though a suffix array or suffix automaton does it in `O(n)`/`O(n log n)` when `n` is large.
+
+## When to use it
+
+<Callout type="warn" title="Wildcards can explode">
+A single `.` fans out to every child, so `d` dots cost up to `O(Σ^d)`. That is fine for one or two wildcards in a fixed alphabet, but a pattern of all dots degenerates into a full traversal. If you need heavy fuzzy matching, reach for edit-distance search over the trie or a dedicated index instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does inserting every suffix and counting new nodes give the number of distinct substrings?">
+
+Every substring of `s` is a prefix of some suffix of `s`. A trie stores each distinct path exactly once, and each node corresponds to one root-to-node path — one distinct string. So when you insert all suffixes, the number of nodes created (excluding the root) is precisely the number of distinct substrings. Duplicates reuse existing nodes and create nothing.
+
+</Accordion>
+
+<Accordion title="How would you return the top 3 autocomplete suggestions by popularity instead of all of them?">
+
+Store a frequency count on each word-end node. During the gather, push `(frequency, word)` into a min-heap of size 3: add every candidate and pop the smallest whenever the heap exceeds 3. At the end the heap holds the three most popular completions. This keeps the extra work at `O(m log 3)` on top of the walk, without sorting all matches.
+
+</Accordion>
+
+<Accordion title="A wildcard pattern is all dots, like '....'. What happens, and how do you bound it?">
+
+Every dot branches into all children, so an all-dots pattern of length `L` visits every path of length `L` — effectively a full traversal of the top `L` levels, `O(Σ^L)` in the worst case. You bound it by limiting the number of wildcards, capping recursion, or pre-checking that a word of that exact length exists before descending.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Autocomplete is "walk to the prefix node, then gather flagged descendants" — it never looks at words outside the prefix.
+- Wildcard search reuses the walk but branches into all children at a `.`, so cost grows with the number of dots.
+- Counting distinct substrings falls out of inserting every suffix and counting the new nodes, since each node is one distinct substring.
+
+<Cards>
+  <Card title="Tries" href="/docs/dsa/23-trie/01-trie-intro" description="The base structure these applications build on." />
+  <Card title="The Bitwise Trie" href="/docs/dsa/23-trie/03-bitwise-trie" description="A trie over bits that solves maximum-XOR queries." />
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="Other ways to search patterns inside text." />
+</Cards>

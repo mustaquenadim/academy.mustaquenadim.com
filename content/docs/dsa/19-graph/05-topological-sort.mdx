@@ -1,0 +1,318 @@
+---
+title: "Topological Sort"
+description: "You can’t put on your shoes before your socks — topological sort finds a valid order when tasks depend on each other."
+extractedReferences:
+  - href: /docs/dsa/19-graph/03-dfs
+  - href: /docs/dsa/19-graph/04-cycle-detection
+  - href: /docs/dsa/19-graph/02-bfs
+---
+
+## The problem
+
+Getting dressed has rules: socks before shoes, shirt before jacket, underwear before pants.
+Some items don't care about order — you can put your watch on any time — but break one
+dependency and you look ridiculous. Given all these "X before Y" constraints, in what order
+do you actually get dressed?
+
+The same shape appears everywhere: course prerequisites, build targets, task pipelines,
+package installs. Each is a directed [graph](/docs/dsa/19-graph/01-graph-representations)
+where an edge `A → B` means "A must come before B." You want a **linear order** of all the
+tasks that never violates a dependency. That ordering is a **topological sort**.
+
+## A first attempt
+
+You could try picking tasks greedily by eye — grab something with no unmet prerequisite,
+then rescan the whole list for the next one, and again, and again. It works, but scanning all
+`n` tasks every time you place one is `O(n²)`, and it's fiddly to know which prerequisites
+are "met" without recomputing.
+
+There's also a deeper worry: what if the constraints contradict? *A before B, B before C, C
+before A.* No order can satisfy that — the graph has a
+[cycle](/docs/dsa/19-graph/04-cycle-detection), and **no topological order exists**. A good
+method must both produce an order *and* refuse when one is impossible.
+
+## The insight
+
+Two clean approaches fall out of the structure.
+
+**Kahn's algorithm (BFS-style):** a task with **no remaining prerequisites** (in-degree 0)
+can go next. Place it, remove it, and that may free others to in-degree 0. Repeat. If you
+place all `n` tasks, you have an order; if you get stuck with tasks remaining, those tasks
+sit in a cycle.
+
+**DFS finish-times:** run [DFS](/docs/dsa/19-graph/03-dfs); when a vertex *finishes* (all its
+dependents explored), push it onto a stack. Reversing the finish order gives a valid
+topological order, because a vertex always finishes after everything it points to.
+
+<Callout type="idea" title="Kahn's also detects cycles for free">
+Because Kahn's only ever emits in-degree-0 vertices, a cycle can never reach in-degree 0. If
+the output has fewer than `n` vertices, the leftovers are exactly the cyclic part — one loop
+gives you both the sort and the acyclicity check.
+</Callout>
+
+## How it works
+
+Kahn's algorithm, step by step:
+
+<Steps>
+
+<Step>
+
+### Compute in-degrees
+
+For every vertex, count how many edges point *into* it — how many prerequisites it still
+has. This is one pass over all edges.
+
+</Step>
+
+<Step>
+
+### Queue the ready tasks
+
+Put every vertex with in-degree 0 into a queue. These have no prerequisites and can start
+immediately.
+
+</Step>
+
+<Step>
+
+### Emit and relax
+
+Pop a vertex, append it to the output order. For each of its out-neighbors, decrement their
+in-degree (one prerequisite satisfied). If a neighbor's in-degree hits 0, enqueue it.
+
+</Step>
+
+<Step>
+
+### Check for a cycle
+
+Repeat until the queue empties. If the output holds all `n` vertices, it's a valid
+topological order. If fewer, the remaining vertices form a cycle and **no order exists**.
+
+</Step>
+
+</Steps>
+
+Dependencies `socks → shoes`, `shirt → jacket`, `pants → jacket`:
+
+```text
+  socks --> shoes
+  shirt --> jacket
+  pants --> jacket
+
+in-degree:  socks 0, shirt 0, pants 0, shoes 1, jacket 2
+queue starts: [socks, shirt, pants]
+emit socks -> shoes:1->0, enqueue shoes
+emit shirt -> jacket:2->1
+emit pants -> jacket:1->0, enqueue jacket
+emit shoes, emit jacket
+order: socks, shirt, pants, shoes, jacket   (one of several valid orders)
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+def topo_sort(adj):
+    n = len(adj)
+    indeg = [0] * n
+    for u in range(n):
+        for v in adj[u]:
+            indeg[v] += 1
+
+    q = deque(u for u in range(n) if indeg[u] == 0)
+    order = []
+    while q:
+        u = q.popleft()
+        order.append(u)
+        for v in adj[u]:
+            indeg[v] -= 1
+            if indeg[v] == 0:
+                q.append(v)
+
+    return order if len(order) == n else None   # None => cycle
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function topoSort(adj: number[][]): number[] | null {
+  const n = adj.length;
+  const indeg = new Array(n).fill(0);
+  for (let u = 0; u < n; u++) for (const v of adj[u]) indeg[v]++;
+
+  const q: number[] = [];
+  for (let u = 0; u < n; u++) if (indeg[u] === 0) q.push(u);
+
+  const order: number[] = [];
+  let head = 0;
+  while (head < q.length) {
+    const u = q[head++];
+    order.push(u);
+    for (const v of adj[u]) {
+      if (--indeg[v] === 0) q.push(v);
+    }
+  }
+  return order.length === n ? order : null; // null => cycle
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int[] topoSort(List<List<Integer>> adj) {
+    int n = adj.size();
+    int[] indeg = new int[n];
+    for (int u = 0; u < n; u++) for (int v : adj.get(u)) indeg[v]++;
+
+    Queue<Integer> q = new ArrayDeque<>();
+    for (int u = 0; u < n; u++) if (indeg[u] == 0) q.add(u);
+
+    int[] order = new int[n];
+    int idx = 0;
+    while (!q.isEmpty()) {
+        int u = q.poll();
+        order[idx++] = u;
+        for (int v : adj.get(u)) if (--indeg[v] == 0) q.add(v);
+    }
+    return idx == n ? order : null; // null => cycle
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* returns 1 on success (order filled), 0 if a cycle exists */
+int topo_sort(int adj[][100], int deg[], int n, int order[]) {
+    int indeg[100000] = {0};
+    for (int u = 0; u < n; u++)
+        for (int i = 0; i < deg[u]; i++) indeg[adj[u][i]]++;
+
+    int queue[100000], head = 0, tail = 0, idx = 0;
+    for (int u = 0; u < n; u++) if (indeg[u] == 0) queue[tail++] = u;
+
+    while (head < tail) {
+        int u = queue[head++];
+        order[idx++] = u;
+        for (int i = 0; i < deg[u]; i++)
+            if (--indeg[adj[u][i]] == 0) queue[tail++] = adj[u][i];
+    }
+    return idx == n;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <queue>
+
+std::vector<int> topoSort(const std::vector<std::vector<int>>& adj) {
+    int n = adj.size();
+    std::vector<int> indeg(n, 0);
+    for (int u = 0; u < n; u++) for (int v : adj[u]) indeg[v]++;
+
+    std::queue<int> q;
+    for (int u = 0; u < n; u++) if (indeg[u] == 0) q.push(u);
+
+    std::vector<int> order;
+    while (!q.empty()) {
+        int u = q.front(); q.pop();
+        order.push_back(u);
+        for (int v : adj[u]) if (--indeg[v] == 0) q.push(v);
+    }
+    return (int)order.size() == n ? order : std::vector<int>{}; // empty => cycle
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="A valid order is not unique">
+When several vertices sit at in-degree 0 at once, any of them can go next — so a graph
+usually has **many** valid topological orders. Don't assert one specific sequence in tests;
+assert the *constraints* (every edge `u → v` has `u` before `v`).
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                                      |
+| ------ | ---------- | -------------------------------------------------------- |
+| Time   | `O(n + m)` | one pass to count in-degrees, one to emit; each edge once |
+| Space  | `O(n)`     | in-degree array plus the queue and output                |
+
+Both Kahn's and the DFS variant are linear. Kahn's replaces the naive `O(n²)` rescanning
+with a queue that only touches ready tasks.
+
+## When to use it
+
+<Callout type="info" title="Where ordering matters">
+Reach for topological sort whenever you must **schedule tasks under dependencies**: build
+systems (make, bazel), course planning, package/dependency resolution, spreadsheet
+recalculation, and as a preprocessing step for DAG shortest/longest paths. It requires a
+**DAG** — a directed *acyclic* graph. If a [cycle](/docs/dsa/19-graph/04-cycle-detection)
+exists, there is no valid order, and both algorithms will tell you so.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Kahn's algorithm finished but the output has only 4 of 6 vertices. What does that mean, and which vertices are the culprits?">
+
+It means the graph has a **cycle** and is not a DAG, so no topological order exists. The two
+missing vertices never reached in-degree 0 — they (and possibly others) mutually depend on
+each other in a loop. The set of vertices *not* emitted is exactly the part of the graph
+tangled in cycles.
+
+</Accordion>
+
+<Accordion title="How does the DFS-based method produce an order, and why reverse it?">
+
+Run DFS; when a vertex has explored all its out-neighbors and is about to return, push it
+onto a stack (record its *finish time*). A vertex always finishes after every vertex it
+points to. So finish order lists dependents before their prerequisites — the wrong way round.
+Reversing it puts prerequisites first, giving a valid topological order.
+
+</Accordion>
+
+<Accordion title="You want the topological order that is smallest in lexicographic terms. How do you adapt Kahn's?">
+
+Swap the FIFO queue for a **min-heap** (priority queue). Whenever multiple vertices have
+in-degree 0, the heap hands back the smallest-numbered one first. Correctness is unchanged;
+the cost rises to `O((n + m) log n)` because of the heap operations. Useful when a unique,
+deterministic order is required.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Topological sort linearizes a **DAG** so every edge `u → v` has `u` before `v`.
+- **Kahn's** repeatedly emits in-degree-0 vertices via a queue; **DFS** reverses finish
+  order. Both run in `O(n + m)`.
+- If output covers fewer than `n` vertices, the graph has a **cycle** and no order exists.
+
+<Cards>
+  <Card title="Depth-First Search" href="/docs/dsa/19-graph/03-dfs" description="The finish-time approach to ordering." />
+  <Card title="Cycle Detection" href="/docs/dsa/19-graph/04-cycle-detection" description="A topological order exists only without cycles." />
+  <Card title="Breadth-First Search" href="/docs/dsa/19-graph/02-bfs" description="Kahn's is BFS on in-degrees." />
+</Cards>

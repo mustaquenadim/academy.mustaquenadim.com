@@ -1,0 +1,12 @@
+{
+  "title": "Searching",
+  "icon": "Search",
+  "pages": [
+    "01-searching-intro",
+    "02-linear-search-patterns",
+    "03-binary-search",
+    "04-binary-search-variants",
+    "05-search-on-answer",
+    "06-search-on-two-arrays"
+  ]
+}

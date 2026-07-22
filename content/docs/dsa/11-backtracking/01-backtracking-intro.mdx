@@ -1,0 +1,323 @@
+---
+title: "Backtracking"
+description: "To solve a puzzle you try a move, and if it dead-ends you undo it and try another — brute force with a brain."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/01-recursion
+  - href: /docs/dsa/11-backtracking/02-permutations-and-subsets
+  - href: /docs/dsa/11-backtracking/04-constraint-solving
+---
+
+## The problem
+
+You are staring at a maze printed on paper, pencil in hand. You pick a corridor, follow it, hit a wall. So you rub out the line back to the last fork and try the other corridor. Sometimes that dead-ends too, so you rub back further. Eventually the pencil finds the exit — not because you were clever, but because you were willing to undo.
+
+That "try, and undo if it fails" loop is how humans solve almost every puzzle: Sudoku, seating charts, word searches, packing a suitcase. The moves are different, the instinct is identical. We want a single technique that captures it, so we never have to reinvent the pencil-and-eraser dance again.
+
+## A first attempt
+
+The obvious idea: enumerate *every* complete arrangement, then throw away the ones that break the rules.
+
+Take a 3x3 Sudoku-style grid with 9 blanks and digits 1-9. Generate all `9^9` fillings, and for each, check whether it is valid. That is about 387 million grids for a *tiny* board. A real 9x9 Sudoku has up to 81 blanks: `9^81` candidates — more than the number of atoms in the observable universe.
+
+The waste is obvious once you name it. The moment you place two `5`s in the same row, *every* completion built on top of that prefix is doomed. Generate-then-filter refuses to notice. It insists on finishing every hopeless grid before checking it.
+
+```text
+Brute force: build the ENTIRE candidate, then test it.
+Cost: (choices)^(slots)  ->  astronomically wasteful
+```
+
+## The insight
+
+Check the rules *as you build*, and the instant a partial choice becomes illegal, stop and back up.
+
+Don't wait for a full grid. After each placement ask "is this prefix still valid?" If yes, go deeper. If no, undo the last choice and try the next option. If you run out of options at a slot, undo *that* slot too and let the previous slot try something else. You are pruning whole branches of the search tree before they ever grow.
+
+That is **backtracking**: a depth-first walk through the tree of partial solutions where you **choose**, **explore**, and **un-choose**. The un-choose is the eraser. The early validity check is the brain that turns brute force into something that actually finishes.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Frame it as a sequence of choices
+
+Every backtracking problem is "fill slot 0, then slot 1, then slot 2...". Decide what a *slot* is (a maze cell, a queen's column, a Sudoku blank) and what the *options* for each slot are.
+
+</Step>
+
+<Step>
+
+### Choose an option and record it
+
+Place a value into the current slot and push it onto your partial solution. This is the "try a move" step.
+
+</Step>
+
+<Step>
+
+### Check the constraints early
+
+Before recursing, verify the partial solution is still legal. If the move already breaks a rule, skip it — there is no point exploring a doomed branch.
+
+</Step>
+
+<Step>
+
+### Explore deeper, or accept the solution
+
+If the choice is valid, recurse to the next slot. When there are no slots left, you have a complete valid solution — record or count it.
+
+</Step>
+
+<Step>
+
+### Un-choose and try the next option
+
+After the recursive call returns, remove the value you placed (the eraser) and move to the next option. When every option at a slot has been tried, return to let the previous slot advance.
+
+</Step>
+
+</Steps>
+
+The shape of the search is a tree. Constraints prune whole subtrees:
+
+```text
+                start
+             /    |    \
+          try 1  try 2  try 3
+          /  X      |      \
+      try..  (bad)  ok      try..
+                    |
+                  solved
+```
+
+## The code
+
+The universal skeleton: `backtrack(state)` chooses, checks, recurses, and un-chooses. Here we generate every binary string of length `n` that has no two adjacent `1`s — a minimal problem that shows all three moves.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def generate(n):
+    results = []
+    current = []
+
+    def backtrack(index):
+        if index == n:                      # no slots left -> a solution
+            results.append("".join(current))
+            return
+        for bit in ("0", "1"):
+            # constraint: no two adjacent 1s
+            if bit == "1" and current and current[-1] == "1":
+                continue
+            current.append(bit)             # choose
+            backtrack(index + 1)            # explore
+            current.pop()                   # un-choose
+
+    backtrack(0)
+    return results
+
+
+print(generate(3))  # ['000', '001', '010', '100', '101']
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function generate(n: number): string[] {
+  const results: string[] = [];
+  const current: string[] = [];
+
+  function backtrack(index: number): void {
+    if (index === n) {                       // no slots left -> a solution
+      results.push(current.join(""));
+      return;
+    }
+    for (const bit of ["0", "1"]) {
+      // constraint: no two adjacent 1s
+      if (bit === "1" && current.length && current[current.length - 1] === "1") {
+        continue;
+      }
+      current.push(bit);                     // choose
+      backtrack(index + 1);                  // explore
+      current.pop();                         // un-choose
+    }
+  }
+
+  backtrack(0);
+  return results;
+}
+
+console.log(generate(3)); // ['000', '001', '010', '100', '101']
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class Backtracking {
+    public static List<String> generate(int n) {
+        List<String> results = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        backtrack(0, n, current, results);
+        return results;
+    }
+
+    private static void backtrack(int index, int n,
+                                  StringBuilder current, List<String> results) {
+        if (index == n) {                        // no slots left -> a solution
+            results.add(current.toString());
+            return;
+        }
+        for (char bit = '0'; bit <= '1'; bit++) {
+            // constraint: no two adjacent 1s
+            if (bit == '1' && current.length() > 0
+                    && current.charAt(current.length() - 1) == '1') {
+                continue;
+            }
+            current.append(bit);                 // choose
+            backtrack(index + 1, n, current, results);
+            current.deleteCharAt(current.length() - 1); // un-choose
+        }
+    }
+
+    public static void main(String[] args) {
+        System.out.println(generate(3)); // [000, 001, 010, 100, 101]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+static void backtrack(int index, int n, char *current) {
+    if (index == n) {                        /* no slots left -> a solution */
+        current[n] = '\0';
+        printf("%s\n", current);
+        return;
+    }
+    for (char bit = '0'; bit <= '1'; bit++) {
+        /* constraint: no two adjacent 1s */
+        if (bit == '1' && index > 0 && current[index - 1] == '1') {
+            continue;
+        }
+        current[index] = bit;                /* choose */
+        backtrack(index + 1, n, current);    /* explore */
+        /* un-choose is implicit: next iteration overwrites current[index] */
+    }
+}
+
+int main(void) {
+    char current[64];
+    backtrack(0, 3, current);                /* prints 000 001 010 100 101 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+using namespace std;
+
+void backtrack(int index, int n, string &current, vector<string> &results) {
+    if (index == (int)n) {                   // no slots left -> a solution
+        results.push_back(current);
+        return;
+    }
+    for (char bit = '0'; bit <= '1'; bit++) {
+        // constraint: no two adjacent 1s
+        if (bit == '1' && !current.empty() && current.back() == '1') {
+            continue;
+        }
+        current.push_back(bit);              // choose
+        backtrack(index + 1, n, current, results);
+        current.pop_back();                  // un-choose
+    }
+}
+
+int main() {
+    string current;
+    vector<string> results;
+    backtrack(0, 3, current, results);
+    for (const string &s : results) cout << s << " "; // 000 001 010 100 101
+    cout << "\n";
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Let `b` be the branching factor (options per slot) and `d` the depth (number of slots).
+
+| Measure | Cost | Why |
+| --- | --- | --- |
+| Time (worst case) | `O(b^d)` | With no pruning it degrades to full brute force |
+| Time (with pruning) | Often far less | Invalid prefixes cut entire subtrees early |
+| Space | `O(d)` | Recursion depth plus the single partial solution |
+
+Pruning does not change the *worst-case* Big-O, but in practice it is the difference between milliseconds and never finishing.
+
+## When to use it
+
+<Callout type="idea" title="Reach for backtracking when...">
+You must explore **all** valid configurations (every permutation, every path, every board) and there is a cheap way to reject a partial one. If you only need *one* number — a max, a min, a count — and choices overlap, a greedy method or dynamic programming is usually faster. Backtracking's superpower is completeness; its danger is exponential blow-up, so always prune as early and as cheaply as you can.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What are the three moves that every backtracking function makes?">
+
+**Choose, explore, un-choose.** You place a value into the current slot (choose), recurse to fill the remaining slots (explore), then remove that value before trying the next option (un-choose). The un-choose step is what lets a single shared data structure represent many different partial solutions over the life of the search.
+
+</Accordion>
+
+<Accordion title="Why is checking constraints early so much better than checking at the end?">
+
+Checking early lets you abandon an entire subtree the moment a prefix becomes invalid. If placing a value in slot 2 already breaks a rule, all `b^(d-2)` completions below it are hopeless — and you skip every one of them. Generate-then-filter, by contrast, pays the full `b^d` cost no matter how obviously broken a candidate is.
+
+</Accordion>
+
+<Accordion title="Does backtracking change the worst-case time complexity compared to brute force?">
+
+No. In the worst case (no prefix is ever prunable) backtracking still visits `O(b^d)` nodes. What changes is the *typical* case: real constraints reject most prefixes quickly, so the explored tree is a tiny fraction of the full one. Backtracking is brute force that usually gets to stop early.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Backtracking is a depth-first search over partial solutions using **choose → explore → un-choose**.
+- Its power comes from **checking constraints early** and pruning doomed branches before they grow.
+- Worst-case time is `O(b^d)`, but space stays small at `O(d)` — just the recursion depth.
+
+<Cards>
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The call-and-return machinery every backtracker rides on." />
+  <Card title="Permutations & Subsets" href="/docs/dsa/11-backtracking/02-permutations-and-subsets" description="The same skeleton generating every arrangement and every subset." />
+  <Card title="Constraint Solving" href="/docs/dsa/11-backtracking/04-constraint-solving" description="N-Queens and Sudoku as one place-check-undo pattern." />
+</Cards>

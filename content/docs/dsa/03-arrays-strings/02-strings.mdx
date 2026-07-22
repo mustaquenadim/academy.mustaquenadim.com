@@ -1,0 +1,249 @@
+---
+title: "Strings"
+description: "Text is everywhere, and under the hood a string is just an array of characters — so every array trick works on words too."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/08-string-techniques
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+---
+
+## The problem
+
+You're writing the "undo" feature for a text editor, and a tiny sub-task lands on your desk:
+reverse the word the user just typed. It sounds trivial — `"racecar"` becomes `"racecar"`,
+`"hello"` becomes `"olleh"`. Then a colleague pastes in a 10-megabyte log file and your
+neat little function takes seconds to run. On one string.
+
+How can flipping some characters be *slow*? The answer is hiding in what a string actually
+**is** underneath — and once you see it, the fix is obvious.
+
+## A first attempt
+
+The natural instinct is to build the answer one character at a time, front to back:
+
+```python
+def reverse(s):
+    result = ""
+    for ch in s:
+        result = ch + result   # prepend each character
+    return result
+```
+
+In most languages a string is **immutable** — you can't change it in place. So `ch + result`
+doesn't tweak `result`; it allocates a **brand-new string** and copies every character over.
+Do that `n` times and you've copied `1 + 2 + 3 + … + n` characters — that's `O(n²)`. For a
+10 MB string, quadratic is exactly why your editor froze.
+
+## The insight
+
+A string is just an **array of characters**. The reason we can't edit it in place is a
+language *choice*, not a law of nature. So copy the characters into a real, mutable array
+**once**, do all your work there with cheap in-place swaps, then build the final string
+**once** at the end.
+
+That turns the whole job into a single [two-pointer](/docs/dsa/08-two-pointer/01-two-pointer-intro)
+pass: one index walking in from the left, one from the right, swapping as they meet.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Copy to a mutable character array
+
+Convert the string to an array of characters. This costs one `O(n)` copy — but only one.
+
+</Step>
+
+<Step>
+
+### Walk two pointers inward
+
+Put `i` at the first character and `j` at the last. Swap `chars[i]` and `chars[j]`, then
+move `i` right and `j` left.
+
+</Step>
+
+<Step>
+
+### Stop when they meet
+
+When `i` and `j` cross, every character has been swapped into place. Join the array back
+into a string — one final `O(n)` build.
+
+</Step>
+
+</Steps>
+
+```text
+"hello"  ->  h  e  l  l  o
+             i           j     swap h,o
+             o  e  l  l  h
+                i     j        swap e,l
+             o  l  l  e  h
+                   ij          pointers meet — done
+result: "olleh"
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def reverse(s):
+    chars = list(s)                 # strings are immutable — work on a list
+    i, j = 0, len(chars) - 1
+    while i < j:
+        chars[i], chars[j] = chars[j], chars[i]
+        i += 1
+        j -= 1
+    return "".join(chars)           # build the final string once
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function reverse(s: string): string {
+  const chars = s.split("");
+  let i = 0, j = chars.length - 1;
+  while (i < j) {
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+    i++;
+    j--;
+  }
+  return chars.join("");
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+String reverse(String s) {
+    char[] chars = s.toCharArray();
+    int i = 0, j = chars.length - 1;
+    while (i < j) {
+        char tmp = chars[i];
+        chars[i] = chars[j];
+        chars[j] = tmp;
+        i++;
+        j--;
+    }
+    return new String(chars);
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+
+/* C strings are already mutable char arrays — reverse in place. */
+void reverse(char *s) {
+    int i = 0, j = (int)strlen(s) - 1;
+    while (i < j) {
+        char tmp = s[i];
+        s[i] = s[j];
+        s[j] = tmp;
+        i++;
+        j--;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+using namespace std;
+
+string reverse_str(string s) {   // std::string is mutable; take a copy
+    int i = 0, j = (int)s.size() - 1;
+    while (i < j) {
+        swap(s[i], s[j]);
+        i++;
+        j--;
+    }
+    return s;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                                     |
+| ------ | ------ | ------------------------------------------------------- |
+| Time   | `O(n)` | one copy in, `n/2` swaps, one build out — all linear    |
+| Space  | `O(n)` | the mutable character array (C reverses truly in place) |
+
+Compare that to the `O(n²)` naive version. Same output, but the 10 MB string now finishes
+in a blink.
+
+## When to use it
+
+<Callout type="warn" title="Immutability bites in loops">
+Building a string with `+=` or prepending inside a loop is a hidden `O(n²)` trap in Python,
+Java, and JavaScript. Collect characters in a list/array (or a `StringBuilder` in Java) and
+join **once** at the end.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is `result += ch` inside a loop O(n²) but appending to a list O(n)?">
+
+`result += ch` on an immutable string allocates a new string and copies all existing
+characters every iteration — `1 + 2 + … + n` copies. A list/array append just writes to the
+next slot (amortized `O(1)`), so `n` appends total `O(n)`. The join at the end is one more
+`O(n)` pass. Same idea, quadratically different cost.
+
+</Accordion>
+
+<Accordion title="How would you check if a string is a palindrome without reversing it first?">
+
+Skip the copy entirely — run the two pointers and **compare** instead of swap. If `s[i]`
+ever differs from `s[j]`, it's not a palindrome; if they meet without a mismatch, it is.
+That's `O(n)` time and `O(1)` extra space. This exact pattern shows up in
+[String Techniques](/docs/dsa/03-arrays-strings/08-string-techniques).
+
+</Accordion>
+
+<Accordion title="Does this handle Unicode like emoji correctly?">
+
+Not always. In many languages a "character" is a fixed-size code unit, and an emoji or an
+accented letter can span several code units. Reversing by code unit can split such a
+character in half. For real text you'd reverse by *grapheme cluster*. For interview-style
+ASCII problems, the character-array approach is exactly right.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A string is an array of characters; the only thing stopping in-place edits is
+  immutability, a language choice.
+- Because immutable strings copy on every change, building them character-by-character in a
+  loop is `O(n²)` — collect in a mutable buffer and join once.
+- Reversing, palindrome checks, and most string work reduce to array techniques like the
+  two-pointer sweep.
+
+<Cards>
+  <Card title="String Techniques" href="/docs/dsa/03-arrays-strings/08-string-techniques" description="Palindromes, anagrams, and subsequences." />
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="The structure a string is built on." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="The sweep pattern used to reverse in one pass." />
+</Cards>

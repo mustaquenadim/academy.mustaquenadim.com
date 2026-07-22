@@ -1,0 +1,266 @@
+---
+title: "Linear-Scan Patterns"
+description: "Largest, second largest, local peaks — problems you crack in a single left-to-right sweep."
+extractedReferences:
+  - href: /docs/dsa/04-searching/01-searching-intro
+  - href: /docs/dsa/04-searching/03-binary-search
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You have a week of daily temperatures: `[71, 68, 75, 75, 69, 82, 80]`. You want the hottest
+day. Easy enough. But then the questions keep coming: what was the *second* hottest? Which
+days were warmer than both of their neighbours — the little local peaks? Each of these feels
+like it needs its own pass over the data.
+
+It doesn't. A huge family of problems — running maximum, second largest, peaks, the index of
+the best element — all fall out of a **single left-to-right sweep** that remembers a tiny bit
+of state as it goes.
+
+## A first attempt
+
+The obvious move for "second largest" is to sort the array descending and read index `1`.
+Correct, but sorting is `O(n log n)` — you reorganized the entire week just to answer one
+question. And it quietly breaks on duplicates: sorting `[75, 75, 71]` gives `75` at index
+`1`, but the second *largest distinct* value is `71`.
+
+Sorting throws away the one advantage you have: you only ever need to *remember*, never to
+*reorder*.
+
+## The insight
+
+Walk the array once, carrying the answer-so-far. For the maximum, that's a single variable
+you bump up whenever you see something bigger. For the second largest, carry **two**
+variables — the best and the runner-up — and when a new value beats the best, the old best
+slides into second place.
+
+That's the whole pattern: **one pass, a handful of running variables.** No sorting, no extra
+array, `O(n)` time and `O(1)` space.
+
+<Callout type="idea" title="The shape to recognise">
+Whenever a question asks for "the best / second best / the peak / the first that satisfies
+X", ask: *can I answer it by remembering a constant amount of state as I scan once?* Usually
+yes — and that beats sorting every time.
+</Callout>
+
+## How it works
+
+Finding the two largest **distinct** values:
+
+<Steps>
+
+<Step>
+
+### Seed two running bests
+
+Set `best` and `second` to negative infinity. Nothing has beaten them yet.
+
+</Step>
+
+<Step>
+
+### Compare each value to the best
+
+If the current value is greater than `best`, it's the new champion — but the old `best`
+isn't gone, it becomes the new `second`.
+
+</Step>
+
+<Step>
+
+### Otherwise, challenge second place
+
+If the value is below `best` but above `second` (and not equal to `best`), it becomes the new
+`second`.
+
+</Step>
+
+<Step>
+
+### Read off the answer
+
+After one pass, `best` holds the largest and `second` the second largest distinct value.
+
+</Step>
+
+</Steps>
+
+Sweeping `[71, 68, 75, 75, 69, 82, 80]`:
+
+```text
+value:  71   68   75   75   69   82   80
+best:   71   71   75   75   75   82   82
+second: -∞   68   71   71   71   75   80
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def two_largest(arr):
+    best = second = float("-inf")
+    for value in arr:
+        if value > best:
+            second = best
+            best = value
+        elif best > value > second:
+            second = value
+    return best, second
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function twoLargest(arr: number[]): [number, number] {
+  let best = -Infinity;
+  let second = -Infinity;
+  for (const value of arr) {
+    if (value > best) {
+      second = best;
+      best = value;
+    } else if (value < best && value > second) {
+      second = value;
+    }
+  }
+  return [best, second];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int[] twoLargest(int[] arr) {
+    long best = Long.MIN_VALUE, second = Long.MIN_VALUE;
+    for (int value : arr) {
+        if (value > best) {
+            second = best;
+            best = value;
+        } else if (value < best && value > second) {
+            second = value;
+        }
+    }
+    return new int[] { (int) best, (int) second };
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <limits.h>
+
+void two_largest(const int arr[], int n, long *best, long *second) {
+    *best = LONG_MIN;
+    *second = LONG_MIN;
+    for (int i = 0; i < n; i++) {
+        if (arr[i] > *best) {
+            *second = *best;
+            *best = arr[i];
+        } else if (arr[i] < *best && arr[i] > *second) {
+            *second = arr[i];
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <limits>
+
+std::pair<long, long> twoLargest(const std::vector<int>& arr) {
+    long best = std::numeric_limits<long>::min();
+    long second = best;
+    for (int value : arr) {
+        if (value > best) {
+            second = best;
+            best = value;
+        } else if (value < best && value > second) {
+            second = value;
+        }
+    }
+    return {best, second};
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                             |
+| ------ | ------ | ----------------------------------------------- |
+| Time   | `O(n)` | one pass, constant work per element             |
+| Space  | `O(1)` | a fixed number of running variables             |
+
+Sorting to answer the same question would cost `O(n log n)` time — the single sweep is
+strictly better.
+
+## When to use it
+
+<Callout type="warn" title="Watch the edge cases">
+These sweeps hinge on the initial seed and on duplicates. Seed running maxima with negative
+infinity (not `0`, which breaks on all-negative input), and decide up front whether "second
+largest" means the second *distinct* value or just the second position — the two differ on
+`[5, 5, 3]`. For local peaks, define the behaviour at the two ends explicitly.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why seed `best` with negative infinity instead of the first element or zero?">
+
+Seeding with `0` is a classic bug: for an array like `[-4, -9, -1]` every value is below `0`,
+so the code reports `0` — a number that isn't even in the array. Negative infinity is below
+every possible value, so the first real element always wins the first comparison. Seeding
+with `arr[0]` also works but needs a non-empty array and careful index handling.
+
+</Accordion>
+
+<Accordion title="How would you find a local peak — an element strictly greater than both neighbours?">
+
+Sweep from index `1` to `n - 2` and check `arr[i] > arr[i-1] && arr[i] > arr[i+1]`. Decide
+your convention for the two ends (often the boundaries count as peaks if they beat their
+single neighbour). It's still one `O(n)` pass. Note: if you only need *any* one peak in a
+*mountain-shaped* array, binary search finds it in `O(log n)` —
+see [Binary Search](/docs/dsa/04-searching/03-binary-search).
+
+</Accordion>
+
+<Accordion title="Can you get the second largest in a single pass, or do you need two?">
+
+One pass is enough — that's the whole point of carrying two variables. A common mistake is to
+first find the max, then loop again for the largest value not equal to it. That's still
+`O(n)` but does two passes and mishandles duplicates. Tracking `best` and `second` together
+answers it in one sweep.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A large family of problems — max, second max, peaks, best index — need only **one sweep**
+  carrying a constant amount of state.
+- This beats sorting (`O(n log n)`) with `O(n)` time and `O(1)` space.
+- The bugs live in the edges: seed maxima with negative infinity and pin down your
+  duplicate and boundary conventions.
+
+<Cards>
+  <Card title="Linear Search" href="/docs/dsa/04-searching/01-searching-intro" description="The single-pass baseline these patterns build on." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="Finding a peak in O(log n) when the array is mountain-shaped." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why one pass beats sorting first." />
+</Cards>

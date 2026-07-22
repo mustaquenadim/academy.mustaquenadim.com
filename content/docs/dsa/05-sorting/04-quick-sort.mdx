@@ -1,0 +1,306 @@
+---
+title: "Quick Sort"
+description: "Pick a pivot, shove smaller left and bigger right, repeat — quicksort is often the fastest sort in practice."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/03-merge-sort
+  - href: /docs/dsa/05-sorting/01-sorting-intro
+  - href: /docs/dsa/02-recursion-math/01-recursion
+---
+
+## The problem
+
+[Merge sort](/docs/dsa/05-sorting/03-merge-sort) is fast and reliable, but it has a cost you
+might not want to pay: it needs a whole second array to merge into. On a huge dataset that
+`O(n)` extra memory hurts, and constantly copying elements between buffers isn't free either.
+
+So here's the question: can you get the same `O(n log n)` divide-and-conquer speed, but do
+all the rearranging **in place**, inside the original array, with no scratch buffer? That's
+the promise of quicksort — and in practice it's often the *fastest* comparison sort there is.
+
+## A first attempt
+
+Merge sort divides blindly at the midpoint and does all its real work *combining* the halves
+afterward. That combine step is exactly what forces the extra array.
+
+What if we flip the order of effort? Instead of splitting carelessly and merging carefully,
+what if we **split carefully** so that no combining is needed at all? If the left half were
+guaranteed to hold only small values and the right half only large ones, then sorting each
+half independently would leave the whole array sorted — nothing to merge.
+
+## The insight
+
+Pick one element as the **pivot**. Rearrange the array so everything smaller than the pivot
+sits to its left and everything larger sits to its right. Now the pivot is in its *final*
+sorted position, and — crucially — the two sides never need to interact again. Recurse into
+each side.
+
+This rearranging is called **partitioning**, and it's done with simple swaps inside the same
+array: `O(1)` extra space. The pivot splits the work into two subproblems, giving the same
+`log n` levels as merge sort, but with no buffer and no merge phase.
+
+<Callout type="warn" title="The pivot is a gamble">
+Partitioning splits the array into two sides — but not necessarily *even* sides. A great
+pivot halves the array (`O(n log n)`). A terrible pivot (say, always the largest element on
+already-sorted data) peels off one element at a time, giving `n` levels and `O(n²)`. Pivot
+choice is the whole ballgame.
+</Callout>
+
+## How it works
+
+We'll use **Lomuto partitioning**: pick the last element as pivot and sweep a boundary of
+"known-smaller" elements from the left.
+
+<Steps>
+
+<Step>
+
+### Choose a pivot
+
+Take the last element of the current slice as the pivot value.
+
+</Step>
+
+<Step>
+
+### Sweep and swap smaller elements left
+
+Keep a boundary index `i`. Scan the slice; every time you find an element `< pivot`, swap it
+into position `i` and advance `i`. This packs all smaller elements into the front.
+
+</Step>
+
+<Step>
+
+### Drop the pivot into place
+
+Swap the pivot into position `i`. Now everything left of `i` is smaller and everything right
+is larger — the pivot is in its final home.
+
+</Step>
+
+<Step>
+
+### Recurse on both sides
+
+Quicksort the slice left of the pivot and the slice right of it. Single-element slices are
+already sorted, ending the recursion.
+
+</Step>
+
+</Steps>
+
+Partitioning `[3, 7, 2, 5]` with pivot `5` (the last element), `i` marks the boundary:
+
+```text
+[3  7  2  5]   3 < 5 → swap into i=0, i→1   [3 | 7  2  5]
+[3  7  2  5]   7 < 5? no, skip              [3 | 7  2  5]
+[3  7  2  5]   2 < 5 → swap 2↔7, i→2         [3  2 | 7  5]
+place pivot at i=2: swap 5↔7                [3  2  5  7]     pivot 5 is home
+                                            recurse on [3 2] and [7]
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def quick_sort(nums, lo=0, hi=None):
+    if hi is None:
+        hi = len(nums) - 1
+    if lo < hi:
+        p = partition(nums, lo, hi)
+        quick_sort(nums, lo, p - 1)
+        quick_sort(nums, p + 1, hi)
+    return nums
+
+def partition(nums, lo, hi):
+    pivot = nums[hi]
+    i = lo
+    for j in range(lo, hi):
+        if nums[j] < pivot:
+            nums[i], nums[j] = nums[j], nums[i]
+            i += 1
+    nums[i], nums[hi] = nums[hi], nums[i]   # pivot into place
+    return i
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function quickSort(nums: number[], lo = 0, hi = nums.length - 1): number[] {
+  if (lo < hi) {
+    const p = partition(nums, lo, hi);
+    quickSort(nums, lo, p - 1);
+    quickSort(nums, p + 1, hi);
+  }
+  return nums;
+}
+
+function partition(nums: number[], lo: number, hi: number): number {
+  const pivot = nums[hi];
+  let i = lo;
+  for (let j = lo; j < hi; j++) {
+    if (nums[j] < pivot) {
+      [nums[i], nums[j]] = [nums[j], nums[i]];
+      i++;
+    }
+  }
+  [nums[i], nums[hi]] = [nums[hi], nums[i]]; // pivot into place
+  return i;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void quickSort(int[] nums, int lo, int hi) {
+    if (lo < hi) {
+        int p = partition(nums, lo, hi);
+        quickSort(nums, lo, p - 1);
+        quickSort(nums, p + 1, hi);
+    }
+}
+
+int partition(int[] nums, int lo, int hi) {
+    int pivot = nums[hi], i = lo;
+    for (int j = lo; j < hi; j++) {
+        if (nums[j] < pivot) {
+            int t = nums[i]; nums[i] = nums[j]; nums[j] = t;
+            i++;
+        }
+    }
+    int t = nums[i]; nums[i] = nums[hi]; nums[hi] = t; // pivot into place
+    return i;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void swap(int *a, int *b) { int t = *a; *a = *b; *b = t; }
+
+int partition(int *nums, int lo, int hi) {
+    int pivot = nums[hi], i = lo;
+    for (int j = lo; j < hi; j++) {
+        if (nums[j] < pivot) swap(&nums[i++], &nums[j]);
+    }
+    swap(&nums[i], &nums[hi]);   /* pivot into place */
+    return i;
+}
+
+void quick_sort(int *nums, int lo, int hi) {
+    if (lo < hi) {
+        int p = partition(nums, lo, hi);
+        quick_sort(nums, lo, p - 1);
+        quick_sort(nums, p + 1, hi);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <utility>
+using namespace std;
+
+int partition(vector<int> &nums, int lo, int hi) {
+    int pivot = nums[hi], i = lo;
+    for (int j = lo; j < hi; j++) {
+        if (nums[j] < pivot) swap(nums[i++], nums[j]);
+    }
+    swap(nums[i], nums[hi]);   // pivot into place
+    return i;
+}
+
+void quickSort(vector<int> &nums, int lo, int hi) {
+    if (lo < hi) {
+        int p = partition(nums, lo, hi);
+        quickSort(nums, lo, p - 1);
+        quickSort(nums, p + 1, hi);
+    }
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Case    | Time         | Why                                              |
+| ------- | ------------ | ------------------------------------------------ |
+| Best    | `O(n log n)` | pivot splits the slice roughly in half           |
+| Average | `O(n log n)` | random pivots split well enough on average       |
+| Worst   | `O(n²)`      | pivot is always the min/max — lopsided splits     |
+| Space   | `O(log n)`   | recursion stack (in-place, no data buffer)        |
+
+## When to use it
+
+<Callout type="idea" title="The practical default — with one safeguard">
+Quicksort is usually the **fastest** in-memory sort thanks to `O(1)` data space, cache-
+friendly sequential access, and tiny constants — which is why it's the default in many
+standard libraries. Defuse the `O(n²)` worst case by choosing the pivot well: pick a
+**random** element, or the **median of the first, middle, and last**. That makes adversarial
+inputs vanishingly unlikely. If you need a hard worst-case guarantee or **stability**,
+reach for [merge sort](/docs/dsa/05-sorting/03-merge-sort) instead — quicksort is not stable.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="On an already-sorted array, this code is O(n²). Why — and how do you fix it?">
+
+With the last element as pivot, a sorted array puts the pivot at the maximum every time, so
+each partition peels off just one element and recurses on the other `n − 1`. That's `n`
+levels of `O(n)` work = `O(n²)`. Fix it by randomizing the pivot (swap a random element to
+the end before partitioning) or using median-of-three, so no fixed input pattern is
+consistently bad.
+
+</Accordion>
+
+<Accordion title="Merge sort is stable but quicksort isn't. What does that mean, and why does partitioning break it?">
+
+Stability means equal elements keep their original relative order. Partitioning swaps
+elements across long distances — an element can jump past an equal one to reach the pivot
+boundary — which can reorder equal keys. That's the price quicksort pays for sorting in
+place without a merge buffer.
+
+</Accordion>
+
+<Accordion title="You only need the k-th smallest element, not a full sort. Can quicksort's idea help?">
+
+Yes — that's **quickselect**. Partition as usual, but after placing the pivot, only recurse
+into the *one* side that contains index `k`; discard the other entirely. Since you throw away
+half the work each step on average, it finds the k-th element in `O(n)` average time instead
+of `O(n log n)` for a full sort.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Quicksort partitions around a pivot so smaller values go left and larger go right, then
+  recurses — all **in place** with no merge buffer.
+- It averages `O(n log n)` with excellent constants, but a bad pivot degrades to `O(n²)`;
+  random or median-of-three pivots prevent that.
+- Prefer it as the fast default; switch to merge sort when you need a worst-case guarantee or
+  stability.
+
+<Cards>
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="The stable, guaranteed O(n log n) alternative." />
+  <Card title="Why Sorting Matters" href="/docs/dsa/05-sorting/01-sorting-intro" description="What sorted data buys you downstream." />
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The divide-and-conquer machinery underneath." />
+</Cards>

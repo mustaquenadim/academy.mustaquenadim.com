@@ -1,0 +1,265 @@
+---
+title: "Stock-Trading DP"
+description: "When can you buy and sell to profit most, with a cooldown or a fee or a cap on trades? A famous DP family."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/21-dynamic-programming/01-what-is-dp
+  - href: /docs/dsa/20-greedy/01-greedy-intro
+---
+
+## The problem
+
+You have a week of a stock's daily prices: `[7, 1, 5, 3, 6, 4]`. You may buy and sell to make
+money, but you can only hold one share at a time — you must sell before buying again. What is
+the most profit you can walk away with?
+
+With one buy and one sell, the answer feels easy: buy low, sell high. But the moment the rules
+add a cooldown after selling, or a fee per transaction, or a hard cap of `k` trades, the greedy
+instinct breaks down. These variations form one of the most-asked DP families in interviews,
+and they all yield to a single idea.
+
+## A first attempt
+
+Try every pair of buy day `i` and sell day `j > i`, and keep the best difference.
+
+```python
+def max_profit(prices):
+    best = 0
+    for i in range(len(prices)):
+        for j in range(i + 1, len(prices)):
+            best = max(best, prices[j] - prices[i])
+    return best
+```
+
+That is **O(n²)**, and it only handles a single transaction. Once you allow multiple trades
+with cooldowns or fees, the number of buy/sell combinations explodes and brute force becomes
+hopeless. You need to track *state as you move through the days*.
+
+## The insight
+
+On any given day you are in exactly one of a small number of **states**, and each day you move
+between them:
+
+> Track the best profit while **holding** a share versus **not holding** one. Each day, update
+> both from the previous day's values. The final answer is the best "not holding" profit — you
+> never want to end still holding.
+
+For the basic unlimited-trades version:
+
+- `hold` = best profit if you currently own a share.
+- `cash` = best profit if you currently own nothing.
+
+Each day: `cash = max(cash, hold + price)` (maybe sell) and
+`hold = max(hold, cash − price)` (maybe buy). Every variant just adds a state or a term — a
+cooldown adds a "just sold, must rest" state; a fee subtracts on each sale; a cap adds a
+transaction-count dimension.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Enumerate the states
+
+Identify what distinguishes your situation at the end of a day. Unlimited trading needs just
+two: holding or not. Cooldown needs three (add "resting"). A `k`-cap adds a count from 0 to `k`.
+
+</Step>
+
+<Step>
+
+### Write each transition
+
+For every state, ask: what could I have done today to land here, and from which state? Buying
+moves cash → hold and subtracts the price; selling moves hold → cash and adds it.
+
+</Step>
+
+<Step>
+
+### Set the starting values
+
+Day zero: `cash = 0` (you own nothing, no profit) and `hold = −prices[0]` (if you bought, you
+are down the first price). Impossible states start at negative infinity.
+
+</Step>
+
+<Step>
+
+### Roll forward day by day
+
+Because each day depends only on the previous day, you keep a handful of scalars, not a table.
+Sweep once through the prices; the answer is the ending `cash`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Unlimited transactions, O(1) space — the template you bend for every variant.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_profit(prices):
+    if not prices:
+        return 0
+    hold = -prices[0]   # best profit while holding a share
+    cash = 0            # best profit while holding nothing
+    for price in prices[1:]:
+        cash = max(cash, hold + price)   # maybe sell today
+        hold = max(hold, cash - price)   # maybe buy today
+    return cash
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxProfit(prices: number[]): number {
+  if (prices.length === 0) return 0;
+  let hold = -prices[0];
+  let cash = 0;
+  for (let i = 1; i < prices.length; i++) {
+    const price = prices[i];
+    cash = Math.max(cash, hold + price);
+    hold = Math.max(hold, cash - price);
+  }
+  return cash;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int maxProfit(int[] prices) {
+        if (prices.length == 0) return 0;
+        int hold = -prices[0];
+        int cash = 0;
+        for (int i = 1; i < prices.length; i++) {
+            int price = prices[i];
+            cash = Math.max(cash, hold + price);
+            hold = Math.max(hold, cash - price);
+        }
+        return cash;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int max_profit(int *prices, int n) {
+    if (n == 0) return 0;
+    int hold = -prices[0];
+    int cash = 0;
+    for (int i = 1; i < n; i++) {
+        int price = prices[i];
+        int sell = hold + price;
+        if (sell > cash) cash = sell;
+        int buy = cash - price;
+        if (buy > hold) hold = buy;
+    }
+    return cash;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int maxProfit(vector<int> &prices) {
+    if (prices.empty()) return 0;
+    int hold = -prices[0];
+    int cash = 0;
+    for (int i = 1; i < (int)prices.size(); i++) {
+        int price = prices[i];
+        cash = max(cash, hold + price);
+        hold = max(hold, cash - price);
+    }
+    return cash;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Variant | Time | Space |
+| --- | --- | --- |
+| Brute-force pairs (1 trade) | O(n²) | O(1) |
+| Unlimited / cooldown / fee | O(n) | O(1) |
+| At most k transactions | O(n × k) | O(k) |
+
+The general `k`-transaction solution keeps `hold[t]` and `cash[t]` for each transaction count
+`t`, giving O(n × k). When `k ≥ n/2` there is effectively no cap, so it collapses to the
+unlimited O(n) case.
+
+## When to use it
+
+<Callout type="warn" title="Greedy works only sometimes">
+For **unlimited** trades you can greedily sum every upward step (`prices[i] − prices[i-1]` when
+positive) — it happens to match the DP. But add a **cooldown**, a **fee**, or a **cap of k**,
+and greedy silently gives wrong answers. The state-machine DP handles all of them uniformly, so
+learn it rather than memorizing special cases.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How do you add a one-day cooldown after selling?">
+
+Introduce a third state, `rest` (profit the day after a sale, when you may not buy). Then buying
+must come from `rest`, not directly from `cash`: `hold = max(hold, rest - price)`,
+`rest = max(rest, cash)`, and `cash = max(cash, hold + price)`. Update using the previous day's
+values so a sell and a buy don't chain within one day.
+
+</Accordion>
+
+<Accordion title="How do you charge a transaction fee?">
+
+Subtract the fee once per completed trade — cleanest to deduct it when you sell:
+`cash = max(cash, hold + price - fee)`. The buy transition stays `hold = max(hold, cash - price)`.
+Everything else is identical to the unlimited template.
+
+</Accordion>
+
+<Accordion title="For the at-most-k version, why does the algorithm collapse to O(n) when k is large?">
+
+A profitable trade needs at least a buy day and a sell day, so you can never make more than
+`n/2` trades over `n` days. Once `k ≥ n/2`, the cap can never bind, so you switch to the
+unlimited O(n) solution instead of running the O(n × k) table — which would waste time on
+transaction counts you can never reach.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Model each day as a small set of **states** (holding vs not, plus rest or a trade count) and
+  transition between them.
+- One forward pass updates all states in O(1) memory; the answer is the best **not-holding**
+  profit.
+- Cooldown adds a state, a fee subtracts on sale, a `k`-cap adds a count dimension — same
+  skeleton throughout.
+
+<Cards>
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="The rolling-variable style these state machines use." />
+  <Card title="What Is Dynamic Programming?" href="/docs/dsa/21-dynamic-programming/01-what-is-dp" description="Why state plus transition beats brute force." />
+  <Card title="Greedy Algorithms" href="/docs/dsa/20-greedy/01-greedy-intro" description="When a greedy shortcut is enough — and when it isn't." />
+</Cards>

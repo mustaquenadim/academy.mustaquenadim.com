@@ -1,0 +1,91 @@
+---
+title: "What is System Design?"
+description: "Before the load balancers and the sharding, there's one laptop, one user, and one question — what happens when a second person shows up? The story of Adda begins."
+---
+
+## One laptop, one user
+
+It's a Friday night in Dhaka. **Ria Rahman** has just finished the first version of **Adda** — a small web app where friends can post a thought and their friends can reply. It runs on her laptop. She opens a terminal, types `npm start`, and a message appears:
+
+```bash
+Adda listening on http://localhost:3000
+```
+
+She texts her friend **Fahim** a link. He opens it, types "first post lol", and hits send. It appears. It works.
+
+Right now, Adda is the simplest system that can possibly exist:
+
+```
+  Fahim's phone  ───────►  Ria's laptop
+   (the browser)            (the app + the data,
+                             all in one process)
+```
+
+One machine does *everything*: it receives the request, runs the code, stores the post in a file, and sends the page back. There is no "architecture" here. There's just a program.
+
+And that's the honest starting point for this entire book. **Every large system was once this small.** Netflix, Uber, WhatsApp — all of them started as one program on one machine that one person could fully understand. System design is the story of what you do when that stops being enough.
+
+## So what *is* system design?
+
+<Callout title="A working definition">
+**System design** is the practice of deciding how the pieces of a software system fit together — the servers, databases, networks, and services — so that the whole thing meets its goals as it grows: staying fast, staying available, staying correct, and not costing a fortune.
+</Callout>
+
+Notice what that definition is *not* about. It's not about writing a clever function. That's programming, and Ria already did it. System design begins one level up, when the questions change from "how do I write this feature?" to:
+
+- What happens when 10,000 people use this at once instead of one?
+- What happens when Ria's laptop — sorry, "the server" — catches fire?
+- What happens when the data is too big to fit on any single machine?
+- What happens when one part is slow and it drags everything down with it?
+
+You can't answer these by writing better code. You answer them by *arranging the system differently*. That arranging is the craft.
+
+## The four questions every design must answer
+
+Across the whole journey, every decision Ria's team makes comes back to four properties. Keep these in your head — they're the scoreboard for the entire book.
+
+<Cards>
+  <Card title="Scalability" description="Can it handle more? When users go from 1 to 1,000,000, does the system grow with them or fall over?" />
+  <Card title="Availability" description="Is it up? When a machine dies at 3am — and one always will — do users even notice?" />
+  <Card title="Performance" description="Is it fast? A reply that takes 5 seconds to appear feels broken, even if it's technically correct." />
+  <Card title="Reliability & Consistency" description="Is it correct? Does Fahim's post actually save, and does everyone see the same truth?" />
+</Cards>
+
+Here's the catch that makes system design *interesting* rather than a checklist: **these four fight each other.** Making something faster often makes it more expensive. Making it available across the whole planet often means, for a brief moment, different people see different data. There is no configuration that maxes out all four. Every real design is a set of *trade-offs* — deliberate choices about what to give up to get what you need most.
+
+<Callout type="warn" title="The most important sentence in this book">
+There is no "best" architecture. There is only the best architecture *for a specific problem, at a specific scale, with specific priorities.* Anyone who answers a design question with "just use microservices" or "just use NoSQL" without asking *why* has skipped the actual work.
+</Callout>
+
+## Non-functional requirements: the real spec
+
+When Ria imagines Adda's future, the feature list ("post a thought", "reply to a friend") is only half the story. The other half is the part nobody writes on the whiteboard but everyone feels when it's missing:
+
+<TypeTable
+  type={{
+    "Latency": { description: "How long a single request takes. Adda's goal: a post appears in under 200ms.", type: "time" },
+    "Throughput": { description: "How many requests the system handles per second, in total.", type: "rate" },
+    "Availability": { description: "The fraction of time the system is up. '99.9%' means ~8.7 hours of downtime a year.", type: "percentage" },
+    "Durability": { description: "The promise that once data is saved, it is never silently lost.", type: "guarantee" },
+    "Consistency": { description: "Whether everyone sees the same data at the same time.", type: "guarantee" },
+  }}
+/>
+
+These are the **non-functional requirements**, and system design is mostly about them. The features tell you *what* to build; the non-functional requirements tell you *how it has to behave* — and that's what forces every interesting decision ahead.
+
+## How to read the rest of this book
+
+We'll grow Adda one realistic step at a time. Nothing gets added because it's fashionable — only because the previous setup broke and the new thing fixes it. When we reach load balancers, it'll be because a single server couldn't keep up. When we reach sharding, it'll be because the database physically ran out of room.
+
+<Callout type="info" title="Right now, Adda is one laptop and one user.">
+That's about to change. Fahim tells two friends. They tell two friends. In the next chapter, we follow a single request as it leaves Fahim's phone and finds Adda across the internet — and we discover that even *that* is a small miracle of engineering.
+
+Next up: [IP — the internet's addressing system](/docs/part-1-networking/ip).
+</Callout>
+
+## Recap
+
+- **System design** is arranging the pieces of a system so it meets its goals as it grows — a level above writing code.
+- Every design is judged on four properties that **conflict**: scalability, availability, performance, and reliability/consistency.
+- The real spec is the **non-functional requirements** — latency, throughput, availability, durability, consistency.
+- There is no best architecture, only the best trade-off for a specific problem. We'll learn every concept by watching **Adda** hit the wall that makes it necessary.

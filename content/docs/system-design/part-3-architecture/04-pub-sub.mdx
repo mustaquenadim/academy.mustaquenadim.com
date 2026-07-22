@@ -1,0 +1,195 @@
+---
+title: "Publish / Subscribe"
+description: "One event, many interested services — pub/sub lets a producer broadcast without knowing or caring who’s listening."
+extractedReferences:
+  - href: /docs/system-design/part-3-architecture/03-message-queues
+  - href: /docs/system-design/part-3-architecture/01-monolith-vs-microservices
+  - href: /docs/system-design/part-3-architecture/06-idempotency
+---
+
+## The problem
+
+A customer places an order. That one fact needs to ripple everywhere: charge the card, send
+a confirmation email, decrement inventory, update the analytics dashboard, notify the
+warehouse, award loyalty points. Today your Orders service calls each of those services
+directly, one after another.
+
+Every time the business adds a reaction — "also send an SMS," "also update the fraud model" —
+someone edits the Orders service and redeploys it. Orders now imports and knows about eight
+other services. It's slow (it waits on all of them), fragile (if the loyalty service is down,
+the order fails), and the team that owns Orders has become a bottleneck for everyone who
+wants to react to an order.
+
+## A first attempt
+
+Push the calls onto a message queue so Orders doesn't block. Better — Orders enqueues a job
+and returns. But a plain queue is *point-to-point*: each message goes to exactly one
+consumer. To feed six different reactions you'd create six queues and have Orders write the
+same event into all six, one enqueue per consumer.
+
+That's still Orders knowing its whole audience. Add a seventh reaction and Orders changes
+again. The coupling didn't go away — you just moved it. The producer is still responsible for
+knowing every consumer, which is exactly the knot you wanted to cut.
+
+## The insight
+
+Flip who knows whom. Instead of the producer sending to N known consumers, the producer
+publishes one event to a named **topic** and forgets about it. Any service that cares
+**subscribes** to that topic and receives its own copy.
+
+That's **publish/subscribe**. Orders publishes `OrderPlaced` once. Email, Inventory,
+Analytics, and Loyalty each subscribe independently. Adding a new reaction means adding a new
+subscriber — *the producer never changes*. Orders no longer knows or cares who's listening.
+
+<Callout type="idea" title="Pub/sub inverts the dependency">
+In direct calls, the producer depends on every consumer. In pub/sub, consumers depend on the
+*event*, not the producer. Producers and consumers evolve independently — the essence of
+event-driven architecture.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Producer publishes to a topic
+
+Orders emits one message — `OrderPlaced { orderId, userId, total }` — to the `orders` topic.
+It doesn't know how many subscribers exist, or any of them. Publish and move on.
+
+</Step>
+
+<Step>
+
+### The broker fans out
+
+The broker copies that event to every subscription attached to the topic. One publish becomes
+N deliveries — one per interested service — without the producer lifting a finger.
+
+</Step>
+
+<Step>
+
+### Each subscriber consumes independently
+
+Email, Inventory, and Analytics each have their own subscription and their own backlog. A
+slow subscriber builds up its own queue; it doesn't slow the others or the publisher. Each
+processes at its own pace.
+
+</Step>
+
+<Step>
+
+### Add reactions without touching the producer
+
+Marketing wants to send an SMS on every order? They stand up an SMS service and subscribe to
+`orders`. Orders is never redeployed, never even told. The system grows at the edges.
+
+</Step>
+
+</Steps>
+
+```
+                                 ┌──────────────▶  Email service
+                                 │
+   Orders ──publish──▶ ┌──────────┐ ──▶  Inventory service
+   (OrderPlaced)       │  TOPIC   │
+                       │  orders  │ ──▶  Analytics service
+                       └──────────┘
+                                 │
+                                 └──────────────▶  Loyalty service
+             one publish  ───────▶  fan-out to every subscriber
+```
+
+## Concrete numbers
+
+Fan-out is the headline: 1 publish → N deliveries. A busy topic on Kafka or Google Pub/Sub
+handles hundreds of thousands to millions of messages per second and delivers to each
+subscriber group in parallel, typically within tens of milliseconds end to end.
+
+Compare the coupling cost directly. Direct calls to 6 services in sequence, each ~20 ms, make
+the order request wait ~120 ms and fail if any one is down. Publish to a topic and Orders
+waits ~2 ms for the broker ack and *always* succeeds regardless of a subscriber being down —
+that subscriber just processes its backlog once it recovers. You traded synchronous
+certainty for asynchronous resilience.
+
+## When to use it
+
+<Callout type="warn" title="Fan-out means no single 'it's done' moment">
+After Orders publishes, the email may go out in 50 ms and inventory may update 3 s later.
+There's no instant where you can say "the whole order finished," because each subscriber runs
+on its own clock. If a step *must* complete before you respond to the user (like charging the
+card), keep that synchronous — publish only the reactions that are genuinely fire-and-forget.
+</Callout>
+
+<Callout type="error" title="Ordering and duplicates are still your problem">
+Global ordering across a topic is usually not guaranteed — only within a partition/key. If
+`OrderUpdated` can arrive before `OrderPlaced`, subscribers must handle it (partition by
+`orderId` to keep one order's events in order). And like queues, pub/sub is at-least-once:
+subscribers must be idempotent, because every subscriber can receive the same event twice.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="When do you reach for a queue versus pub/sub? They look almost identical.">
+
+Ask: does this message need *one* handler or *many*? A queue is point-to-point — one message,
+one consumer from the group — perfect for distributing work (one worker transcodes a given
+video). Pub/sub is broadcast — one event, every subscriber gets a copy — perfect for
+notifying many services of a fact (an order was placed). Rule of thumb: "do this task" →
+queue; "this happened" → pub/sub. Many brokers combine them: a topic fans out, and each
+subscription is itself a queue load-balanced across that service's workers.
+
+</Accordion>
+
+<Accordion title="A new subscriber is added six months in. How does it catch up on past events?">
+
+Depends on the broker's retention model. An ephemeral bus (classic pub/sub) only delivers
+events published *after* you subscribe — the new service sees the future, not the past. A
+retained log like Kafka keeps events for a configured window (days, or forever with
+compaction), so a new subscriber can replay from the beginning and rebuild its state. If
+subscribers need to bootstrap from history, choose a log with retention; if they only care
+about "what's happening now," an ephemeral bus is cheaper.
+
+</Accordion>
+
+<Accordion title="The Analytics subscriber is down for an hour. What happens to orders and to the other subscribers?">
+
+Nothing, for the producer and the other subscribers. Orders keeps publishing, Email and
+Inventory keep consuming — each subscription has its own independent backlog. Analytics' own
+queue simply grows while it's down and drains when it recovers (assuming retention is long
+enough to hold an hour of events). That per-subscriber isolation is the whole point: one slow
+or dead consumer can't stall the publisher or its siblings, unlike the direct-call version
+where a dead service failed the order.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Pub/sub inverts the dependency: producers publish one event to a topic and don't know their
+  subscribers; consumers depend on the event, not the producer.
+- One publish fans out to every subscriber, and each consumes on its own independent backlog —
+  so you add reactions by adding subscribers, never by touching the producer.
+- The costs are no single "done" moment, weak cross-topic ordering, and at-least-once
+  delivery — keep must-complete steps synchronous and make subscribers idempotent.
+
+<Cards>
+  <Card title="Message Queues" href="/docs/system-design/part-3-architecture/03-message-queues" description="Point-to-point delivery for distributing work to one worker." />
+  <Card title="Monolith vs Microservices" href="/docs/system-design/part-3-architecture/01-monolith-vs-microservices" description="Why services need to react to each other's events at all." />
+  <Card title="Idempotency" href="/docs/system-design/part-3-architecture/06-idempotency" description="Surviving the duplicate deliveries pub/sub will hand you." />
+</Cards>
+
+## In an interview
+
+<Callout type="info" title="How to discuss this">
+Frame pub/sub as "this happened" events versus a queue's "do this task." The line that scores
+points: the producer publishes once and doesn't know its subscribers, so new reactions are
+added without redeploying the producer. Then volunteer the hard parts — no single completion
+moment, ordering only within a partition key, and at-least-once duplicates — and say keep the
+card charge synchronous while everything else reacts asynchronously.
+</Callout>

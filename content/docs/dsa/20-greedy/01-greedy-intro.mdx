@@ -1,0 +1,264 @@
+---
+title: "The Greedy Strategy"
+description: "Sometimes grabbing the best option at every step gives the best overall answer — and sometimes it fails. Knowing which is the game."
+extractedReferences:
+  - href: /docs/dsa/20-greedy/02-activity-and-intervals
+  - href: /docs/dsa/20-greedy/04-greedy-classics
+  - href: /docs/dsa/21-dynamic-programming/01-what-is-dp
+---
+
+## The problem
+
+You are at the cash register and owe someone $0.63 in change. You have quarters, dimes, nickels, and pennies. Without thinking, you hand over two quarters, a dime, and three pennies — six coins. You did not enumerate every possible combination of coins. You just grabbed the biggest coin that still fit, then repeated.
+
+That instinct — *take the best-looking option right now, then move on* — is fast and often right. But it is not always right. Change the coins to {1, 3, 4} and try to make 6: your instinct grabs a 4, then needs two 1s (three coins), while the best answer is 3 + 3 (two coins). The same instinct that saved you at the register just failed. The whole skill is knowing which world you are in.
+
+## A first attempt
+
+The safe, always-correct approach is to try everything. For coin change, that means: for each coin, either use it or skip it, and recurse on the remaining amount. Take the minimum over all branches.
+
+```python
+def min_coins_brute(coins, amount):
+    if amount == 0:
+        return 0
+    best = float("inf")
+    for c in coins:
+        if c <= amount:
+            best = min(best, 1 + min_coins_brute(coins, amount - c))
+    return best
+```
+
+This never lies to you — it explores every combination — but it explores an exponential number of them. For an amount `n` and a handful of coins, the branching blows up to roughly `O(k^n)`. Correct, but unusable for real inputs.
+
+## The insight
+
+The greedy shortcut says: **at each step, commit to the locally best choice and never look back**. For change-making, "locally best" means "the largest coin that fits". No backtracking, no exploring alternatives.
+
+This is dramatically faster — but it is only *correct* when the problem has the **greedy-choice property**: a globally optimal solution can always be reached by making the locally optimal choice. Standard currency ({1, 5, 10, 25}) has it. The set {1, 3, 4} does not. So greedy is not a universal hammer — it is a bet that pays off only when you can prove the local choice is safe.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Sort choices by "best first"
+
+Decide what "greediest" means for your problem and order the options so the best one is easy to grab. For coins, sort descending so the largest coin comes first.
+
+</Step>
+
+<Step>
+
+### Take the best option that still fits
+
+Scan for the first option that does not break a constraint. For change, that is the largest coin `≤` the remaining amount. Commit to it.
+
+</Step>
+
+<Step>
+
+### Reduce the problem and repeat
+
+Subtract what you took and continue on the smaller remaining problem. Because you never revisit a choice, each step strictly shrinks the work.
+
+</Step>
+
+<Step>
+
+### Prove (or test) that local wins are safe
+
+Before trusting the answer, argue that a locally best choice never blocks a globally best one — an *exchange argument*. If you cannot make that argument, greedy may silently return a worse answer.
+
+</Step>
+
+</Steps>
+
+```
+amount = 63, coins = [25, 10, 5, 1]
+
+63 -> take 25 -> 38 -> take 25 -> 13 -> take 10 -> 3
+   -> take 1  -> 2  -> take 1  -> 1  -> take 1  -> 0
+result: 25 + 25 + 10 + 1 + 1 + 1  (6 coins)
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def greedy_coins(coins, amount):
+    coins = sorted(coins, reverse=True)
+    count, used = 0, []
+    for c in coins:
+        while amount >= c:
+            amount -= c
+            count += 1
+            used.append(c)
+    return count if amount == 0 else -1  # -1: greedy could not finish
+
+
+print(greedy_coins([1, 5, 10, 25], 63))  # 6
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function greedyCoins(coins: number[], amount: number): number {
+  const sorted = [...coins].sort((a, b) => b - a);
+  let count = 0;
+  for (const c of sorted) {
+    while (amount >= c) {
+      amount -= c;
+      count += 1;
+    }
+  }
+  return amount === 0 ? count : -1; // -1: greedy could not finish
+}
+
+console.log(greedyCoins([1, 5, 10, 25], 63)); // 6
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.Arrays;
+
+class Greedy {
+    static int greedyCoins(int[] coins, int amount) {
+        Integer[] sorted = Arrays.stream(coins).boxed().toArray(Integer[]::new);
+        Arrays.sort(sorted, (a, b) -> b - a);
+        int count = 0;
+        for (int c : sorted) {
+            while (amount >= c) {
+                amount -= c;
+                count++;
+            }
+        }
+        return amount == 0 ? count : -1; // -1: greedy could not finish
+    }
+
+    public static void main(String[] args) {
+        System.out.println(greedyCoins(new int[]{1, 5, 10, 25}, 63)); // 6
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int cmp_desc(const void *a, const void *b) {
+    return (*(const int *)b) - (*(const int *)a);
+}
+
+int greedy_coins(int *coins, int n, int amount) {
+    qsort(coins, n, sizeof(int), cmp_desc);
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        while (amount >= coins[i]) {
+            amount -= coins[i];
+            count++;
+        }
+    }
+    return amount == 0 ? count : -1; /* -1: greedy could not finish */
+}
+
+int main(void) {
+    int coins[] = {1, 5, 10, 25};
+    printf("%d\n", greedy_coins(coins, 4, 63)); /* 6 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int greedyCoins(std::vector<int> coins, int amount) {
+    std::sort(coins.begin(), coins.end(), std::greater<int>());
+    int count = 0;
+    for (int c : coins) {
+        while (amount >= c) {
+            amount -= c;
+            count++;
+        }
+    }
+    return amount == 0 ? count : -1; // -1: greedy could not finish
+}
+
+int main() {
+    std::cout << greedyCoins({1, 5, 10, 25}, 63) << "\n"; // 6
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute force (try all) | O(k^n) | O(n) recursion |
+| Greedy (canonical coins) | O(k log k + amount / min_coin) | O(1) |
+| Sorting the choices | O(k log k) | O(1) or O(k) |
+
+Here `k` is the number of distinct coins and `n` is the target amount. Greedy is essentially the cost of one sort plus a linear walk.
+
+## When to use it
+
+<Callout type="warn" title="Greedy is a bet, not a default">
+Reach for greedy only when you can argue the local choice is safe — via an exchange argument or a known result (like the matroid theory behind minimum spanning trees). If you cannot prove it, greedy may return a plausible-looking wrong answer with zero warning. When in doubt, dynamic programming trades speed for a guarantee of correctness.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does greedy work for US coins {1, 5, 10, 25} but not {1, 3, 4}?">
+
+US denominations are *canonical*: every coin is at least double the previous useful step in a way that guarantees taking the biggest coin never forces extra small coins later. For {1, 3, 4} making 6, greedy grabs 4 then two 1s (3 coins), but 3 + 3 uses only 2. The local choice (4) blocked the better global choice, so the greedy-choice property fails.
+
+</Accordion>
+
+<Accordion title="How would you detect that greedy fails for a given coin set?">
+
+Compare greedy against a correct dynamic-programming solution over a range of amounts. If they ever disagree, the set is non-canonical. There are also number-theoretic tests, but running the DP baseline for small amounts is the most practical check.
+
+</Accordion>
+
+<Accordion title="What is an exchange argument?">
+
+It is the standard proof that greedy is optimal: take any optimal solution, and show you can swap one of its choices for the greedy choice without making it worse. If every optimal solution can be transformed step by step into the greedy one, greedy must also be optimal.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Greedy commits to the locally best choice at each step and never backtracks — fast, but only correct when the greedy-choice property holds.
+- Prove safety with an exchange argument; when you cannot, fall back to dynamic programming.
+- The same instinct that solves coin change in currency fails on {1, 3, 4} — recognizing the difference is the real skill.
+
+<Cards>
+  <Card title="Activities & Intervals" href="/docs/dsa/20-greedy/02-activity-and-intervals" description="The classic greedy proof: always take the event that ends first." />
+  <Card title="Greedy Classics" href="/docs/dsa/20-greedy/04-greedy-classics" description="Gas station, jump game, and job sequencing patterns." />
+  <Card title="What is DP?" href="/docs/dsa/21-dynamic-programming/01-what-is-dp" description="When greedy is not safe, this is the guaranteed-correct fallback." />
+</Cards>

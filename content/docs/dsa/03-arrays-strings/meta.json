@@ -1,0 +1,14 @@
+{
+  "title": "Arrays & Strings",
+  "icon": "Rows3",
+  "pages": [
+    "01-arrays",
+    "02-strings",
+    "03-matrix",
+    "04-array-traversal-tricks",
+    "05-kadane-and-subarrays",
+    "06-next-permutation",
+    "07-2d-array-patterns",
+    "08-string-techniques"
+  ]
+}

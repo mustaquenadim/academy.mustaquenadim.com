@@ -1,0 +1,342 @@
+---
+title: "Hash Tables"
+description: "Your app checks whether a username is taken and it slows to a crawl as users pour in — hashing turns that search into a single step."
+extractedReferences:
+  - href: /docs/dsa/07-hashing/01-hash-functions
+  - href: /docs/dsa/07-hashing/03-collision-handling
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+Someone signs up for your app and types the username `ria_codes`. You need to answer one
+question before they hit submit: **is this name already taken?**
+
+You have a list of every existing username. The obvious approach is to scan it. With a
+thousand users, no one notices. With ten million, every signup scans ten million names —
+and signups are slow, the database is hot, and users are staring at a spinner. You need to
+answer "is this in the collection?" **without looking at the whole collection.**
+
+## A first attempt
+
+Store usernames in a list and scan for a match:
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def is_taken(usernames, name):
+    for existing in usernames:   # scans up to all n names
+        if existing == name:
+            return True
+    return False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function isTaken(usernames: string[], name: string): boolean {
+  for (const existing of usernames) {  // scans up to all n names
+    if (existing === name) return true;
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean isTaken(List<String> usernames, String name) {
+    for (String existing : usernames) { // scans up to all n names
+        if (existing.equals(name)) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+#include <string.h>
+
+bool is_taken(const char *usernames[], int n, const char *name) {
+    for (int i = 0; i < n; i++) {          // scans up to all n names
+        if (strcmp(usernames[i], name) == 0) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <vector>
+
+bool isTaken(const std::vector<std::string>& usernames, const std::string& name) {
+    for (const auto& existing : usernames) { // scans up to all n names
+        if (existing == name) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+This is `O(n)` per check. The heart of the slowdown: to decide where a name *is*, we look
+at every name. What if the name itself could tell us where to look?
+
+## The insight
+
+Imagine a giant shelf of numbered slots. We invent a rule that turns any username into a
+slot number — feed in `ria_codes`, out comes slot `4173`. Crucially, the rule is
+**deterministic**: the same name always maps to the same slot.
+
+Now checking "is `ria_codes` taken?" doesn't mean scanning anything. We run the rule, get
+slot `4173`, and look **only** in that slot. One computation, one lookup — `O(1)`,
+independent of how many usernames exist.
+
+That name-to-slot rule is a [**hash function**](/docs/dsa/07-hashing/01-hash-functions).
+The shelf of slots plus the hash function is a **hash table**.
+
+<Callout type="idea" title="The trade we're making">
+A plain list keeps items in insertion order and finds them in `O(n)`. A hash table gives
+that ordering up — but in exchange, it finds *any* item in `O(1)` on average. For "is this
+present?" questions, that's the best trade in all of computer science.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Hash the key
+
+Run the key through the hash function to get a big number: `hash("ria_codes") = 918273645`.
+
+</Step>
+
+<Step>
+
+### Fold it into a slot
+
+The table has a fixed number of slots (say 8). Take the hash modulo that count:
+`918273645 % 8 = 5`. The key belongs in slot 5.
+
+</Step>
+
+<Step>
+
+### Store or look up there
+
+To insert, put the key (and any value) in slot 5. To look up, hash again, land on slot 5,
+and check — no scanning of the other slots.
+
+</Step>
+
+<Step>
+
+### Handle collisions
+
+Two different keys can land in the same slot. That's not a bug, it's inevitable — and every
+hash table has a plan for it (see [Handling Collisions](/docs/dsa/07-hashing/03-collision-handling)).
+
+</Step>
+
+</Steps>
+
+Here's the shelf after inserting a few usernames:
+
+```text
+slot                stored key
+ 0   →   (empty)
+ 1   →   "fahim"
+ 2   →   (empty)
+ 3   →   "tanvir"
+ 4   →   (empty)
+ 5   →   "ria_codes"        ← hash("ria_codes") % 8 = 5
+ 6   →   (empty)
+ 7   →   "mou"
+```
+
+Looking up `ria_codes`: hash → 5 → check slot 5 → found. It didn't matter whether the table
+held 4 names or 4 million.
+
+## The code
+
+In practice you rarely build the shelf yourself — every language ships a hash table as a
+first-class type. This is the same duplicate-username check, now `O(1)` per lookup:
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+# `set` is a hash table under the hood.
+usernames = set()
+
+def register(name):
+    if name in usernames:      # O(1) average
+        return "taken"
+    usernames.add(name)        # O(1) average
+    return "ok"
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// `Set` is a hash table under the hood.
+const usernames = new Set<string>();
+
+function register(name: string): "taken" | "ok" {
+  if (usernames.has(name)) return "taken"; // O(1) average
+  usernames.add(name);                     // O(1) average
+  return "ok";
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+// HashSet is a hash table under the hood.
+Set<String> usernames = new HashSet<>();
+
+String register(String name) {
+    if (usernames.contains(name)) return "taken"; // O(1) average
+    usernames.add(name);                          // O(1) average
+    return "ok";
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+
+// C has no standard hash set, so here is a minimal fixed-size
+// open-addressing set of strings (linear probing).
+#define CAP 1024  // number of slots; keep the table under ~70% full
+
+static char *slots[CAP];  // NULL means empty; static => zero-initialized
+
+static unsigned long hash_str(const char *s) {
+    unsigned long h = 5381;
+    while (*s) h = ((h << 5) + h) + (unsigned char)*s++; // djb2
+    return h;
+}
+
+const char *register_name(const char *name) {
+    unsigned long idx = hash_str(name) % CAP;
+    while (slots[idx] != NULL) {                 // probe until empty slot
+        if (strcmp(slots[idx], name) == 0) return "taken"; // O(1) average
+        idx = (idx + 1) % CAP;
+    }
+    slots[idx] = strdup(name);                   // O(1) average insert
+    return "ok";
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <unordered_set>
+
+// unordered_set is a hash table under the hood.
+std::unordered_set<std::string> usernames;
+
+std::string register_name(const std::string& name) {
+    if (usernames.count(name)) return "taken"; // O(1) average
+    usernames.insert(name);                     // O(1) average
+    return "ok";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Need to store a **value** alongside each key (say, the user's id)? Reach for the map
+variant — `dict` in Python, `Map` in TypeScript, `HashMap` in Java. Same mechanism, same
+`O(1)`.
+
+## Complexity
+
+| Operation | Average | Worst case | Note                                         |
+| --------- | ------- | ---------- | -------------------------------------------- |
+| Insert    | `O(1)`  | `O(n)`     | worst case only if everything collides       |
+| Lookup    | `O(1)`  | `O(n)`     | a good hash function keeps you at average     |
+| Delete    | `O(1)`  | `O(n)`     |                                              |
+
+<Callout type="warning" title="Where the O(1) can break">
+The `O(1)` is an **average**, and it assumes a good hash function that spreads keys evenly.
+If every key lands in the same slot, a hash table degrades to a linked list and lookups
+become `O(n)`. This is why hash functions and collision strategies matter — and why hash
+tables have no *guaranteed* worst-case bound, unlike a balanced tree.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You need to find the first character in a string that never repeats. How does a hash table help?">
+
+Make one pass counting each character's frequency in a hash map (`O(n)`), then a second
+pass returning the first character whose count is 1 (`O(n)`). Total `O(n)` — versus the
+`O(n²)` of comparing every character against every other. The map trades a little memory
+for a huge time win.
+
+</Accordion>
+
+<Accordion title="Given an array of numbers and a target, find two that sum to the target. Why beat the O(n²) nested loop?">
+
+As you scan, for each number `x` ask the hash set whether `target - x` was already seen.
+If yes, you've found the pair; if no, add `x` and continue. One pass, `O(n)`. The famous
+"Two Sum" — a hash table turning a pairwise search into a single sweep.
+
+</Accordion>
+
+<Accordion title="Why can't you use a hash table to return items in sorted order?">
+
+Because hashing deliberately **scatters** keys across slots to avoid collisions — slot
+order has nothing to do with key order. If you need sorted iteration, you want a balanced
+BST / ordered map (`O(log n)` operations) instead, or you sort the keys separately.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A hash table turns a key into a slot number with a **hash function**, so lookups touch
+  one slot instead of scanning the whole collection — `O(1)` on average.
+- Collisions (two keys, one slot) are inevitable and handled by chaining or probing.
+- The trade: you give up ordering to gain constant-time membership, insertion, and deletion
+  — ideal for "is this present?" and key→value lookups.
+
+<Cards>
+  <Card title="Hash Functions" href="/docs/dsa/07-hashing/01-hash-functions" description="How a key becomes a slot number, and what makes the rule good." />
+  <Card title="Handling Collisions" href="/docs/dsa/07-hashing/03-collision-handling" description="What to do when two keys want the same slot." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why turning O(n) into O(1) changes everything." />
+</Cards>

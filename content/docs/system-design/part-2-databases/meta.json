@@ -1,0 +1,12 @@
+{
+  "title": "Part 2 · Databases",
+  "icon": "Database",
+  "pages": [
+    "01-sql-vs-nosql",
+    "02-indexing",
+    "03-replication",
+    "04-sharding",
+    "05-consistency-and-cap",
+    "06-transactions"
+  ]
+}

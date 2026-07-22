@@ -1,0 +1,351 @@
+---
+title: "Handling Collisions"
+description: "Two different keys land on the same shelf — every real hash table needs a plan: chaining or probing."
+extractedReferences:
+  - href: /docs/dsa/07-hashing/01-hash-functions
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/07-hashing/04-sets-and-maps
+---
+
+## The problem
+
+Your hash table is humming. Keys go in, keys come out, all in one step. Then it happens:
+`hash("cat") % 8` is `3`, and `hash("dog") % 8` is *also* `3`. Two different keys, one slot.
+
+You can't just overwrite `cat` with `dog` — you'd lose a coat. And you can't refuse `dog`,
+because a table that rejects keys is broken. This isn't a rare glitch you can ignore: with
+only 8 slots and 9 keys, a clash is *guaranteed*. Every real hash table needs an answer to
+"what happens when two keys want the same slot?"
+
+## A first attempt
+
+The naive fix: when slot 3 is taken, just keep scanning down the table from the front until
+you find any empty slot, and drop the key there.
+
+It works, but it degrades fast. Keys pile up near the front, retrieval has to re-scan those
+same crowded slots, and deletions leave holes that confuse the search. Without a principled
+rule, a half-full table can push lookups toward `O(n)` — the very cost hashing was supposed
+to kill. You need a *systematic* way to place and later find a displaced key.
+
+## The insight
+
+There are two clean strategies, and every hash table picks one.
+
+**Chaining** — make each slot a small list. Colliding keys just join the list in that slot.
+Lookup hashes to the slot, then walks its short list.
+
+**Open addressing** — keep one key per slot, but when a slot is full, *probe* for the next
+open one using a fixed rule (e.g. "try the next slot, then the next"). Because the rule is
+deterministic, lookup replays the same probe path and finds the key.
+
+<Callout type="idea" title="Same slot, different plans">
+Chaining stores collisions *outside* the array in per-slot lists — simple, forgiving, uses
+extra pointers. Open addressing keeps everything *inside* one array — cache-friendly and
+compact, but sensitive to how full the table gets. Both keep the average case at `O(1)`.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Hash to a slot
+
+Both strategies start the same way: run the key through the hash function and fold to an
+index. If the slot is empty, you're done — store it there.
+
+</Step>
+
+<Step>
+
+### Chaining: append to the slot's list
+
+If the slot already holds keys, add yours to that slot's list. To look up, hash to the slot
+and scan its list for a matching key. Short lists mean short scans.
+
+</Step>
+
+<Step>
+
+### Open addressing: probe forward
+
+Instead of a list, step to the next slot, then the next, until you hit an empty one (linear
+probing). Store the key there. To look up, replay the same steps from the hashed slot until
+you find the key or hit an empty slot.
+
+</Step>
+
+<Step>
+
+### Watch the load factor
+
+Both strategies slow down as the table fills. Track the *load factor* — items ÷ slots. When
+it crosses a threshold (≈0.75 for chaining, ≈0.5 for probing), **resize**: allocate a bigger
+array and re-hash every key into it.
+
+</Step>
+
+</Steps>
+
+The two layouts, after `cat`, `dog`, and `owl` all hash to slot 3:
+
+```text
+CHAINING                         OPEN ADDRESSING (linear probe)
+ slot                             slot
+  2  → (empty)                     2  → (empty)
+  3  → [cat] → [dog] → [owl]       3  → "cat"     (hashed here)
+  4  → (empty)                     4  → "dog"     (3 full, probed +1)
+  5  → (empty)                     5  → "owl"     (3,4 full, probed +2)
+```
+
+## The code
+
+Chaining is the easier one to build and reason about — each slot is just a bucket of
+key/value pairs.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class HashMap:
+    def __init__(self, size=8):
+        self.buckets = [[] for _ in range(size)]
+
+    def _idx(self, key):
+        return hash(key) % len(self.buckets)
+
+    def put(self, key, value):
+        bucket = self.buckets[self._idx(key)]
+        for i, (k, _) in enumerate(bucket):
+            if k == key:            # update existing
+                bucket[i] = (key, value)
+                return
+        bucket.append((key, value)) # new collision → append
+
+    def get(self, key):
+        for k, v in self.buckets[self._idx(key)]:
+            if k == key:
+                return v
+        return None
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class HashMap<V> {
+  private buckets: [string, V][][];
+
+  constructor(size = 8) {
+    this.buckets = Array.from({ length: size }, () => []);
+  }
+
+  private idx(key: string): number {
+    let h = 7;
+    for (const ch of key) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+    return (h >>> 0) % this.buckets.length;
+  }
+
+  put(key: string, value: V): void {
+    const bucket = this.buckets[this.idx(key)];
+    const hit = bucket.find(([k]) => k === key);
+    if (hit) hit[1] = value;          // update existing
+    else bucket.push([key, value]);   // new collision → append
+  }
+
+  get(key: string): V | undefined {
+    return this.buckets[this.idx(key)].find(([k]) => k === key)?.[1];
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class HashMapChained<V> {
+    private final List<List<Map.Entry<String, V>>> buckets;
+
+    HashMapChained(int size) {
+        buckets = new ArrayList<>();
+        for (int i = 0; i < size; i++) buckets.add(new ArrayList<>());
+    }
+
+    private int idx(String key) {
+        return Math.floorMod(key.hashCode(), buckets.size());
+    }
+
+    void put(String key, V value) {
+        var bucket = buckets.get(idx(key));
+        for (var e : bucket) {
+            if (e.getKey().equals(key)) { e.setValue(value); return; }
+        }
+        bucket.add(new AbstractMap.SimpleEntry<>(key, value));
+    }
+
+    V get(String key) {
+        for (var e : buckets.get(idx(key))) {
+            if (e.getKey().equals(key)) return e.getValue();
+        }
+        return null;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+#include <stdlib.h>
+
+typedef struct Node { char *key; int value; struct Node *next; } Node;
+
+#define SIZE 8
+Node *buckets[SIZE];
+
+static unsigned idx(const char *key) {
+    unsigned h = 7;
+    for (const char *p = key; *p; p++) h = h * 31u + (unsigned char)*p;
+    return h % SIZE;
+}
+
+void put(const char *key, int value) {
+    unsigned i = idx(key);
+    for (Node *n = buckets[i]; n; n = n->next)
+        if (strcmp(n->key, key) == 0) { n->value = value; return; }
+    Node *n = malloc(sizeof(Node));      /* new collision → prepend */
+    n->key = strdup(key); n->value = value; n->next = buckets[i];
+    buckets[i] = n;
+}
+
+int get(const char *key, int *found) {
+    for (Node *n = buckets[idx(key)]; n; n = n->next)
+        if (strcmp(n->key, key) == 0) { *found = 1; return n->value; }
+    *found = 0; return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <vector>
+#include <list>
+#include <optional>
+
+class HashMap {
+    std::vector<std::list<std::pair<std::string, int>>> buckets;
+
+    std::size_t idx(const std::string &key) const {
+        unsigned h = 7;
+        for (unsigned char ch : key) h = h * 31u + ch;
+        return h % buckets.size();
+    }
+
+public:
+    explicit HashMap(std::size_t size = 8) : buckets(size) {}
+
+    void put(const std::string &key, int value) {
+        auto &bucket = buckets[idx(key)];
+        for (auto &e : bucket)
+            if (e.first == key) { e.second = value; return; }
+        bucket.emplace_back(key, value); // new collision → append
+    }
+
+    std::optional<int> get(const std::string &key) const {
+        for (const auto &e : buckets[idx(key)])
+            if (e.first == key) return e.second;
+        return std::nullopt;
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Average | Worst case | Note                                            |
+| --------- | ------- | ---------- | ----------------------------------------------- |
+| Insert    | `O(1)`  | `O(n)`     | worst case if every key hits one slot/chain     |
+| Lookup    | `O(1)`  | `O(n)`     | average scans a chain of length ≈ load factor   |
+| Delete    | `O(1)`  | `O(n)`     | probing needs tombstones; chaining just unlinks |
+
+<Callout type="warn" title="Deletion is the sharp edge of probing">
+With open addressing you cannot simply blank a deleted slot — that empty would cut short the
+probe path and hide keys stored past it. You mark the slot with a *tombstone* (a "was here"
+sentinel) that lookups skip over but inserts may reuse. Tombstones accumulate and slow
+searches, so heavily-churned probing tables need periodic rehashing. Chaining sidesteps all
+of this: to delete, you just unlink the node.
+</Callout>
+
+## When to use it
+
+<Callout type="info" title="Which strategy to pick">
+Reach for **chaining** when deletions are frequent, keys are large, or you can't predict the
+load — it's forgiving and simple, which is why Java's `HashMap` and Python's `dict`
+historically used it. Reach for **open addressing** when memory and cache performance matter
+and the table stays under ~50% full — no pointer overhead, and everything sits in one
+contiguous array. Either way, resizing on load factor is what actually keeps you at `O(1)`.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="With chaining, what determines the average length of a bucket's chain?">
+
+The **load factor** — the number of stored items divided by the number of slots. If you have
+`n` items in `m` slots and a good hash spreading them evenly, each chain holds about `n/m`
+keys. Keep the load factor bounded (resize when it exceeds ~0.75) and chains stay short and
+constant-length on average, preserving `O(1)` lookups.
+
+</Accordion>
+
+<Accordion title="In linear probing, why can't you delete a key by just emptying its slot?">
+
+Because lookups stop at the first empty slot. Suppose `dog` hashed to slot 3 but was probed
+into slot 4 because `cat` occupied 3. If you delete `cat` by blanking slot 3, a later search
+for `dog` starts at 3, sees empty, and gives up — even though `dog` is right there in 4. The
+fix is a **tombstone**: mark slot 3 as deleted-but-not-empty so searches keep probing past
+it while inserts can reuse it.
+
+</Accordion>
+
+<Accordion title="Linear probing causes 'primary clustering.' What is it, and how does it hurt?">
+
+Occupied slots tend to form long contiguous runs: once a cluster forms, any key hashing
+anywhere into it must probe all the way to the cluster's end, which extends the cluster and
+makes future probes even longer. These runs snowball as the table fills, degrading lookups.
+Quadratic probing (step 1, 4, 9, …) or double hashing spread probes out to break up the
+clusters.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Collisions are guaranteed, not exceptional — a table with more keys than slots must share,
+  so every hash table ships a resolution strategy.
+- **Chaining** stores each slot's collisions in a list; **open addressing** probes for the
+  next free slot inside the array. Both stay `O(1)` on average.
+- The load factor governs everything: keep it bounded and resize on time, or your `O(1)`
+  quietly decays toward `O(n)`.
+
+<Cards>
+  <Card title="Hash Functions" href="/docs/dsa/07-hashing/01-hash-functions" description="A good hash makes collisions rare in the first place." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The structure whose O(1) these strategies protect." />
+  <Card title="Sets & Maps" href="/docs/dsa/07-hashing/04-sets-and-maps" description="The everyday tools built on top of collision-safe tables." />
+</Cards>

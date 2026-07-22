@@ -1,0 +1,139 @@
+---
+title: "Caching Fundamentals"
+description: "Your database is melting under a flood of identical read requests — caching answers the same question once and remembers the answer."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/06-cdns
+  - href: /docs/system-design/part-1-networking/02-dns
+  - href: /docs/system-design/part-1-networking/03-http-and-apis
+---
+
+## The problem
+
+Your product's homepage shows a "top 10 trending posts" list. It is the same list for everyone, computed by a heavy database query joining several tables. At 50,000 requests per second, your database is running that identical expensive query 50,000 times a second and is on fire.
+
+The maddening part: the answer barely changes minute to minute. You are paying full price to recompute the exact same result over and over, for users who would happily accept a value that is a few seconds old. There has to be a way to do the work once and reuse it.
+
+## A first attempt
+
+The instinct is to make the database faster — add read replicas, tune indexes, buy bigger hardware.
+
+That helps, but it treats the symptom. You are still *executing* the same query millions of times; you have just spread the pain across more expensive machines. Replicas cost money, add lag, and still cap out. The real waste is *redundant computation*: recomputing an answer you already knew. Scaling the database to absorb repeated identical reads is like re-cooking a meal for every person who asks what's for dinner. Compute it once; remember it.
+
+## The insight
+
+Store the result of expensive work in **fast storage close to the reader**, and serve future identical requests from there instead of redoing the work.
+
+That store is a **cache** — usually in-memory (RAM), so reads are microseconds instead of the milliseconds a database query costs. The bet is **locality**: the same data gets requested far more often than it changes. When a request finds its answer in the cache, that is a **hit** (fast, cheap). When it does not, that is a **miss** — you do the real work, then store the result so the *next* request hits. A high hit ratio means the expensive backend barely runs.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Check the cache first
+
+Every read looks in the cache before touching the database. This is the **cache-aside** pattern: on a hit, return the cached value and you are done in microseconds.
+
+</Step>
+
+<Step>
+
+### On a miss, compute and store
+
+If the value is not cached, run the real query, return the result to the user, *and* write it into the cache with a TTL. The next identical request is now a hit. The first user pays; everyone after rides free.
+
+</Step>
+
+<Step>
+
+### Evict when full
+
+Cache memory is small and precious, so it cannot hold everything. When full, an **eviction policy** decides what to drop — usually **LRU** (least recently used), betting that recently-used data will be used again.
+
+</Step>
+
+<Step>
+
+### Expire and invalidate
+
+Each entry has a **TTL** so stale data self-destructs after a while. When the underlying data changes *before* expiry, you must **invalidate** — delete or update the cached copy — or readers keep seeing the old value. This is the hard part.
+
+</Step>
+
+</Steps>
+
+The cache-aside read path:
+
+```
+   request ──► [ Cache ]  ── HIT ──►  return value  (~0.1 ms)
+                  │
+                MISS
+                  │
+                  ▼
+              [ Database ]  run expensive query  (~10 ms)
+                  │
+                  └── store result in cache (TTL) ──► return
+```
+
+Where caches live — you can stack several:
+
+- **Client / browser** — cache responses locally; zero network cost.
+- **CDN / edge** — cache static responses near the user (previous lesson).
+- **Application** — a shared in-memory store (Redis, Memcached) for query results, sessions.
+- **Database** — its own buffer pool caching hot pages in RAM.
+
+## The numbers
+
+- **Speed gap:** RAM read ~100 ns vs SSD ~100 µs vs a real DB query ~1–10 ms — a cache is **10,000×+** faster than recomputing.
+- **Hit ratio is everything.** At a **95%** hit ratio, only **5%** of reads reach the database — a **20×** load reduction. Push it to 99% and the DB sees 1 in 100.
+- **The 5% still bites:** average latency with 95% hits and a 10 ms miss ≈ `0.95×0.1 ms + 0.05×10 ms ≈ 0.6 ms` — dominated entirely by the misses, which is why chasing hit ratio pays off.
+- **TTL choice:** trending list → ~30–60 s (staleness is fine). A user's account balance → seconds or write-through only (staleness is dangerous).
+
+<Callout type="warn" title="There are only two hard things">
+"There are only two hard things in computer science: cache invalidation and naming things." Caching is easy to add and hard to keep *correct* — the instant cached data can diverge from the source of truth, you are choosing between serving stale data and the complexity of keeping them in sync. Every cache is a bet that slightly-stale is acceptable. Know your staleness budget before you cache.
+</Callout>
+
+<Callout type="idea" title="Write strategies decide your staleness">
+**Cache-aside** (lazy) is simplest but can serve stale data until TTL/invalidation. **Write-through** updates cache and DB together on every write — always fresh, slower writes. **Write-back** writes to cache first and DB later — fast writes, but a crash can lose data. Pick by how much staleness (and risk) the data tolerates.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does even a 95% cache hit ratio leave latency dominated by misses?">
+
+Because a miss is orders of magnitude slower than a hit. With a ~0.1 ms hit and a ~10 ms miss, the weighted average is `0.95×0.1 + 0.05×10 ≈ 0.6 ms` — the 5% of misses contribute ~0.5 ms while the 95% of hits contribute ~0.1 ms. The rare expensive event dominates the average, which is exactly why squeezing the hit ratio from 95% to 99% produces an outsized win.
+
+</Accordion>
+
+<Accordion title="A user updates their profile but keeps seeing the old name. What happened, and what are the fixes?">
+
+The old value is still in the cache (cache-aside) and the TTL has not expired, so reads keep returning the stale copy. Fixes: **invalidate** the entry on write (delete it, so the next read repopulates), switch that data to **write-through** (update cache and DB together so it is never stale), or shorten the TTL to bound how long staleness can last. Which you choose depends on how much staleness this data can tolerate — a profile name, very little.
+
+</Accordion>
+
+<Accordion title="What is a cache stampede, and how do you prevent it?">
+
+When a hot key expires, many concurrent requests all miss at once and hammer the database with the same expensive query simultaneously — the very flood the cache existed to prevent. Prevent it by letting only one request recompute while others wait (a lock / "single-flight"), refreshing popular keys *before* they expire, or adding small random jitter to TTLs so keys do not all expire together. The danger is many misses landing at the same instant.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A cache stores expensive results in **fast memory close to the reader**, trading a little staleness for enormous speed and backend offload.
+- **Hit ratio** governs everything: 95% hits means the database sees 1 in 20 reads, and latency is dominated by the remaining misses.
+- The hard part is **invalidation** — every cache is a bet that slightly-stale data is acceptable, and your **write strategy** (aside / through / back) sets how stale it can get.
+
+<Cards>
+  <Card title="Content Delivery Networks" href="/docs/system-design/part-1-networking/06-cdns" description="Caching applied geographically at the network edge." />
+  <Card title="DNS: The Internet's Phone Book" href="/docs/system-design/part-1-networking/02-dns" description="TTLs and cache hits, seen in the wild." />
+  <Card title="HTTP & APIs" href="/docs/system-design/part-1-networking/03-http-and-apis" description="The Cache-Control headers that drive HTTP caching." />
+</Cards>
+
+<Callout type="idea" title="In an interview">
+Reach for caching the moment you spot repeated reads of rarely-changing data, and state the hit ratio you expect and why. Then get ahead of the follow-up: name your invalidation strategy and your staleness budget out loud. Saying "this can be stale for 60 seconds, so cache-aside with a 60s TTL" shows you understand caching is a correctness trade, not a free speedup.
+</Callout>

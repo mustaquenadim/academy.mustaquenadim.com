@@ -1,0 +1,11 @@
+{
+  "title": "Part 4 · Reliability",
+  "icon": "ShieldCheck",
+  "pages": [
+    "01-availability-and-slas",
+    "02-redundancy-and-failover",
+    "03-monitoring-and-observability",
+    "04-backpressure-and-circuit-breakers",
+    "05-disaster-recovery"
+  ]
+}

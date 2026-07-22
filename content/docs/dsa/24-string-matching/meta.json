@@ -1,0 +1,11 @@
+{
+  "title": "String Matching",
+  "icon": "ScanSearch",
+  "pages": [
+    "01-string-matching-intro",
+    "02-kmp",
+    "03-rabin-karp",
+    "04-z-algorithm",
+    "05-manacher"
+  ]
+}

@@ -1,0 +1,250 @@
+---
+title: "Classic Recursion Puzzles"
+description: "The Tower of Hanoi and the Josephus problem look like party tricks, but they teach how recursion tames impossible-looking tasks."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/01-recursion
+  - href: /docs/dsa/02-recursion-math/03-recursion-patterns
+  - href: /docs/dsa/02-recursion-math/02-analysis-of-recursion
+---
+
+## The problem
+
+Three pegs. A stack of disks sorted big-to-small on the first peg. Move the whole stack to the third peg, one disk at a time, never placing a bigger disk on a smaller one. With three disks you can muddle through by trial and error. With ten disks you will lose the plot before you are halfway.
+
+Then there is the campfire version: `n` people stand in a circle, and every `k`-th person is eliminated until one survivor remains. Where should *you* stand to be the last one left? Both puzzles feel like they demand you track a hopeless amount of state — and both collapse to a few lines once you find the recursive handle.
+
+## A first attempt
+
+Try to plan Hanoi as one flat sequence of moves and you drown. You would have to hold the position of every disk in your head and reason about all of them at once — the state space is enormous, and there is no obvious loop that produces the moves in order. People genuinely get stuck here.
+
+For Josephus, the brute-force fix is to actually simulate the circle: put `n` people in a list and repeatedly delete every `k`-th one. That works, but deleting from a list is **O(n)** each time and you do it `n` times, giving **O(n²)** — sluggish for large circles, and it teaches you nothing about *why* the survivor lands where it does.
+
+## The insight
+
+Both puzzles contain a smaller copy of themselves — the signature of recursion.
+
+**Hanoi:** to move `n` disks from source to destination, first move the top `n − 1` disks out of the way onto the spare peg, move the single largest disk across, then move those `n − 1` disks on top of it. You never plan the whole thing — you defer the hard part to a smaller Hanoi.
+
+**Josephus:** solve the circle of `n − 1` survivors first, then figure out how that answer shifts once you add the person who gets eliminated first. If `josephus(n − 1, k)` gives the survivor's position in the smaller circle, the answer for `n` is `(josephus(n − 1, k) + k) % n`. The `+ k` accounts for counting starting past the first victim.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Hanoi: name the three roles
+
+At each call you have a `source`, a `destination`, and an `auxiliary` peg. The roles rotate on every recursive call — today's spare is tomorrow's source.
+
+</Step>
+
+<Step>
+
+### Hanoi: the three-move recipe
+
+Moving `n` disks is always: recurse `n − 1` onto the spare, move disk `n`, recurse `n − 1` onto the target.
+
+```text
+hanoi(3, A, B, C):
+  hanoi(2, A, C, B)      move 2 disks A -> B (using C)
+  move disk 3: A -> C
+  hanoi(2, B, A, C)      move 2 disks B -> C (using A)
+```
+
+The base case `n == 0` moves nothing and stops the recursion.
+
+</Step>
+
+<Step>
+
+### Josephus: shrink the circle
+
+Solve the `(n − 1)`-person circle, whose answer is a 0-indexed position. Adding back the person eliminated first shifts every position forward by `k`, wrapping around with `% n`.
+
+</Step>
+
+<Step>
+
+### Josephus: read the base case
+
+A circle of one person has a trivial survivor: position `0`. Every larger answer is built from that by applying `(prev + k) % size` as the circle grows back to `n`.
+
+```text
+josephus(1, k) = 0
+josephus(2, k) = (0 + k) % 2
+josephus(3, k) = (josephus(2,k) + k) % 3
+...
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+Hanoi returns the move count; Josephus returns the 0-indexed survivor (add `1` for a human-friendly seat number).
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def hanoi(n, src, aux, dst):
+    if n == 0:
+        return
+    hanoi(n - 1, src, dst, aux)
+    print(f"Move disk {n}: {src} -> {dst}")
+    hanoi(n - 1, aux, src, dst)
+
+
+def josephus(n, k):            # 0-indexed survivor
+    if n == 1:
+        return 0
+    return (josephus(n - 1, k) + k) % n
+
+
+hanoi(3, 'A', 'B', 'C')
+print(josephus(7, 3))  # 3  (seat 4 for 1-indexed)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function hanoi(n: number, src: string, aux: string, dst: string): void {
+  if (n === 0) return;
+  hanoi(n - 1, src, dst, aux);
+  console.log(`Move disk ${n}: ${src} -> ${dst}`);
+  hanoi(n - 1, aux, src, dst);
+}
+
+function josephus(n: number, k: number): number {
+  if (n === 1) return 0;
+  return (josephus(n - 1, k) + k) % n;
+}
+
+hanoi(3, "A", "B", "C");
+console.log(josephus(7, 3)); // 3
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static void hanoi(int n, char src, char aux, char dst) {
+    if (n == 0) return;
+    hanoi(n - 1, src, dst, aux);
+    System.out.println("Move disk " + n + ": " + src + " -> " + dst);
+    hanoi(n - 1, aux, src, dst);
+}
+
+static int josephus(int n, int k) {   // 0-indexed survivor
+    if (n == 1) return 0;
+    return (josephus(n - 1, k) + k) % n;
+}
+
+// hanoi(3, 'A', 'B', 'C');  josephus(7, 3) -> 3
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+void hanoi(int n, char src, char aux, char dst) {
+    if (n == 0) return;
+    hanoi(n - 1, src, dst, aux);
+    printf("Move disk %d: %c -> %c\n", n, src, dst);
+    hanoi(n - 1, aux, src, dst);
+}
+
+int josephus(int n, int k) {          /* 0-indexed survivor */
+    if (n == 1) return 0;
+    return (josephus(n - 1, k) + k) % n;
+}
+
+/* hanoi(3, 'A', 'B', 'C');  josephus(7, 3) -> 3 */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+
+void hanoi(int n, char src, char aux, char dst) {
+    if (n == 0) return;
+    hanoi(n - 1, src, dst, aux);
+    std::cout << "Move disk " << n << ": " << src << " -> " << dst << "\n";
+    hanoi(n - 1, aux, src, dst);
+}
+
+int josephus(int n, int k) {          // 0-indexed survivor
+    if (n == 1) return 0;
+    return (josephus(n - 1, k) + k) % n;
+}
+
+// hanoi(3, 'A', 'B', 'C');  josephus(7, 3) -> 3
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Puzzle           | Recurrence              | Time   | Space  |
+| ---------------- | ----------------------- | ------ | ------ |
+| Tower of Hanoi   | T(n) = 2·T(n-1) + O(1)  | O(2ⁿ)  | O(n)   |
+| Josephus (recursive) | T(n) = T(n-1) + O(1) | O(n)  | O(n)   |
+| Josephus (simulation)| delete n times      | O(n·k) | O(n)   |
+
+Hanoi is *provably* exponential — moving `n` disks requires exactly `2ⁿ − 1` moves, no shortcut exists. Josephus, by contrast, drops from the **O(n²)** simulation to a clean **O(n)** once you recurse on position instead of simulating the circle.
+
+## When to use it
+
+<Callout type="idea" title="These puzzles are pattern templates">
+Hanoi is the archetype of "split a task into two smaller identical tasks with a single action between them" — the same shape as many divide-and-conquer algorithms. Josephus shows how reframing a problem in terms of *position in a smaller instance* can turn a quadratic simulation into a linear formula. When a problem feels like it needs impossible bookkeeping, ask what the answer to the `n − 1` version would give you.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does Tower of Hanoi need exactly 2ⁿ − 1 moves?">
+
+Its recurrence is `T(n) = 2·T(n-1) + 1`: two sub-towers of `n − 1` disks plus one move for the largest disk. Unrolling gives `T(n) = 2ⁿ − 1`. For 64 disks that is over 18 quintillion moves — the famous "end of the world" legend is really just a very large exponential.
+
+</Accordion>
+
+<Accordion title="Why does the Josephus formula add k and take mod n?">
+
+Solve the `(n − 1)`-circle first; its survivor sits at some 0-indexed position `p`. When you add the person who gets eliminated first, everyone's index shifts forward by `k` (counting resumes `k` places past that first victim), and the circle now has `n` seats — so the survivor's new index is `(p + k) % n`. The `% n` wraps the count around the circle.
+
+</Accordion>
+
+<Accordion title="Converting the recursive Josephus to 1-indexed — what changes?">
+
+The recurrence naturally produces a 0-indexed seat. Humans count from 1, so just add 1 at the very end: `josephus(n, k) + 1`. Don't add it inside the recursion, or the shift compounds at every level and the answer drifts.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Both puzzles dissolve once you spot the smaller self-similar copy inside them.
+- Tower of Hanoi is inherently **O(2ⁿ)** — exactly `2ⁿ − 1` moves — and models divide-and-conquer.
+- Recursing on *position* turns the Josephus simulation from **O(n²)** into an **O(n)** formula.
+
+<Cards>
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The base-case-and-recurse foundation both puzzles rely on." />
+  <Card title="Recursion Patterns" href="/docs/dsa/02-recursion-math/03-recursion-patterns" description="Reusable skeletons that Hanoi and Josephus extend." />
+  <Card title="Analyzing Recursion" href="/docs/dsa/02-recursion-math/02-analysis-of-recursion" description="Where the 2ⁿ and O(n) recurrences come from." />
+</Cards>

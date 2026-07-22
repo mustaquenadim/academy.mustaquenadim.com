@@ -1,0 +1,356 @@
+---
+title: "Big-O, Theta & Omega"
+description: "The same code feels instant on your laptop but times out in production — Big-O explains why, before you ever hit that wall."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/03-asymptotic-analysis
+  - href: /docs/dsa/01-fundamentals/06-space-complexity
+  - href: /docs/dsa/04-searching/03-binary-search
+---
+
+## The problem
+
+You built a feature that finds duplicate emails in a list. On your laptop, with the 50
+test accounts, it returns instantly. You ship it. Three months later, with 2 million
+users, the same feature takes 40 seconds and the page times out.
+
+Nothing about the code changed. The only thing that changed was **how much data it runs
+on**. If you could have seen that coming from the code alone — without waiting three
+months — you'd have fixed it on day one. That's exactly what Big-O lets you do.
+
+## A first attempt
+
+Here's the natural way to find a duplicate: for each email, look at every *other* email
+and check for a match.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def has_duplicate(emails):
+    for i in range(len(emails)):
+        for j in range(i + 1, len(emails)):
+            if emails[i] == emails[j]:
+                return True
+    return False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function hasDuplicate(emails: string[]): boolean {
+  for (let i = 0; i < emails.length; i++) {
+    for (let j = i + 1; j < emails.length; j++) {
+      if (emails[i] === emails[j]) return true;
+    }
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean hasDuplicate(String[] emails) {
+    for (int i = 0; i < emails.length; i++) {
+        for (int j = i + 1; j < emails.length; j++) {
+            if (emails[i].equals(emails[j])) return true;
+        }
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+#include <string.h>
+
+bool has_duplicate(const char *emails[], int n) {
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            if (strcmp(emails[i], emails[j]) == 0) return true;
+        }
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <vector>
+
+bool hasDuplicate(const std::vector<std::string>& emails) {
+    for (size_t i = 0; i < emails.size(); i++) {
+        for (size_t j = i + 1; j < emails.size(); j++) {
+            if (emails[i] == emails[j]) return true;
+        }
+    }
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+It works. But watch what happens as the list grows. With `n` emails, the inner loop runs
+about `n` times for each of the `n` outer steps. That's roughly **n × n = n²** comparisons.
+
+| Users (n) | Comparisons (≈ n²) |
+| --------- | ------------------ |
+| 50        | 2,500              |
+| 1,000     | 1,000,000          |
+| 2,000,000 | 4,000,000,000,000  |
+
+Fifty users? Instant. Two million? Four *trillion* comparisons. There's your 40 seconds.
+
+<Callout type="warning" title="The trap">
+The code that's fastest to *write* is often the one that scales worst. "It works on my
+machine" is true — your machine just never saw the real input size.
+</Callout>
+
+## The insight
+
+Notice we don't actually care that the naive version does *2,500* comparisons versus
+*2,499*. We care about the **shape** of the growth: when the input doubles, does the work
+double, stay flat, or explode?
+
+That shape is what **Big-O notation** captures. It throws away:
+
+- **Constants** — `2n` and `100n` are both just `O(n)`. Doubling the machine's speed
+  doesn't change how the curve bends.
+- **Lower-order terms** — `n² + n` is `O(n²)`, because for large `n` the `n²` dwarfs the `n`.
+
+What's left is the one thing that decides whether you scale: the **dominant term**.
+
+## How to read the growth
+
+<Steps>
+
+<Step>
+
+### Count the work in terms of `n`
+
+Look at how many basic steps run as a function of the input size `n`. A single loop over
+the data is `n` steps. A loop inside a loop is `n × n`.
+
+</Step>
+
+<Step>
+
+### Keep only the dominant term
+
+`n² + 3n + 10` becomes `n²`. As `n` grows, the smaller terms stop mattering.
+
+</Step>
+
+<Step>
+
+### Drop the constants
+
+`5n²` becomes `n²`. Constants describe your hardware, not your algorithm.
+
+</Step>
+
+<Step>
+
+### Name the class
+
+What's left is your Big-O. `O(n²)` here. That single symbol predicts the 40-second wall.
+
+</Step>
+
+</Steps>
+
+### The classes you'll meet most
+
+| Big-O        | Name          | Doubling `n` means…      | Example                       |
+| ------------ | ------------- | ------------------------ | ----------------------------- |
+| `O(1)`       | Constant      | no change                | array index lookup            |
+| `O(log n)`   | Logarithmic   | one extra step           | [binary search](/docs/dsa/04-searching/03-binary-search) |
+| `O(n)`       | Linear        | twice the work           | one loop over the data        |
+| `O(n log n)` | Linearithmic  | a bit more than double    | good sorting algorithms       |
+| `O(n²)`      | Quadratic     | four times the work      | nested loops (our example)    |
+| `O(2ⁿ)`      | Exponential   | the work *squares*       | trying every subset           |
+
+## Big-O vs Theta vs Omega
+
+Big-O is the one you'll use daily, but it's really one of three siblings — they describe
+different *bounds* on the running time:
+
+- **Big-O (O)** — the **upper** bound. "It will take *at most* this long." The worst case.
+- **Omega (Ω)** — the **lower** bound. "It will take *at least* this long." The best case.
+- **Theta (Θ)** — a **tight** bound. Used when the upper and lower bounds match, so the
+  algorithm always grows at this rate.
+
+Our duplicate finder is `O(n²)` in the worst case (no duplicates — it checks everything),
+but `Ω(1)` in the best case (the first two emails match, it returns immediately).
+
+<Callout type="idea" title="Why we obsess over the worst case">
+Best cases are luck. When you promise a user their page loads, you're promising it loads
+even on the worst input. That's why "Big-O" almost always means the worst case in
+practice.
+</Callout>
+
+## Fixing our example
+
+The whole reason to learn Big-O is to *change* it. Instead of comparing every pair, drop
+each email into a hash set and check membership as you go — turning `O(n²)` into `O(n)`.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def has_duplicate(emails):
+    seen = set()
+    for email in emails:
+        if email in seen:      # O(1) membership check
+            return True
+        seen.add(email)
+    return False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function hasDuplicate(emails: string[]): boolean {
+  const seen = new Set<string>();
+  for (const email of emails) {
+    if (seen.has(email)) return true; // O(1) membership check
+    seen.add(email);
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean hasDuplicate(String[] emails) {
+    Set<String> seen = new HashSet<>();
+    for (String email : emails) {
+        if (seen.contains(email)) return true; // O(1) membership check
+        seen.add(email);
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+#include <string.h>
+
+// Minimal fixed-size open-addressing hash set of strings.
+#define CAP 4096  // must exceed the number of emails; power of two
+
+static unsigned long hash_str(const char *s) {
+    unsigned long h = 5381;
+    while (*s) h = ((h << 5) + h) + (unsigned char)*s++; // djb2
+    return h;
+}
+
+bool has_duplicate(const char *emails[], int n) {
+    const char *slots[CAP] = {0};   // NULL means empty
+    for (int i = 0; i < n; i++) {
+        unsigned long idx = hash_str(emails[i]) % CAP;
+        while (slots[idx] != NULL) {           // linear probe
+            if (strcmp(slots[idx], emails[i]) == 0) return true; // O(1) avg check
+            idx = (idx + 1) % CAP;
+        }
+        slots[idx] = emails[i];                // insert
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+bool hasDuplicate(const std::vector<std::string>& emails) {
+    std::unordered_set<std::string> seen;
+    for (const auto& email : emails) {
+        if (seen.count(email)) return true; // O(1) average membership check
+        seen.insert(email);
+    }
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+One loop, `n` steps, each doing `O(1)` work — that's `O(n)`. At 2 million users this is
+~2 million steps instead of 4 trillion: **two million times less work.** (The trick that
+makes membership `O(1)` is the subject of [Hash Tables](/docs/dsa/07-hashing/02-hash-tables).)
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What is the Big-O of a single loop that runs from 0 to n, then a separate second loop from 0 to n?">
+
+`O(n)`. Two loops **one after another** add: `n + n = 2n`, and we drop the constant to get
+`O(n)`. Loops only *multiply* when one is **nested inside** the other.
+
+</Accordion>
+
+<Accordion title="A loop starts at n and halves the counter each step (n, n/2, n/4, …, 1). How many steps?">
+
+About `log₂(n)` steps — you can only halve `n` roughly `log n` times before reaching 1. So
+it's `O(log n)`. This is the heartbeat of binary search.
+
+</Accordion>
+
+<Accordion title="Is O(n²) always worse than O(n) in practice?">
+
+For **large** `n`, yes. But for tiny inputs the constants can dominate — an `O(n²)` sort
+with a tiny constant can beat an `O(n log n)` one when `n` is, say, 10. Big-O describes the
+*trend*, not small-input reality. That's why real sort libraries switch to insertion sort
+for small slices.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Big-O describes how work **grows with input size**, ignoring constants and lower-order
+  terms — it predicts scaling from the code alone.
+- The common ladder, best to worst: `O(1)`, `O(log n)`, `O(n)`, `O(n log n)`, `O(n²)`,
+  `O(2ⁿ)`.
+- **O** is the upper bound (worst case), **Ω** the lower (best case), **Θ** a tight bound;
+  we usually mean the worst case.
+
+<Cards>
+  <Card title="Asymptotic Analysis" href="/docs/dsa/01-fundamentals/03-asymptotic-analysis" description="The formal machinery behind the intuition here." />
+  <Card title="Space Complexity" href="/docs/dsa/01-fundamentals/06-space-complexity" description="Time isn't the only thing that grows — memory counts too." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The O(1) trick that fixed our duplicate finder." />
+</Cards>

@@ -1,0 +1,330 @@
+---
+title: "Fixed-Size Windows"
+description: "Maximum sum of any k consecutive items: don’t re-add k numbers each time — subtract the one leaving, add the one entering."
+extractedReferences:
+  - href: /docs/dsa/09-sliding-window/01-sliding-window-intro
+  - href: /docs/dsa/09-sliding-window/03-variable-window
+  - href: /docs/dsa/03-arrays-strings/05-kadane-and-subarrays
+---
+
+## The problem
+
+You're building a fitness app. A user has a list of calories burned each day, and they want
+to know their **best 7-day streak** — the run of 7 consecutive days where they burned the
+most in total. Simple enough: every window of 7 days is a candidate, and you want the biggest
+sum among them.
+
+You could, for each starting day, add up the next seven values and remember the largest. With
+a year of data that's 358 windows times 7 additions — not slow, but obviously repetitive. Day
+2 through day 8 shares six days with day 1 through day 7. You're re-summing numbers you
+already summed a moment ago.
+
+## A first attempt
+
+The literal approach: a loop over every start, and an inner loop that re-sums `k` values.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_sum_k(arr, k):
+    best = None
+    for start in range(len(arr) - k + 1):
+        total = 0
+        for j in range(start, start + k):   # re-sums k every window
+            total += arr[j]
+        best = total if best is None else max(best, total)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxSumK(arr: number[], k: number): number {
+  let best = -Infinity;
+  for (let start = 0; start <= arr.length - k; start++) {
+    let total = 0;
+    for (let j = start; j < start + k; j++) total += arr[j]; // re-sums k
+    best = Math.max(best, total);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int maxSumK(int[] arr, int k) {
+    int best = Integer.MIN_VALUE;
+    for (int start = 0; start <= arr.length - k; start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; // re-sums k
+        best = Math.max(best, total);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int maxSumK(int arr[], int n, int k) {
+    int best = INT_MIN;
+    for (int start = 0; start <= n - k; start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; /* re-sums k */
+        if (total > best) best = total;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int maxSumK(const vector<int>& arr, int k) {
+    int best = INT_MIN;
+    for (int start = 0; start + k <= (int)arr.size(); start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; // re-sums k
+        best = max(best, total);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Roughly `n` windows times `k` additions each: `O(n · k)`. The overlap between consecutive
+windows is the waste, and a fixed-size window removes it.
+
+## The insight
+
+A **fixed-size window** never changes width — it's always exactly `k` wide. That makes the
+bookkeeping wonderfully regular: both edges move together, one step at a time. When they
+move, exactly one element enters on the right and exactly one leaves on the left.
+
+So keep a running sum. To slide, add `arr[right]` and subtract `arr[right - k]`. The `- k`
+offset is the whole trick: the element that leaves is always exactly `k` positions behind the
+one that just entered.
+
+<Callout type="idea" title="Left edge = right edge − k">
+In a fixed window you don't need a separate `left` pointer at all. The element leaving is
+`arr[right - k]`, computed straight from the right edge. One pointer, one running sum.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Prime the first window
+
+Add the first `k` elements once. This is the sum of window `[0 .. k-1]` and your first
+candidate answer.
+
+</Step>
+
+<Step>
+
+### Advance the right edge
+
+Move `right` from `k` to the end. At each position, add `arr[right]` — the element entering.
+
+</Step>
+
+<Step>
+
+### Drop the left edge
+
+Subtract `arr[right - k]` — the element that just left the window. The running sum is now
+exactly the sum of the current `k`-wide window.
+
+</Step>
+
+<Step>
+
+### Track the best
+
+Compare against the best sum so far and keep the larger. Continue to the end.
+
+</Step>
+
+</Steps>
+
+Window of `k = 4` over daily calories, edges marked `[ ]`:
+
+```text
+index:   0     1     2     3     4     5
+value:  300   500   200   400   600   100
+       [300   500   200   400]  600   100    sum = 1400
+        300  [500   200   400   600]  100    sum = 1400 - 300 + 600 = 1700  ← best
+        300   500  [200   400   600   100]   sum = 1700 - 500 + 100 = 1300
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_sum_k(arr, k):
+    window = sum(arr[:k])                 # prime first window: O(k) once
+    best = window
+    for right in range(k, len(arr)):
+        window += arr[right] - arr[right - k]   # enter right, leave right-k
+        best = max(best, window)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxSumK(arr: number[], k: number): number {
+  let window = 0;
+  for (let i = 0; i < k; i++) window += arr[i]; // prime first window
+  let best = window;
+  for (let right = k; right < arr.length; right++) {
+    window += arr[right] - arr[right - k]; // enter right, leave right-k
+    best = Math.max(best, window);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int maxSumK(int[] arr, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; // prime first window
+    int best = window;
+    for (int right = k; right < arr.length; right++) {
+        window += arr[right] - arr[right - k]; // enter right, leave right-k
+        best = Math.max(best, window);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int maxSumK(int arr[], int n, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; /* prime first window */
+    int best = window;
+    for (int right = k; right < n; right++) {
+        window += arr[right] - arr[right - k]; /* enter right, leave right-k */
+        if (window > best) best = window;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int maxSumK(const vector<int>& arr, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; // prime first window
+    int best = window;
+    for (int right = k; right < (int)arr.size(); right++) {
+        window += arr[right] - arr[right - k]; // enter right, leave right-k
+        best = max(best, window);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+The same skeleton solves a whole family: swap the running sum for a running count, a maximum,
+or an average, and you get "count of vowels in any window of `k`," "first negative in each
+window," and so on.
+
+## Complexity
+
+| Aspect | Cost   | Why                                                       |
+| ------ | ------ | --------------------------------------------------------- |
+| Time   | `O(n)` | prime once in `O(k)`, then one `O(1)` update per slide    |
+| Space  | `O(1)` | a single running sum plus the best-so-far                 |
+
+## When to use it
+
+<Callout type="warning" title="Fixed windows need a reversible aggregate">
+The slide works because a sum can be *undone* — subtract what leaves. That's true for sums,
+counts, and averages, but **not** for max or min: you can't "subtract" the element that was
+the maximum and instantly know the new one. For a rolling max or min over a fixed window, you
+need a monotonic deque instead of a running value.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You need the maximum of every window of size k, not the sum. Why doesn't this exact trick work?">
+
+Because max isn't reversible. When the element leaving the window happened to be the current
+maximum, subtracting it tells you nothing about what the *new* maximum is — it could be any
+remaining element. Rolling max needs a monotonic deque that keeps candidate maxima in order,
+giving `O(n)` overall. That's the
+[sliding window maximum](/docs/dsa/15-deque/02-sliding-window-maximum) problem.
+
+</Accordion>
+
+<Accordion title="How do you compute the average of every window of size k?">
+
+Compute each window **sum** exactly as above, then divide by `k` at the moment you record it.
+Dividing the running sum by `k` each step gives the rolling average for `O(1)` per window.
+Keep the division out of the update itself so you don't accumulate floating-point drift.
+
+</Accordion>
+
+<Accordion title="What if k is larger than the array length?">
+
+There is no valid window, so the answer is undefined — guard for it. A clean contract is to
+return a sentinel (like `None` / `-1`) or throw when `k > n`. Checking `k <= n` before priming
+the first window avoids reading past the end of the array.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A fixed-size window is always exactly `k` wide; both edges move together, so exactly one
+  element enters and one leaves per step.
+- Keep one running aggregate and update it with `+= arr[right] - arr[right - k]` — no second
+  pointer needed — for an `O(n)` scan.
+- The pattern only works for **reversible** aggregates (sum, count, average); rolling max/min
+  needs a monotonic deque.
+
+<Cards>
+  <Card title="The Sliding Window" href="/docs/dsa/09-sliding-window/01-sliding-window-intro" description="Where the slide-don't-restart idea comes from." />
+  <Card title="Variable-Size Windows" href="/docs/dsa/09-sliding-window/03-variable-window" description="When the window must grow and shrink." />
+  <Card title="Kadane & Subarrays" href="/docs/dsa/03-arrays-strings/05-kadane-and-subarrays" description="Best subarray when the length isn't fixed." />
+</Cards>

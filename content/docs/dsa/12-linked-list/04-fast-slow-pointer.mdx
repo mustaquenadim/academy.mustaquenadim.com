@@ -1,0 +1,328 @@
+---
+title: "Fast & Slow Pointers"
+description: "How do you find the middle, or detect a loop, without knowing the length? Send two pointers at different speeds."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/01-linked-list-intro
+  - href: /docs/dsa/12-linked-list/03-reversal-patterns
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+---
+
+## The problem
+
+A background job hands you the head of a linked list and asks for the middle node — maybe to
+split it for a merge sort. Easy enough: count the length, then walk halfway. But that is two
+passes, and you only realise the length after the first one. Worse, some of these lists have
+a bug where a node points back into the chain, forming a loop. Your length count never
+finishes; it just spins.
+
+You want a single pass, no stored length, that finds the middle *and* can tell whether the
+list even has an end. Counting first cannot do that — you need something that reacts to the
+list's shape as it goes.
+
+## A first attempt
+
+The two-pass middle finder:
+
+```python
+n = 0
+node = head
+while node:            # pass 1: measure
+    n += 1
+    node = node.next
+node = head
+for _ in range(n // 2): # pass 2: walk halfway
+    node = node.next
+```
+
+It is **O(n)** but touches every node twice, needs the length up front, and — fatally — the
+first loop never terminates on a list with a cycle. For loop *detection* you might reach for
+a hash set of visited nodes: correct, but **O(n) extra space**. There is a way that needs
+neither the length nor the set.
+
+## The insight
+
+Send two pointers from the head at different speeds: `slow` moves one step, `fast` moves two.
+By the time `fast` reaches the end, `slow` has covered exactly half the distance — it is
+sitting on the middle. One pass, no counting.
+
+And if the list loops? `fast` can never reach an end, so it keeps circling and eventually
+laps `slow` from behind. The two pointers **meet inside the cycle**. Meeting means a loop;
+`fast` hitting null means no loop. This is **Floyd's tortoise-and-hare**.
+
+```text
+slow → one step        fast → two steps
+[a][b][c][d][e]
+ s              f
+     s              f   (fast fell off → slow is at middle)
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Both start at the head
+
+`slow = head`, `fast = head`. Each iteration, `slow` advances one node and `fast` advances
+two. The speed gap is the entire mechanism.
+
+</Step>
+
+<Step>
+
+### Fast reaching null means a clean list
+
+Loop while `fast` and `fast.next` are non-null. When it exits, there was no cycle, and `slow`
+is at the middle (the second of the two middles on an even-length list).
+
+</Step>
+
+<Step>
+
+### Fast meeting slow means a cycle
+
+If a cycle exists, `fast` re-enters it and closes the gap by one node per step until
+`fast == slow`. That equality is your loop detector — no visited-set required.
+
+</Step>
+
+<Step>
+
+### Find the loop's start
+
+After they meet, reset one pointer to the head and advance both one step at a time. The node
+where they meet again is the cycle's entry point — a tidy consequence of the distances
+involved in Floyd's algorithm.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value, next=None):
+        self.value = value
+        self.next = next
+
+def middle(head):                    # O(n) time, O(1) space
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+    return slow
+
+def has_cycle(head):                 # Floyd's detection
+    slow = fast = head
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+        if slow is fast:
+            return True
+    return False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class ListNode {
+  value: number;
+  next: ListNode | null;
+  constructor(value: number, next: ListNode | null = null) {
+    this.value = value;
+    this.next = next;
+  }
+}
+
+function middle(head: ListNode | null): ListNode | null { // O(n), O(1)
+  let slow = head, fast = head;
+  while (fast && fast.next) {
+    slow = slow!.next;
+    fast = fast.next.next;
+  }
+  return slow;
+}
+
+function hasCycle(head: ListNode | null): boolean {
+  let slow = head, fast = head;
+  while (fast && fast.next) {
+    slow = slow!.next;
+    fast = fast.next.next;
+    if (slow === fast) return true;
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int value;
+    Node next;
+    Node(int value, Node next) { this.value = value; this.next = next; }
+}
+
+Node middle(Node head) {             // O(n) time, O(1) space
+    Node slow = head, fast = head;
+    while (fast != null && fast.next != null) {
+        slow = slow.next;
+        fast = fast.next.next;
+    }
+    return slow;
+}
+
+boolean hasCycle(Node head) {        // Floyd's detection
+    Node slow = head, fast = head;
+    while (fast != null && fast.next != null) {
+        slow = slow.next;
+        fast = fast.next.next;
+        if (slow == fast) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stddef.h>
+#include <stdbool.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+Node *middle(Node *head) {                 /* O(n) time, O(1) space */
+    Node *slow = head, *fast = head;
+    while (fast != NULL && fast->next != NULL) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
+    return slow;
+}
+
+bool has_cycle(Node *head) {               /* Floyd's detection */
+    Node *slow = head, *fast = head;
+    while (fast != NULL && fast->next != NULL) {
+        slow = slow->next;
+        fast = fast->next->next;
+        if (slow == fast) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct Node {
+    int value;
+    Node *next;
+    Node(int v, Node *n = nullptr) : value(v), next(n) {}
+};
+
+Node *middle(Node *head) {                 // O(n) time, O(1) space
+    Node *slow = head, *fast = head;
+    while (fast != nullptr && fast->next != nullptr) {
+        slow = slow->next;
+        fast = fast->next->next;
+    }
+    return slow;
+}
+
+bool has_cycle(Node *head) {               // Floyd's detection
+    Node *slow = head, *fast = head;
+    while (fast != nullptr && fast->next != nullptr) {
+        slow = slow->next;
+        fast = fast->next->next;
+        if (slow == fast) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Task                     | Approach          | Time | Space |
+| ------------------------ | ----------------- | ---- | ----- |
+| Find middle              | Two-pass count    | O(n) | O(1)  |
+| Find middle              | Fast/slow         | O(n) | O(1)  |
+| Detect cycle             | Visited hash set  | O(n) | O(n)  |
+| Detect cycle             | Fast/slow (Floyd) | O(n) | O(1)  |
+
+## When to use it
+
+<Callout type="idea" title="Different speeds reveal structure">
+Fast/slow is the go-to whenever you need a positional landmark (middle, n-th from end, the
+split point for merge sort) or must reason about cycles, all in one pass and O(1) space. Its
+close cousin: two pointers `n` apart to find the n-th node from the end. The one gotcha is the
+loop guard — check both `fast` and `fast.next` before the double hop, or you dereference null
+on even-length lists.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="On an even-length list, which of the two middle nodes does fast/slow land on?">
+
+The second one. With `slow` and `fast` both starting at the head and looping while
+`fast && fast.next`, `slow` ends on the node just past the true center — e.g. for `1→2→3→4`
+it stops at `3`. If you need the first middle instead, start `fast` at `head.next` or stop one
+step earlier.
+
+</Accordion>
+
+<Accordion title="Why are two pointers guaranteed to meet inside a cycle rather than skip past each other?">
+
+Once both are inside the loop, the gap between them shrinks by exactly one node per step
+(fast gains two, slow gains one, net +1 closing). A gap that decreases by one every step must
+eventually hit zero — they cannot jump over each other, because "over" would require closing
+by two, which never happens. So a meeting is guaranteed.
+
+</Accordion>
+
+<Accordion title="How do you remove the n-th node from the end in one pass?">
+
+Advance a `lead` pointer `n` steps ahead of a `trail` pointer, then move both together until
+`lead` reaches the end. Now `trail` sits just before the target, so `trail.next =
+trail.next.next` deletes it. Use a dummy head to handle deleting the first node cleanly. One
+pass, O(1) space — the same different-distance idea as fast/slow.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Two pointers at 1x and 2x speed find the middle in a single pass with no stored length.
+- If `fast` laps `slow`, the list has a cycle; if `fast` hits null, it does not — O(1) space.
+- The same family solves n-th-from-end and the split point for a linked-list merge sort.
+
+<Cards>
+  <Card title="Linked Lists" href="/docs/dsa/12-linked-list/01-linked-list-intro" description="The nodes and next pointers these two travellers walk." />
+  <Card title="Reversal Patterns" href="/docs/dsa/12-linked-list/03-reversal-patterns" description="Pair fast/slow with reversal to test palindromes in O(1) space." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="The broader family of coordinated-pointer techniques." />
+</Cards>

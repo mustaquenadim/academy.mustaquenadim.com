@@ -1,0 +1,421 @@
+---
+title: "BST Operations"
+description: "Search, insert, and — the tricky one — delete, all while preserving the ordering that makes a BST fast."
+extractedReferences:
+  - href: /docs/dsa/17-binary-search-tree/01-bst-intro
+  - href: /docs/dsa/17-binary-search-tree/03-bst-traversal
+  - href: /docs/dsa/17-binary-search-tree/04-bst-construction-and-validation
+---
+
+## The problem
+
+Your BST is holding a live set of keys — active user IDs, say — and the set never sits still.
+People sign up, so you insert. People close their accounts, so you delete. Meanwhile the app
+constantly asks "is this ID active?" so you search. Every one of these has to be fast, and
+every one has to leave the tree still obeying the BST rule.
+
+Search and insert are gentle: you walk down and stop. Delete is where it gets interesting.
+Pull a node out of the middle of the tree and you leave a hole with two dangling subtrees —
+and you have to stitch things back together *without* breaking left < node < right anywhere.
+
+## A first attempt
+
+The lazy way to delete is to not delete: flag the node "removed" and leave it in place.
+Searches learn to ignore flagged nodes.
+
+That works for a while, but the flagged nodes still take up height. Delete enough of them and
+your tree is mostly tombstones — a 10-node tree might be 10 levels tall, dragging every search
+toward **O(n)**. You also can't reinsert a key that's sitting there flagged without special
+cases. Tombstones postpone the problem instead of solving it. You need to actually remove the
+node and repair the structure in **O(h)**, where `h` is the height.
+
+## The insight
+
+The fix for delete is to find a **replacement key that keeps everything sorted**. When you
+remove a node with two children, ask: which existing key can slide into this slot without
+violating the invariant? Exactly two candidates work — the **in-order predecessor** (largest
+key in the left subtree) or the **in-order successor** (smallest key in the right subtree).
+
+Both sit immediately next to the removed key in sorted order, so either one preserves
+left < node < right. Copy that neighbor's value up into the hole, then delete the neighbor —
+and the neighbor is easy to delete because it has at most one child. A hard problem reduces to
+an easy one.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Search: walk and compare
+
+Start at the root. Equal means found. Smaller means go left, larger means go right. Stop when
+you match or fall off into a null pointer.
+
+</Step>
+
+<Step>
+
+### Insert: search, then attach
+
+Do the same walk. When you reach the null spot where the key *would* be, that's precisely
+where it belongs — create a leaf there. Duplicates are usually rejected or counted.
+
+</Step>
+
+<Step>
+
+### Delete, easy cases
+
+If the target is a leaf, just detach it. If it has exactly one child, splice that child in
+where the target was — the subtree's order is untouched.
+
+</Step>
+
+<Step>
+
+### Delete, the two-child case
+
+Find the in-order successor: go to the target's right child, then follow left pointers to the
+bottom. Copy its key into the target node, then delete that successor (it has no left child,
+so it's an easy case). The invariant holds.
+
+</Step>
+
+</Steps>
+
+Deleting `3` from the tree below — it has two children, so we pull up its successor `4`
+(smallest key on the right):
+
+```text
+        8                     8
+      /   \                 /   \
+     3      10    ─►       4      10
+    / \       \           / \       \
+   1   6       14        1   6       14
+      / \                     \
+     4   7                     7
+```
+
+## The code
+
+Iterative search and insert, recursive delete (delete reads clearest as recursion).
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+
+def insert(root, key):
+    if root is None:
+        return Node(key)
+    node = root
+    while True:
+        if key < node.key:
+            if node.left is None:
+                node.left = Node(key)
+                return root
+            node = node.left
+        elif key > node.key:
+            if node.right is None:
+                node.right = Node(key)
+                return root
+            node = node.right
+        else:
+            return root  # duplicate, ignore
+
+def delete(root, key):
+    if root is None:
+        return None
+    if key < root.key:
+        root.left = delete(root.left, key)
+    elif key > root.key:
+        root.right = delete(root.right, key)
+    else:
+        if root.left is None:
+            return root.right
+        if root.right is None:
+            return root.left
+        succ = root.right
+        while succ.left is not None:
+            succ = succ.left
+        root.key = succ.key
+        root.right = delete(root.right, succ.key)
+    return root
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Node {
+  key: number;
+  left: Node | null = null;
+  right: Node | null = null;
+  constructor(key: number) {
+    this.key = key;
+  }
+}
+
+function insert(root: Node | null, key: number): Node {
+  if (root === null) return new Node(key);
+  let node = root;
+  while (true) {
+    if (key < node.key) {
+      if (node.left === null) {
+        node.left = new Node(key);
+        return root;
+      }
+      node = node.left;
+    } else if (key > node.key) {
+      if (node.right === null) {
+        node.right = new Node(key);
+        return root;
+      }
+      node = node.right;
+    } else {
+      return root; // duplicate, ignore
+    }
+  }
+}
+
+function remove(root: Node | null, key: number): Node | null {
+  if (root === null) return null;
+  if (key < root.key) {
+    root.left = remove(root.left, key);
+  } else if (key > root.key) {
+    root.right = remove(root.right, key);
+  } else {
+    if (root.left === null) return root.right;
+    if (root.right === null) return root.left;
+    let succ = root.right;
+    while (succ.left !== null) succ = succ.left;
+    root.key = succ.key;
+    root.right = remove(root.right, succ.key);
+  }
+  return root;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int key;
+    Node left, right;
+    Node(int key) { this.key = key; }
+}
+
+Node insert(Node root, int key) {
+    if (root == null) return new Node(key);
+    Node node = root;
+    while (true) {
+        if (key < node.key) {
+            if (node.left == null) { node.left = new Node(key); return root; }
+            node = node.left;
+        } else if (key > node.key) {
+            if (node.right == null) { node.right = new Node(key); return root; }
+            node = node.right;
+        } else {
+            return root; // duplicate, ignore
+        }
+    }
+}
+
+Node delete(Node root, int key) {
+    if (root == null) return null;
+    if (key < root.key) {
+        root.left = delete(root.left, key);
+    } else if (key > root.key) {
+        root.right = delete(root.right, key);
+    } else {
+        if (root.left == null) return root.right;
+        if (root.right == null) return root.left;
+        Node succ = root.right;
+        while (succ.left != null) succ = succ.left;
+        root.key = succ.key;
+        root.right = delete(root.right, succ.key);
+    }
+    return root;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+struct Node {
+    int key;
+    struct Node *left, *right;
+};
+
+struct Node *new_node(int key) {
+    struct Node *n = malloc(sizeof(struct Node));
+    n->key = key;
+    n->left = n->right = NULL;
+    return n;
+}
+
+struct Node *insert(struct Node *root, int key) {
+    if (root == NULL) return new_node(key);
+    struct Node *node = root;
+    while (1) {
+        if (key < node->key) {
+            if (node->left == NULL) { node->left = new_node(key); return root; }
+            node = node->left;
+        } else if (key > node->key) {
+            if (node->right == NULL) { node->right = new_node(key); return root; }
+            node = node->right;
+        } else {
+            return root; /* duplicate, ignore */
+        }
+    }
+}
+
+struct Node *delete(struct Node *root, int key) {
+    if (root == NULL) return NULL;
+    if (key < root->key) {
+        root->left = delete(root->left, key);
+    } else if (key > root->key) {
+        root->right = delete(root->right, key);
+    } else {
+        if (root->left == NULL) { struct Node *r = root->right; free(root); return r; }
+        if (root->right == NULL) { struct Node *l = root->left; free(root); return l; }
+        struct Node *succ = root->right;
+        while (succ->left != NULL) succ = succ->left;
+        root->key = succ->key;
+        root->right = delete(root->right, succ->key);
+    }
+    return root;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+struct Node {
+    int key;
+    Node *left = nullptr, *right = nullptr;
+    Node(int k) : key(k) {}
+};
+
+Node *insert(Node *root, int key) {
+    if (root == nullptr) return new Node(key);
+    Node *node = root;
+    while (true) {
+        if (key < node->key) {
+            if (node->left == nullptr) { node->left = new Node(key); return root; }
+            node = node->left;
+        } else if (key > node->key) {
+            if (node->right == nullptr) { node->right = new Node(key); return root; }
+            node = node->right;
+        } else {
+            return root; // duplicate, ignore
+        }
+    }
+}
+
+Node *remove_key(Node *root, int key) {
+    if (root == nullptr) return nullptr;
+    if (key < root->key) {
+        root->left = remove_key(root->left, key);
+    } else if (key > root->key) {
+        root->right = remove_key(root->right, key);
+    } else {
+        if (root->left == nullptr) { Node *r = root->right; delete root; return r; }
+        if (root->right == nullptr) { Node *l = root->left; delete root; return l; }
+        Node *succ = root->right;
+        while (succ->left != nullptr) succ = succ->left;
+        root->key = succ->key;
+        root->right = remove_key(root->right, succ->key);
+    }
+    return root;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Balanced tree | Worst case (degenerate) |
+| --------- | ------------- | ----------------------- |
+| Search    | O(log n)      | O(n)                    |
+| Insert    | O(log n)      | O(n)                    |
+| Delete    | O(log n)      | O(n)                    |
+| Space     | O(h) stack    | O(n) stack              |
+
+Every operation costs one root-to-leaf walk, so they all scale with the height `h`. Balanced,
+`h ≈ log n`; degenerate, `h ≈ n`.
+
+## When to use it
+
+<Callout type="warn" title="Delete is where bugs hide">
+The two-child delete is the classic interview trap. You must copy the successor's key *and*
+then delete the successor node — forgetting the second step leaves a duplicate. Also decide
+your duplicate policy up front (reject, count, or allow), because it changes both insert and
+delete. And remember: none of this stays O(log n) without a balancing scheme, so heavy
+insert/delete workloads want a red-black or AVL tree.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="When deleting a two-child node, can you use the in-order predecessor instead of the successor?">
+
+Yes. The predecessor is the largest key in the left subtree (go left once, then all the way
+right). It's the other immediate neighbor in sorted order, so it preserves the invariant just
+as well. Successor and predecessor are symmetric choices; picking one consistently can help
+keep the tree from leaning, but either is correct.
+
+</Accordion>
+
+<Accordion title="Why is deleting the in-order successor always an easy (0- or 1-child) case?">
+
+The successor is the smallest key in the right subtree, which you reach by following left
+pointers until they run out. By definition it has **no left child** — nothing smaller sits
+below it. So it has at most a right child, which is the one-child splice case. That's why the
+two-child delete reduces to an easy delete.
+
+</Accordion>
+
+<Accordion title="Insert is iterative here but delete is recursive. Why the difference?">
+
+Insert only ever attaches at the bottom, so a simple loop that tracks the current node is
+enough. Delete has to *reconnect* a parent to a possibly-new child (`root.left = delete(...)`),
+and recursion threads that returned subtree back up automatically. You can write delete
+iteratively too, but you must track the parent pointer by hand — recursion just hides that
+bookkeeping.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Search and insert are one downward walk each: compare, branch, stop or attach.
+- Delete has three shapes — leaf, one child, two children — and the two-child case swaps in
+  the **in-order successor (or predecessor)** to keep the tree sorted.
+- All three operations are O(h): O(log n) balanced, O(n) if the tree degenerates.
+
+<Cards>
+  <Card title="Binary Search Trees" href="/docs/dsa/17-binary-search-tree/01-bst-intro" description="Where the invariant and search come from." />
+  <Card title="Querying a BST" href="/docs/dsa/17-binary-search-tree/03-bst-traversal" description="Successor, kth-smallest, and range queries." />
+  <Card title="Building & Validating BSTs" href="/docs/dsa/17-binary-search-tree/04-bst-construction-and-validation" description="Construct balanced trees and prove correctness." />
+</Cards>

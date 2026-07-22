@@ -1,0 +1,12 @@
+{
+  "title": "Sorting",
+  "icon": "ArrowDownWideNarrow",
+  "pages": [
+    "01-sorting-intro",
+    "02-elementary-sorts",
+    "03-merge-sort",
+    "04-quick-sort",
+    "05-cycle-sort",
+    "06-intervals"
+  ]
+}

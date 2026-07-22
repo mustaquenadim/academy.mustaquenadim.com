@@ -1,0 +1,146 @@
+---
+title: "SQL vs NoSQL"
+description: "Every project hits the fork in the road: a rigid, reliable relational database, or a flexible, scalable NoSQL store. The right answer depends on your data’s shape."
+extractedReferences:
+  - href: /docs/system-design/part-2-databases/02-indexing
+  - href: /docs/system-design/part-2-databases/04-sharding
+  - href: /docs/system-design/part-2-databases/06-transactions
+---
+
+## The problem
+
+You are two weeks into a new product. Users, orders, a few settings. Someone asks the obvious question: "Which database do we use?" You reach for the answer everyone repeats — "SQL is old, NoSQL scales" — and pick one on vibes.
+
+Six months later that choice is the thing you cannot easily undo. Your queries either fall out effortlessly or fight you on every join. This lesson is about making that fork on purpose, by looking at the *shape* of your data and the way you read it, not at which database is trendy.
+
+## A first attempt
+
+The naive move is to pick by scale: "We might get big, so NoSQL." But scale is rarely your first problem — your first problem is *modeling*.
+
+Say you store an order as a relational schema. An order has a customer, line items, a shipping address, and payment status. In a relational store that is four tables tied by foreign keys. To render one order page you join them:
+
+```sql
+SELECT o.id, c.name, i.sku, i.qty
+FROM   orders o
+JOIN   customers c ON c.id = o.customer_id
+JOIN   line_items i ON i.order_id = o.id
+WHERE  o.id = 4711;
+```
+
+That is clean and correct. But every read touches multiple tables, and at very high volume across many machines those joins become expensive — a distributed join can fan out to every shard. Meanwhile the *document* view stores the whole order as one JSON blob and reads it in a single lookup — fast, but now the customer's name is copied into every order, and changing it means rewriting many documents.
+
+Neither is "better." They optimize for opposite things.
+
+## The insight
+
+Pick the model that matches your **access pattern**, not your data in the abstract.
+
+If you read data by following relationships in many directions ("all orders for this customer," "all customers in this city," "revenue by product"), a relational store's joins and ad-hoc queries pay off. If you almost always read one self-contained thing by its id ("give me this user's profile," "this order"), a document or key-value store hands it to you in one hop and scales horizontally without join pain.
+
+The other half of the choice is **schema-on-write vs schema-on-read**. SQL validates structure when you *write* (every row must fit the columns). NoSQL often defers structure to when you *read* (each document can differ). Rigidity is a feature when data must stay consistent; flexibility is a feature when the shape is still moving.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Classify your data's relationships
+
+Is it highly connected (users, orders, payments, inventory that must reconcile), or a bag of independent records (session tokens, event logs, product catalog pages)? Connected data leans relational; independent records lean key-value or document.
+
+</Step>
+
+<Step>
+
+### Match the store type to the pattern
+
+Relational (Postgres, MySQL) for joins, transactions, and ad-hoc queries. Document (MongoDB) for nested, self-contained records. Key-value (Redis, DynamoDB) for lightning lookups by a single key. Wide-column (Cassandra) for massive write-heavy time series. Graph (Neo4j) when the *relationships* are the query ("friends of friends").
+
+</Step>
+
+<Step>
+
+### Decide where the schema lives
+
+Schema-on-write gives you validation and safe migrations at the cost of flexibility. Schema-on-read lets each record differ, pushing the burden onto every reader to handle missing or changed fields.
+
+</Step>
+
+<Step>
+
+### Plan the escape hatch
+
+Most real systems are polyglot: Postgres as the source of truth, Redis in front for hot reads, an event log in Kafka. Choosing one database first does not forbid adding others later.
+
+</Step>
+
+</Steps>
+
+```
+   Relational (normalized)              Document (denormalized)
+   ────────────────────────            ──────────────────────────
+   customers ──┐                        orders/4711  ┌───────────┐
+               │  join                               │ id: 4711  │
+   orders ─────┼──────► order page                   │ customer: │
+               │  join                               │   { name }│  one read
+   line_items ─┘                                     │ items:[…] │
+                                                     └───────────┘
+   1 write updates a name once          1 name lives in every order
+```
+
+## Concrete numbers
+
+A single-key lookup in a well-tuned key-value store returns in well under 1 ms and a single node handles 100k+ reads/second. A 4-table join on an indexed relational database is often 1–10 ms — fine until you shard, where a cross-shard join can balloon to hundreds of ms because it waits on the slowest node.
+
+Storage tells the same story in reverse. Denormalizing the customer name into 10 million orders wastes space and turns a one-row name change into a 10-million-document rewrite. Normalizing keeps it as one row but costs a join on every read. You are trading write cost for read cost.
+
+## When to use it
+
+<Callout type="warn" title="The trade-off">
+SQL buys you consistency, joins, and ad-hoc queries, and charges you flexibility and easy horizontal scale. NoSQL buys you flexible schemas and horizontal scale, and charges you joins, multi-record transactions, and duplicated data you must keep in sync yourself. There is no free option — only the one that fits your reads.
+</Callout>
+
+<Callout type="idea" title="Default to relational">
+When genuinely unsure, start with a relational database. It handles the widest range of queries, gives you transactions for free, and modern Postgres also stores JSON documents — so you rarely lose the NoSQL option, but you keep joins when you need them.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You are building a social graph and the core query is 'people within two hops of me'. Which store fits, and why not a relational one?">
+
+A graph database. The query traverses relationships to arbitrary depth, which in SQL becomes a self-join per hop — two hops is manageable, but the cost grows fast and the SQL gets ugly. A graph store makes edges first-class, so "friends of friends" is a native traversal that stays fast as depth grows.
+
+</Accordion>
+
+<Accordion title="Your product catalog has wildly different attributes per category (a laptop has RAM, a shirt has size). Schema-on-write or schema-on-read?">
+
+Schema-on-read (a document store) fits the varying shape — each product carries only its own fields, no sparse columns or endless migrations. The cost: every reader must tolerate missing fields, and you lose column-level validation. If the attributes were stable you would prefer schema-on-write for the safety.
+
+</Accordion>
+
+<Accordion title="Why is 'we might scale to millions of users' a weak reason to choose NoSQL on day one?">
+
+Because scale is rarely your first or hardest problem, and a relational database on one machine already handles tens of thousands of QPS. Picking NoSQL upfront trades away joins and transactions you will use immediately for scale you may never hit — and if you do, you can shard the relational store or add a cache then. Optimize for the problem you have.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Choose by **access pattern and data shape**, not by which database is fashionable.
+- SQL trades flexibility and easy scale for joins, transactions, and ad-hoc queries; NoSQL makes the opposite trade.
+- Schema-on-write validates early; schema-on-read stays flexible but pushes the burden onto readers.
+
+<Cards>
+  <Card title="Indexing" href="/docs/system-design/part-2-databases/02-indexing" description="How either kind of store finds a row without scanning everything." />
+  <Card title="Sharding" href="/docs/system-design/part-2-databases/04-sharding" description="Splitting data across machines when one is not enough." />
+  <Card title="Transactions" href="/docs/system-design/part-2-databases/06-transactions" description="The 'all or nothing' guarantee relational stores give you." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+State the fork out loud: "What are the dominant queries?" Then reason from access patterns, not brand names. Say "relational for the transactional core, a key-value cache for hot reads" — showing you pick per-workload and think polyglot scores far higher than declaring one database the winner.
+</Callout>

@@ -1,0 +1,430 @@
+---
+title: "The Bitwise Trie"
+description: "Finding two numbers with the maximum XOR sounds impossible fast — until you store their bits in a trie."
+extractedReferences:
+  - href: /docs/dsa/23-trie/01-trie-intro
+  - href: /docs/dsa/06-bit-manipulation/01-bitwise-basics
+  - href: /docs/dsa/23-trie/02-trie-applications
+---
+
+## The problem
+
+You have an array of integers and a simple-sounding question: which two of them, XORed together, give the largest possible value? XOR is the bit-difference operator — a 1 in the result means the two numbers disagreed on that bit. So "maximum XOR" really means "find the pair that disagrees on the most significant bits."
+
+It comes up more than you would think: maximising a signal difference, finding the most dissimilar pair of feature hashes, several competitive-programming staples. With a handful of numbers you would just try every pair. With a hundred thousand of them, trying every pair is a non-starter.
+
+## A first attempt
+
+Check every pair and keep the biggest XOR.
+
+```python
+def max_xor(nums):
+    best = 0
+    for i in range(len(nums)):
+        for j in range(i + 1, len(nums)):
+            best = max(best, nums[i] ^ nums[j])
+    return best
+```
+
+That is `O(n²)` XORs. For `n = 100 000` you are looking at five billion operations — seconds to minutes, far too slow for an interactive tool or a tight time limit. The pairs share structure you are ignoring: many numbers agree on their high bits, so you keep re-deciding the same bit comparisons.
+
+## The insight
+
+XOR is decided **bit by bit, from the top down**. To maximise it, you want the highest bit to differ, then the next, and so on — a greedy walk over bits. And "does a number with the opposite bit here exist?" is exactly the kind of prefix question a trie answers.
+
+So store every number as a fixed-width path of bits, most significant first, in a trie with just two children per node: 0 and 1. To maximise XOR for a given number, walk the trie and at each bit *try to go the opposite way*. If the opposite child exists, that bit of the XOR becomes 1; otherwise you are forced to follow the same bit and it stays 0. That greedy walk gives the best partner for that number in `O(bits)`.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Fix a bit width
+
+Pick a width `W` that covers your values — 32 bits for typical signed ints, or the highest set bit across the array. Every number becomes a length-`W` path, padded with leading zeros so all paths line up by significance.
+
+</Step>
+
+<Step>
+
+### Insert most-significant bit first
+
+For each number, walk from the top bit down to bit 0, creating child `0` or `1` as needed. The root's two subtrees split the numbers by their highest bit.
+
+```
+insert 3 = 011, 10 = 010, 25 = ... (using width 5)
+
+bit:  4 3 2 1 0
+ 3  = 0 0 0 1 1
+10  = 0 1 0 1 0
+```
+
+</Step>
+
+<Step>
+
+### Query greedily for the best partner
+
+To find the max XOR with a number `x`, walk from the top bit. At bit `b`, look at `x`'s bit and *prefer the child holding the opposite bit*. If it exists, set that bit in the answer and go there; otherwise follow the only child available.
+
+```
+x = 3 = 011, want max partner:
+bit2: x=0 -> want child 1? if present, xor bit = 1
+bit1: x=1 -> want child 0? ...
+bit0: x=0 -> want child 1? ...
+```
+
+</Step>
+
+<Step>
+
+### Insert-then-query in one pass
+
+For "max XOR over all pairs", loop the array once: for each number, first query the trie for its best partner among numbers seen so far, update the answer, then insert it. Every pair gets considered exactly once, in `O(W)` each.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+WIDTH = 32
+
+
+class BitNode:
+    __slots__ = ("children",)
+
+    def __init__(self):
+        self.children = [None, None]  # index 0 and 1
+
+
+class BitTrie:
+    def __init__(self):
+        self.root = BitNode()
+
+    def insert(self, num):
+        node = self.root
+        for b in range(WIDTH - 1, -1, -1):
+            bit = (num >> b) & 1
+            if node.children[bit] is None:
+                node.children[bit] = BitNode()
+            node = node.children[bit]
+
+    def max_xor_with(self, num):
+        node = self.root
+        best = 0
+        for b in range(WIDTH - 1, -1, -1):
+            bit = (num >> b) & 1
+            want = 1 - bit
+            if node.children[want] is not None:
+                best |= (1 << b)
+                node = node.children[want]
+            else:
+                node = node.children[bit]
+        return best
+
+
+def max_xor(nums):
+    trie = BitTrie()
+    trie.insert(nums[0])
+    best = 0
+    for x in nums[1:]:
+        best = max(best, trie.max_xor_with(x))
+        trie.insert(x)
+    return best
+
+
+print(max_xor([3, 10, 5, 25, 2, 8]))  # 28  (5 ^ 25)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const WIDTH = 32;
+
+class BitNode {
+  children: (BitNode | null)[] = [null, null];
+}
+
+class BitTrie {
+  private root = new BitNode();
+
+  insert(num: number): void {
+    let node = this.root;
+    for (let b = WIDTH - 1; b >= 0; b--) {
+      const bit = (num >>> b) & 1;
+      if (node.children[bit] === null) node.children[bit] = new BitNode();
+      node = node.children[bit]!;
+    }
+  }
+
+  maxXorWith(num: number): number {
+    let node = this.root;
+    let best = 0;
+    for (let b = WIDTH - 1; b >= 0; b--) {
+      const bit = (num >>> b) & 1;
+      const want = bit ^ 1;
+      if (node.children[want] !== null) {
+        best |= 1 << b;
+        node = node.children[want]!;
+      } else {
+        node = node.children[bit]!;
+      }
+    }
+    return best >>> 0;
+  }
+}
+
+function maxXor(nums: number[]): number {
+  const trie = new BitTrie();
+  trie.insert(nums[0]);
+  let best = 0;
+  for (let i = 1; i < nums.length; i++) {
+    best = Math.max(best, trie.maxXorWith(nums[i]));
+    trie.insert(nums[i]);
+  }
+  return best;
+}
+
+console.log(maxXor([3, 10, 5, 25, 2, 8])); // 28
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class BitTrie {
+    private static final int WIDTH = 32;
+
+    private static class Node {
+        Node[] children = new Node[2];
+    }
+
+    private final Node root = new Node();
+
+    public void insert(int num) {
+        Node node = root;
+        for (int b = WIDTH - 1; b >= 0; b--) {
+            int bit = (num >>> b) & 1;
+            if (node.children[bit] == null) node.children[bit] = new Node();
+            node = node.children[bit];
+        }
+    }
+
+    public int maxXorWith(int num) {
+        Node node = root;
+        int best = 0;
+        for (int b = WIDTH - 1; b >= 0; b--) {
+            int bit = (num >>> b) & 1;
+            int want = bit ^ 1;
+            if (node.children[want] != null) {
+                best |= (1 << b);
+                node = node.children[want];
+            } else {
+                node = node.children[bit];
+            }
+        }
+        return best;
+    }
+
+    public static int maxXor(int[] nums) {
+        BitTrie trie = new BitTrie();
+        trie.insert(nums[0]);
+        int best = 0;
+        for (int i = 1; i < nums.length; i++) {
+            best = Math.max(best, trie.maxXorWith(nums[i]));
+            trie.insert(nums[i]);
+        }
+        return best;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(maxXor(new int[] {3, 10, 5, 25, 2, 8})); // 28
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+#define WIDTH 32
+
+typedef struct Node {
+    struct Node *children[2];
+} Node;
+
+Node *new_node(void) { return calloc(1, sizeof(Node)); }
+
+void insert(Node *root, int num) {
+    Node *node = root;
+    for (int b = WIDTH - 1; b >= 0; b--) {
+        int bit = (num >> b) & 1;
+        if (!node->children[bit]) node->children[bit] = new_node();
+        node = node->children[bit];
+    }
+}
+
+int max_xor_with(Node *root, int num) {
+    Node *node = root;
+    int best = 0;
+    for (int b = WIDTH - 1; b >= 0; b--) {
+        int bit = (num >> b) & 1;
+        int want = bit ^ 1;
+        if (node->children[want]) {
+            best |= (1 << b);
+            node = node->children[want];
+        } else {
+            node = node->children[bit];
+        }
+    }
+    return best;
+}
+
+int max_xor(int *nums, int n) {
+    Node *root = new_node();
+    insert(root, nums[0]);
+    int best = 0;
+    for (int i = 1; i < n; i++) {
+        int cur = max_xor_with(root, nums[i]);
+        if (cur > best) best = cur;
+        insert(root, nums[i]);
+    }
+    return best;
+}
+
+int main(void) {
+    int nums[] = {3, 10, 5, 25, 2, 8};
+    printf("%d\n", max_xor(nums, 6)); // 28
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+class BitTrie {
+    static const int WIDTH = 32;
+    struct Node {
+        Node* children[2] = {nullptr, nullptr};
+    };
+    Node* root = new Node();
+
+public:
+    void insert(int num) {
+        Node* node = root;
+        for (int b = WIDTH - 1; b >= 0; b--) {
+            int bit = (num >> b) & 1;
+            if (!node->children[bit]) node->children[bit] = new Node();
+            node = node->children[bit];
+        }
+    }
+
+    int maxXorWith(int num) {
+        Node* node = root;
+        int best = 0;
+        for (int b = WIDTH - 1; b >= 0; b--) {
+            int bit = (num >> b) & 1;
+            int want = bit ^ 1;
+            if (node->children[want]) {
+                best |= (1 << b);
+                node = node->children[want];
+            } else {
+                node = node->children[bit];
+            }
+        }
+        return best;
+    }
+};
+
+int maxXor(const std::vector<int>& nums) {
+    BitTrie trie;
+    trie.insert(nums[0]);
+    int best = 0;
+    for (size_t i = 1; i < nums.size(); i++) {
+        best = std::max(best, trie.maxXorWith(nums[i]));
+        trie.insert(nums[i]);
+    }
+    return best;
+}
+
+int main() {
+    std::cout << maxXor({3, 10, 5, 25, 2, 8}) << "\n"; // 28
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Let `n` be the number of integers and `W` the bit width (a constant, e.g. 32).
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute-force all pairs | O(n²) | O(1) |
+| Bitwise trie (insert + query) | O(n · W) | O(n · W) |
+
+Since `W` is a fixed constant, the trie solution is effectively `O(n)` — a decisive win over the quadratic scan. The space is the trie's nodes: at most `W` new nodes per inserted number.
+
+## When to use it
+
+<Callout type="idea" title="A bitwise trie turns 'max/min XOR' into a greedy walk">
+Whenever you need the maximum or minimum XOR against a set — max XOR of a pair, XOR queries with a bound, or "max XOR of a subarray" via prefix XORs — a bitwise trie gives `O(W)` per query. For minimum XOR, flip the greedy rule: at each bit prefer the *same* child so the result bit stays 0. Fix the bit width to the largest value you will store, and process bits most-significant first — the order is what makes the greedy choice correct.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must you process bits from most significant to least significant?">
+
+XOR is compared like a number: a difference in a higher bit outweighs any combination of lower bits. Setting the top bit to 1 is worth more than setting all lower bits combined (2^k > 2^k − 1). So the greedy choice — take the opposite bit if you can — is only optimal when you decide the highest bits first. Going low-to-high would let a small early gain block a larger later one.
+
+</Accordion>
+
+<Accordion title="How would you find the maximum XOR of any subarray using this trie?">
+
+Use prefix XORs: let `P[i]` be the XOR of the first `i` elements. The XOR of subarray `(i, j]` is `P[j] ^ P[i]`. So "max XOR subarray" becomes "max XOR over pairs of prefix values" — exactly what the bitwise trie solves. Insert prefix XORs one at a time and query for the best partner, giving `O(n · W)` overall.
+
+</Accordion>
+
+<Accordion title="How do you adapt the trie to find the minimum XOR pair instead of the maximum?">
+
+Flip the greedy rule. To minimise XOR you want each result bit to be 0, so at every bit prefer the child holding the *same* bit as the current number; only take the opposite child when the matching one is absent. Everything else — bit width, MSB-first order, insert-then-query — stays the same.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Store integers as fixed-width bit paths (MSB first) in a trie with children 0 and 1.
+- To maximise XOR, greedily walk toward the opposite bit at each level; that gives the best partner in `O(W)`.
+- Insert-then-query in one pass solves max XOR of any pair in `O(n · W)` — effectively linear — versus `O(n²)` brute force.
+
+<Cards>
+  <Card title="Tries" href="/docs/dsa/23-trie/01-trie-intro" description="The character trie this bit-trie is built from." />
+  <Card title="Bitwise Basics" href="/docs/dsa/06-bit-manipulation/01-bitwise-basics" description="XOR, shifts, and masks the greedy walk relies on." />
+  <Card title="Trie Applications" href="/docs/dsa/23-trie/02-trie-applications" description="More problems that reduce to a trie walk." />
+</Cards>

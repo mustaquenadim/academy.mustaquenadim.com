@@ -1,0 +1,311 @@
+---
+title: "Prefix Sums + Hashing"
+description: "Counting subarrays that sum to exactly k is a prefix sum remembered in a hash map."
+extractedReferences:
+  - href: /docs/dsa/10-prefix-sum/01-prefix-sum-intro
+  - href: /docs/dsa/07-hashing/05-frequency-patterns
+  - href: /docs/dsa/09-sliding-window/01-sliding-window-intro
+---
+
+## The problem
+
+You are analyzing a stream of account balance changes — deposits and withdrawals as positive and
+negative numbers. Compliance asks a sharp question: how many contiguous stretches of transactions
+net out to exactly a target amount `k`? Not the longest, not the first — the *count* of every
+window that sums to `k`.
+
+The numbers can be negative, which quietly kills the usual sliding-window trick. Shrinking a
+window only makes sense when growing it always increases the sum, and with negatives it does not.
+So the clean two-pointer approach is off the table, and you are left staring at a lot of possible
+subarrays.
+
+## A first attempt
+
+Check every subarray. Fix a start, extend an end, keep a running sum, and count whenever it hits
+`k`.
+
+```python
+def count_subarrays(nums, k):
+    count = 0
+    for i in range(len(nums)):
+        total = 0
+        for j in range(i, len(nums)):
+            total += nums[j]
+            if total == k:
+                count += 1
+    return count
+```
+
+This is **O(n²)**: every start pairs with every end. At ten thousand transactions that is a
+hundred million iterations, and real feeds are far longer. You are recomputing overlapping sums
+endlessly — the same prefixes, walked again and again.
+
+## The insight
+
+Recall that `sum(l..r) = prefix[r + 1] - prefix[l]`. A subarray ending at index `r` sums to `k`
+exactly when there is some earlier prefix equal to `prefix[r + 1] - k`. So as you sweep left to
+right maintaining a running prefix, the real question at each step is: *how many earlier prefixes
+had the value `running - k`?*
+
+That is a lookup. Keep a **hash map from prefix value to how many times you have seen it**. At
+each element, add `count[running - k]` to your answer, then record the current `running`. One
+pass, O(1) work per step, negatives welcome. Seed the map with `{0: 1}` so a subarray starting at
+index 0 is counted.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Seed the map with prefix zero
+
+Put `{0: 1}` in the map before you start. This represents the empty prefix — it lets a subarray
+that begins at index 0 (where `running == k`) be counted, since `running - k == 0` is already
+present.
+
+</Step>
+
+<Step>
+
+### Sweep, and look before you write
+
+For each element, add it to `running`. Ask the map how many times `running - k` has appeared —
+that is how many subarrays *ending here* sum to `k`. Add that to the answer.
+
+```
+nums = [3, 4, 7, 2, -3, 1, 4, 2],  k = 7
+
+running:  3   7  14  16  13  14  18  20
+need = running - k:
+         -4   0   7   9   6   7  11  13
+                  ^map has 7 (once)   ^map has 7 (once)
+```
+
+</Step>
+
+<Step>
+
+### Record the current prefix
+
+After counting, increment `count[running]`. Order matters: look up first, then insert, so a
+zero-length window is never miscounted. Move on to the next element.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import defaultdict
+
+def count_subarrays(nums, k):
+    seen = defaultdict(int)
+    seen[0] = 1  # empty prefix
+    running = 0
+    count = 0
+    for x in nums:
+        running += x
+        count += seen[running - k]  # look up first
+        seen[running] += 1          # then record
+    return count
+
+print(count_subarrays([3, 4, 7, 2, -3, 1, 4, 2], 7))  # 4
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function countSubarrays(nums: number[], k: number): number {
+  const seen = new Map<number, number>();
+  seen.set(0, 1); // empty prefix
+  let running = 0;
+  let count = 0;
+  for (const x of nums) {
+    running += x;
+    count += seen.get(running - k) ?? 0; // look up first
+    seen.set(running, (seen.get(running) ?? 0) + 1); // then record
+  }
+  return count;
+}
+
+console.log(countSubarrays([3, 4, 7, 2, -3, 1, 4, 2], 7)); // 4
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class PrefixHashing {
+    static int countSubarrays(int[] nums, int k) {
+        Map<Integer, Integer> seen = new HashMap<>();
+        seen.put(0, 1); // empty prefix
+        int running = 0, count = 0;
+        for (int x : nums) {
+            running += x;
+            count += seen.getOrDefault(running - k, 0); // look up first
+            seen.merge(running, 1, Integer::sum);       // then record
+        }
+        return count;
+    }
+
+    public static void main(String[] args) {
+        int[] nums = {3, 4, 7, 2, -3, 1, 4, 2};
+        System.out.println(countSubarrays(nums, 7)); // 4
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+/* Simple open-addressing map keyed by prefix value (demo sizing). */
+#define CAP 4096
+static long keys[CAP];
+static int  vals[CAP];
+static int  used[CAP];
+
+static int slot(long key) {
+    long h = ((key % CAP) + CAP) % CAP;
+    while (used[h] && keys[h] != key) h = (h + 1) % CAP;
+    return (int)h;
+}
+
+int count_subarrays(const int *nums, int n, long k) {
+    for (int i = 0; i < CAP; i++) used[i] = 0;
+    int z = slot(0); used[z] = 1; keys[z] = 0; vals[z] = 1; /* empty prefix */
+    long running = 0;
+    int count = 0;
+    for (int i = 0; i < n; i++) {
+        running += nums[i];
+        int q = slot(running - k);
+        if (used[q]) count += vals[q];      /* look up first */
+        int s = slot(running);
+        if (!used[s]) { used[s] = 1; keys[s] = running; vals[s] = 0; }
+        vals[s] += 1;                        /* then record */
+    }
+    return count;
+}
+
+int main(void) {
+    int nums[] = {3, 4, 7, 2, -3, 1, 4, 2};
+    printf("%d\n", count_subarrays(nums, 8, 7)); /* 4 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+using namespace std;
+
+int countSubarrays(const vector<int>& nums, int k) {
+    unordered_map<int, int> seen;
+    seen[0] = 1; // empty prefix
+    int running = 0, count = 0;
+    for (int x : nums) {
+        running += x;
+        auto it = seen.find(running - k);
+        if (it != seen.end()) count += it->second; // look up first
+        seen[running]++;                            // then record
+    }
+    return count;
+}
+
+int main() {
+    vector<int> nums = {3, 4, 7, 2, -3, 1, 4, 2};
+    cout << countSubarrays(nums, 7) << endl; // 4
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute force (every subarray) | O(n²) | O(1) |
+| Prefix sum + hash map | O(n) | O(n) |
+
+The hash map trades O(n) memory for a single linear pass, and it handles negative numbers that a
+sliding window cannot.
+
+## When to use it
+
+<Callout type="idea" title="A prefix you can remember">
+Whenever a problem asks about subarrays with a target sum — count them, find the longest, detect
+if any exists — reach for prefix-plus-hashing. The map remembers every prefix you have seen so a
+matching earlier boundary is one O(1) lookup away, negatives included.
+</Callout>
+
+Two pitfalls: look up `running - k` *before* inserting `running`, or a zero-target window can
+double-count; and seed `{0: 1}`, or you miss subarrays anchored at the start. For longest-subarray
+variants, store the *first* index a prefix appeared rather than a count. For all-positive arrays,
+a sliding window is simpler and uses O(1) space.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why seed the map with {0: 1} before the loop?">
+
+The value `0` stands for the empty prefix — the sum before any element. When a subarray starting
+at index 0 sums to `k`, you get `running == k`, so `running - k == 0`. That prefix must already be
+in the map for the count to register, which is exactly what the seed provides.
+
+</Accordion>
+
+<Accordion title="How do you find the longest subarray summing to k instead of counting them?">
+
+Store the *first* index at which each prefix value appeared: `firstSeen[running]`. At each step,
+if `running - k` exists in the map, the subarray from `firstSeen[running - k] + 1` to the current
+index is a candidate; track the maximum length. Only insert a prefix the first time you see it so
+the earliest boundary wins.
+
+</Accordion>
+
+<Accordion title="How would you count subarrays whose sum is divisible by k?">
+
+Track the running prefix *modulo* `k` and hash those remainders. Two prefixes with the same
+remainder bracket a subarray whose sum is divisible by `k`. Seed `{0: 1}` as before, and normalize
+negatives with `((running % k) + k) % k` so the remainder is always non-negative.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A subarray sums to `k` when some earlier prefix equals `running - k`.
+- A hash map of prefix counts turns that condition into an O(1) lookup, giving one O(n) pass.
+- Unlike sliding windows, it handles negative numbers — just look up before you insert and seed `{0: 1}`.
+
+<Cards>
+  <Card title="The Prefix Sum" href="/docs/dsa/10-prefix-sum/01-prefix-sum-intro" description="The running-total idea this lesson builds on." />
+  <Card title="Frequency Patterns" href="/docs/dsa/07-hashing/05-frequency-patterns" description="More hash-map counting techniques." />
+  <Card title="Sliding Window" href="/docs/dsa/09-sliding-window/01-sliding-window-intro" description="The go-to when values stay non-negative." />
+</Cards>

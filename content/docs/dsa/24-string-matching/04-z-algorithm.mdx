@@ -1,0 +1,314 @@
+---
+title: "The Z-Algorithm"
+description: "The Z-array captures, for every position, how much of the string’s start repeats there — and matching falls out of it."
+extractedReferences:
+  - href: /docs/dsa/24-string-matching/02-kmp
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+  - href: /docs/dsa/24-string-matching/05-manacher
+---
+
+## The problem
+
+You want the same worst-case linear guarantee as [KMP](/docs/dsa/24-string-matching/02-kmp), but KMP's failure function always felt a little indirect — "the longest prefix that is also a suffix" takes a moment to picture. You want something you can *see*.
+
+Here is a more direct question: for each position `i` in a string, how long is the substring starting at `i` that matches the string's own beginning? Line that answer up for every position and you get an array that, it turns out, solves pattern matching almost for free.
+
+## A first attempt
+
+Compute it directly: for each `i`, compare `S[i], S[i+1], …` against `S[0], S[1], …` until they differ, and record how far you got. That's honest but it re-reads characters — a string like `AAAA…A` makes every position match nearly the whole prefix, giving **O(n²)**.
+
+The waste is familiar from the intro: when you compute the match length at position `i`, you are often re-scanning characters that a *previous* position already told you about. We want to reuse those results.
+
+## The insight
+
+Keep a window `[l, r]` — the rightmost segment you've already confirmed matches the prefix, so `S[l..r] == S[0..r-l]`. When you reach a new position `i` inside that window, its answer is mirrored somewhere near the front: the character at `i` corresponds to the character at `i - l` in the prefix. So `Z[i]` starts at the already-known `Z[i - l]`, and you only ever compare *new* characters past `r`.
+
+The **Z-array**: `Z[i]` is the length of the longest substring starting at `i` that matches a prefix of `S`. Compute it in one linear pass. To match a pattern `P` in text `T`, build the Z-array of `P + '\0' + T` (a separator not in either) — any position where `Z[i] == len(P)` marks an occurrence.
+
+```text
+S = a a b a a b a a a
+Z = _ 1 0 5 1 0 2 1 0     <- Z[3]=5: "aabaa" at index 3 matches the prefix "aabaa"
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Keep a match window [l, r]
+
+`[l, r]` is the interval with the largest `r` such that `S[l..r]` equals a prefix of `S`. Start with `l = r = 0`.
+
+</Step>
+
+<Step>
+
+### Reuse the mirror when inside the window
+
+If `i <= r`, the position mirrors to `i - l`. Seed `Z[i] = min(r - i + 1, Z[i - l])` — that much is already guaranteed without any comparison.
+
+</Step>
+
+<Step>
+
+### Extend past the window by brute force
+
+While `i + Z[i] < n` and `S[Z[i]] == S[i + Z[i]]`, increment `Z[i]`. Only characters beyond `r` are ever touched here, so the total extension work is linear.
+
+</Step>
+
+<Step>
+
+### Slide the window forward
+
+If `i + Z[i] - 1 > r`, update `l = i` and `r = i + Z[i] - 1`. For matching, whenever `Z[i]` equals the pattern length, report a hit.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def z_array(s: str) -> list[int]:
+    n = len(s)
+    z = [0] * n
+    if n > 0:
+        z[0] = n
+    l = r = 0
+    for i in range(1, n):
+        if i < r:
+            z[i] = min(r - i, z[i - l])
+        while i + z[i] < n and s[z[i]] == s[i + z[i]]:
+            z[i] += 1
+        if i + z[i] > r:
+            l, r = i, i + z[i]
+    return z
+
+
+def z_search(text: str, pattern: str) -> list[int]:
+    combined = pattern + "\x00" + text
+    z = z_array(combined)
+    m = len(pattern)
+    return [i - m - 1 for i in range(len(combined)) if z[i] == m]
+
+
+print(z_search("abxabcabcaby", "abcaby"))  # [6]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function zArray(s: string): number[] {
+  const n = s.length;
+  const z = new Array(n).fill(0);
+  if (n > 0) z[0] = n;
+  let l = 0;
+  let r = 0;
+  for (let i = 1; i < n; i++) {
+    if (i < r) z[i] = Math.min(r - i, z[i - l]);
+    while (i + z[i] < n && s[z[i]] === s[i + z[i]]) z[i]++;
+    if (i + z[i] > r) {
+      l = i;
+      r = i + z[i];
+    }
+  }
+  return z;
+}
+
+function zSearch(text: string, pattern: string): number[] {
+  const combined = pattern + "\0" + text;
+  const z = zArray(combined);
+  const m = pattern.length;
+  const hits: number[] = [];
+  for (let i = 0; i < combined.length; i++) if (z[i] === m) hits.push(i - m - 1);
+  return hits;
+}
+
+console.log(zSearch("abxabcabcaby", "abcaby")); // [6]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class ZAlgorithm {
+    static int[] zArray(String s) {
+        int n = s.length();
+        int[] z = new int[n];
+        if (n > 0) z[0] = n;
+        int l = 0, r = 0;
+        for (int i = 1; i < n; i++) {
+            if (i < r) z[i] = Math.min(r - i, z[i - l]);
+            while (i + z[i] < n && s.charAt(z[i]) == s.charAt(i + z[i])) z[i]++;
+            if (i + z[i] > r) {
+                l = i;
+                r = i + z[i];
+            }
+        }
+        return z;
+    }
+
+    static List<Integer> search(String text, String pattern) {
+        String combined = pattern + "\0" + text;
+        int[] z = zArray(combined);
+        int m = pattern.length();
+        List<Integer> hits = new ArrayList<>();
+        for (int i = 0; i < combined.length(); i++)
+            if (z[i] == m) hits.add(i - m - 1);
+        return hits;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(search("abxabcabcaby", "abcaby")); // [6]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void z_array(const char *s, int n, int *z) {
+    if (n > 0) z[0] = n;
+    int l = 0, r = 0;
+    for (int i = 1; i < n; i++) {
+        z[i] = 0;
+        if (i < r) {
+            int mirror = z[i - l];
+            z[i] = (r - i < mirror) ? r - i : mirror;
+        }
+        while (i + z[i] < n && s[z[i]] == s[i + z[i]]) z[i]++;
+        if (i + z[i] > r) { l = i; r = i + z[i]; }
+    }
+}
+
+void z_search(const char *text, const char *pattern) {
+    int m = (int)strlen(pattern), tn = (int)strlen(text);
+    int n = m + 1 + tn;
+    char *combined = malloc(n + 1);
+    sprintf(combined, "%s%c%s", pattern, '\1', text);
+    int *z = malloc(n * sizeof(int));
+    z_array(combined, n, z);
+    for (int i = 0; i < n; i++)
+        if (z[i] == m) printf("%d ", i - m - 1);
+    printf("\n");
+    free(z);
+    free(combined);
+}
+
+int main(void) {
+    z_search("abxabcabcaby", "abcaby"); /* 6 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+using namespace std;
+
+vector<int> z_array(const string &s) {
+    int n = (int)s.size();
+    vector<int> z(n, 0);
+    if (n > 0) z[0] = n;
+    int l = 0, r = 0;
+    for (int i = 1; i < n; i++) {
+        if (i < r) z[i] = min(r - i, z[i - l]);
+        while (i + z[i] < n && s[z[i]] == s[i + z[i]]) z[i]++;
+        if (i + z[i] > r) { l = i; r = i + z[i]; }
+    }
+    return z;
+}
+
+vector<int> z_search(const string &text, const string &pattern) {
+    string combined = pattern + '\1' + text;
+    vector<int> z = z_array(combined);
+    int m = (int)pattern.size();
+    vector<int> hits;
+    for (int i = 0; i < (int)combined.size(); i++)
+        if (z[i] == m) hits.push_back(i - m - 1);
+    return hits;
+}
+
+int main() {
+    for (int h : z_search("abxabcabcaby", "abcaby")) cout << h << " "; // 6
+    cout << "\n";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Phase | Time | Space |
+| --- | --- | --- |
+| Build Z-array | O(n) | O(n) |
+| Pattern match (`P` + sep + `T`) | O(n + m) | O(n + m) |
+
+The `while` loop only ever compares characters strictly beyond `r`, and `r` never moves backward — so across the whole run it advances at most `n` times. Every position is otherwise seeded in O(1) from its mirror, keeping the total linear.
+
+## When to use it
+
+<Callout type="idea" title="Reach for Z when you think in prefixes">
+The Z-array is the go-to for problems phrased as "how much does the start repeat here?" — counting occurrences, finding the shortest period of a string, or building the failure function's cousin. It's often quicker to code correctly than KMP because the window logic is concrete and symmetric. The one catch: you must pick a separator character that appears in neither the pattern nor the text (here `\0` or `\1`).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What is the Z-array of 'aabaab'?">
+
+`[6, 1, 0, 3, 1, 0]`. `Z[0]` is the whole length by convention. `Z[1]`: `aba…` vs prefix `aab` → just `a`, so 1. `Z[2]`: `b` vs `a` → 0. `Z[3]`: `aab` matches the prefix `aab` → 3. `Z[4]`: `ab` vs `aa` → 1. `Z[5]`: `b` vs `a` → 0.
+
+</Accordion>
+
+<Accordion title="Why does concatenating pattern + separator + text solve matching?">
+
+Positions in the text portion whose Z-value equals `len(P)` are exactly the spots where a full copy of the pattern starts. The separator (a symbol in neither string) prevents a match from spilling across the boundary and inflating a Z-value beyond `len(P)`, which would create false hits.
+
+</Accordion>
+
+<Accordion title="Why is the total work linear despite the inner while loop?">
+
+The inner loop only compares characters at indices greater than `r`, and each successful comparison pushes `r` forward by one. Since `r` climbs monotonically from 0 to at most `n`, the loop runs at most `n` times in total across all positions — not per position. Everything else is O(1) per index.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- The Z-array records, for each position, how long the substring there matches the string's own prefix.
+- A sliding `[l, r]` window reuses earlier results so the array is built in O(n), never re-scanning confirmed characters.
+- Concatenating `pattern + separator + text` turns Z into a linear-time matcher and into a tool for periods and repeats.
+
+<Cards>
+  <Card title="The KMP Algorithm" href="/docs/dsa/24-string-matching/02-kmp" description="The failure-function cousin of the Z-array." />
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="Where the shared problem began." />
+  <Card title="Manacher’s Algorithm" href="/docs/dsa/24-string-matching/05-manacher" description="The same window-reuse trick, applied to palindromes." />
+</Cards>

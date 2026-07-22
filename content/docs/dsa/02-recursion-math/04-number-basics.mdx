@@ -1,0 +1,261 @@
+---
+title: "Number Basics"
+description: "Counting digits, summing naturals, checking even or odd — the small number tricks that show up inside bigger algorithms."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/03-recursion-patterns
+  - href: /docs/dsa/02-recursion-math/05-primes-and-factors
+  - href: /docs/dsa/22-number-theory/01-number-theory-intro
+---
+
+## The problem
+
+You are formatting a number for a UI and need to know how many digits it has, so you can pad it. Your first instinct is to convert it to a string and read `.length`. It works — until you profile a hot loop that does this a million times and watch the string allocations pile up in the garbage collector.
+
+There is a cheaper way that never touches a string. It comes from a single observation about how numbers are built, and the same observation powers reversing a number, summing its digits, and half a dozen tricks buried inside larger algorithms.
+
+## A first attempt
+
+The string approach reads naturally:
+
+```python
+def count_digits(n):
+    return len(str(abs(n)))
+```
+
+It is **O(d)** where `d` is the number of digits, which is fine on paper. But it allocates a whole string object just to measure its length, and in a tight numeric loop those allocations dominate. You are doing text work to answer an arithmetic question. The number itself already knows how many digits it has — you just have to ask it in the language of arithmetic.
+
+## The insight
+
+In base 10, dividing an integer by `10` (integer division) chops off its last digit, and `% 10` reads that last digit. So `n // 10` is "the same number with one fewer digit." That is a self-similar shrink — exactly what recursion feeds on.
+
+Counting digits becomes: one digit, plus however many digits are left after you remove it.
+
+- Base case: a single-digit number (`n < 10`) has `1` digit.
+- Recursive case: `count_digits(n) = 1 + count_digits(n // 10)`.
+
+The same `// 10` and `% 10` pair reverses a number, sums its digits, or extracts them one by one — no strings anywhere.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Normalize the sign
+
+Digits are about magnitude, so work with `abs(n)`. Doing it once up front keeps the recursion clean and handles negative inputs correctly.
+
+</Step>
+
+<Step>
+
+### Read the base case
+
+If `n < 10` the number is a single digit, so the answer is `1`. This also handles `0`, which we treat as having one digit.
+
+</Step>
+
+<Step>
+
+### Chop and recurse
+
+`n // 10` removes the last digit. Add `1` for the digit you removed and recurse on the shorter number:
+
+```text
+count_digits(4092)
+= 1 + count_digits(409)
+= 1 + 1 + count_digits(40)
+= 1 + 1 + 1 + count_digits(4)
+= 1 + 1 + 1 + 1        <- base case, 4 < 10
+= 4
+```
+
+</Step>
+
+<Step>
+
+### Reuse the pattern
+
+Swap the combine step and you get relatives: `n % 10 + sum_digits(n // 10)` sums the digits; building `reversed * 10 + n % 10` reverses the number. One shrink, many uses.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def count_digits(n):
+    n = abs(n)
+    if n < 10:                     # base case: single digit
+        return 1
+    return 1 + count_digits(n // 10)
+
+
+def sum_digits(n):
+    n = abs(n)
+    if n < 10:
+        return n
+    return n % 10 + sum_digits(n // 10)
+
+
+print(count_digits(4092))  # 4
+print(sum_digits(4092))    # 15
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function countDigits(n: number): number {
+  n = Math.abs(n);
+  if (n < 10) return 1; // base case: single digit
+  return 1 + countDigits(Math.floor(n / 10));
+}
+
+function sumDigits(n: number): number {
+  n = Math.abs(n);
+  if (n < 10) return n;
+  return (n % 10) + sumDigits(Math.floor(n / 10));
+}
+
+console.log(countDigits(4092)); // 4
+console.log(sumDigits(4092)); // 15
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static int countDigits(int n) {
+    n = Math.abs(n);
+    if (n < 10) return 1;                 // base case
+    return 1 + countDigits(n / 10);
+}
+
+static int sumDigits(int n) {
+    n = Math.abs(n);
+    if (n < 10) return n;
+    return n % 10 + sumDigits(n / 10);
+}
+
+// countDigits(4092) -> 4,  sumDigits(4092) -> 15
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int count_digits(int n) {
+    n = abs(n);
+    if (n < 10) return 1;                 /* base case */
+    return 1 + count_digits(n / 10);
+}
+
+int sum_digits(int n) {
+    n = abs(n);
+    if (n < 10) return n;
+    return n % 10 + sum_digits(n / 10);
+}
+
+/* count_digits(4092) -> 4,  sum_digits(4092) -> 15 */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstdlib>
+
+int countDigits(int n) {
+    n = std::abs(n);
+    if (n < 10) return 1;                 // base case
+    return 1 + countDigits(n / 10);
+}
+
+int sumDigits(int n) {
+    n = std::abs(n);
+    if (n < 10) return n;
+    return n % 10 + sumDigits(n / 10);
+}
+
+// countDigits(4092) -> 4,  sumDigits(4092) -> 15
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation      | Time      | Space     | Note                                        |
+| -------------- | --------- | --------- | ------------------------------------------- |
+| Count digits   | O(log n)  | O(log n)  | Digit count is ⌊log₁₀ n⌋ + 1, so it recurses that many times. |
+| Sum of digits  | O(log n)  | O(log n)  | One recursive frame per digit.              |
+| Even / odd     | O(1)      | O(1)      | A single `n % 2` (or `n & 1`) — no recursion needed. |
+
+The recursion depth is the *digit count*, which is `O(log₁₀ n)` in the value of `n` — logarithmic, not linear, in the number itself.
+
+## When to use it
+
+<Callout type="info" title="Prefer arithmetic over string conversion in hot paths">
+The `// 10` and `% 10` pair does digit work with pure arithmetic and zero allocation, which matters inside tight loops and on memory-constrained systems. For a one-off in readable app code, `len(str(n))` is perfectly fine — reach for the arithmetic version when the operation is on a hot path or when strings are unavailable (embedded C, for example).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How would you check even or odd without the % operator?">
+
+Look at the lowest bit. An integer is odd exactly when its least significant bit is `1`, so `n & 1` is `1` for odd numbers and `0` for even ones. It is a single machine instruction — even cheaper than `n % 2`, and it works for negatives too on two's-complement systems.
+
+</Accordion>
+
+<Accordion title="Reverse the digits of 4092 using arithmetic.">
+
+Peel digits off the right with `% 10` and push them onto a growing result with `* 10`:
+
+```python
+def reverse_num(n):
+    result = 0
+    n = abs(n)
+    while n > 0:
+        result = result * 10 + n % 10
+        n //= 10
+    return result   # reverse_num(4092) -> 2904
+```
+
+Each `% 10` reads the last digit; each `* 10` shifts the accumulated answer left to make room.
+
+</Accordion>
+
+<Accordion title="Why is counting digits O(log n) and not O(n)?">
+
+The recursion removes one digit per call, and a number `n` has only about `log₁₀ n` digits. So `1000` (value one thousand) recurses just 4 times, not 1000. The cost grows with the *number of digits*, which is logarithmic in the value.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Integer division by 10 chops the last digit; `% 10` reads it — together they shrink a number recursively.
+- Counting digits, summing digits, and reversing all reuse that one pair with no string conversion.
+- These operations run in **O(log n)** — the digit count — not **O(n)**.
+
+<Cards>
+  <Card title="Recursion Patterns" href="/docs/dsa/02-recursion-math/03-recursion-patterns" description="The reusable skeletons these digit tricks fit into." />
+  <Card title="Primes & Factors" href="/docs/dsa/02-recursion-math/05-primes-and-factors" description="Next stop: fast primality and factorization." />
+  <Card title="Number Theory Intro" href="/docs/dsa/22-number-theory/01-number-theory-intro" description="Where these building blocks grow into real number theory." />
+</Cards>

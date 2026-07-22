@@ -1,0 +1,289 @@
+---
+title: "The Sieve of Eratosthenes"
+description: "Finding every prime up to a million one-by-one is slow — cross out multiples instead and it’s nearly instant."
+extractedReferences:
+  - href: /docs/dsa/22-number-theory/01-number-theory-intro
+  - href: /docs/dsa/22-number-theory/03-modular-arithmetic
+  - href: /docs/dsa/02-recursion-math/05-primes-and-factors
+---
+
+## The problem
+
+You are writing a puzzle generator that needs every prime number below one million to seed
+its boards. You reach for the definition you learned in school: a prime is a number with no
+divisors except 1 and itself. So you loop through every number and, for each one, test
+whether anything divides it.
+
+It runs. But the page hangs for a couple of seconds before the primes appear, and when a
+teammate bumps the limit to ten million, the browser tab freezes. Checking numbers one at a
+time is doing enormous redundant work. There is a far older, far faster idea.
+
+## A first attempt
+
+Test each number for primality by trial division up to its square root:
+
+```python
+def primes_up_to(n):
+    result = []
+    for x in range(2, n + 1):
+        is_prime = True
+        d = 2
+        while d * d <= x:
+            if x % d == 0:
+                is_prime = False
+                break
+            d += 1
+        if is_prime:
+            result.append(x)
+    return result
+```
+
+For each of the `n` numbers you do up to `√x` work, so the total is about **O(n·√n)**. At
+one million that is on the order of a billion operations. Correct, but painfully slow, and
+it re-discovers the same small factors over and over.
+
+## The insight
+
+Flip the question around. Instead of asking "is this number prime?" for each value, start
+from the primes you already know and **cross out their multiples**.
+
+Every composite number is a multiple of some smaller prime. So if you walk `2, 3, 5, …` and
+strike out `4, 6, 8, …`, then `6, 9, 12, …`, and so on, whatever survives untouched must be
+prime. You never test a number in isolation — you let the small primes eliminate the rest.
+This is the **Sieve of Eratosthenes**, over two thousand years old.
+
+## How it works
+
+```
+index: 0 1 2 3 4 5 6 7 8 9 10 11
+mark:  . . P P x P x P x x  x  P
+             \___ 2 crosses 4,6,8,10
+               \_ 3 crosses 9
+```
+
+<Steps>
+
+<Step>
+
+### Assume everything is prime
+
+Make a boolean array `is_prime[0..n]` all set to `true`, then mark `0` and `1` as not
+prime. They are special cases the definition excludes.
+
+</Step>
+
+<Step>
+
+### Walk to the square root
+
+Scan `p` from 2 upward. You only need to go while `p·p ≤ n`, because any composite `≤ n`
+has a factor no larger than `√n` — larger primes have nothing left to cross out.
+
+</Step>
+
+<Step>
+
+### Cross out multiples, starting at p·p
+
+When `is_prime[p]` is still true, mark `p·p, p·p + p, p·p + 2p, …` as false. Start at `p·p`
+because everything smaller was already crossed out by an earlier prime.
+
+</Step>
+
+<Step>
+
+### Collect the survivors
+
+Every index still marked `true` is prime. Read them off in one final pass.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def sieve(n):
+    is_prime = [True] * (n + 1)
+    is_prime[0] = is_prime[1] = False
+    p = 2
+    while p * p <= n:
+        if is_prime[p]:
+            for multiple in range(p * p, n + 1, p):
+                is_prime[multiple] = False
+        p += 1
+    return [i for i in range(2, n + 1) if is_prime[i]]
+
+print(sieve(30))  # [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function sieve(n: number): number[] {
+  const isPrime = new Array(n + 1).fill(true);
+  isPrime[0] = isPrime[1] = false;
+  for (let p = 2; p * p <= n; p++) {
+    if (isPrime[p]) {
+      for (let m = p * p; m <= n; m += p) {
+        isPrime[m] = false;
+      }
+    }
+  }
+  const primes: number[] = [];
+  for (let i = 2; i <= n; i++) {
+    if (isPrime[i]) primes.push(i);
+  }
+  return primes;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static List<Integer> sieve(int n) {
+    boolean[] isPrime = new boolean[n + 1];
+    Arrays.fill(isPrime, true);
+    isPrime[0] = isPrime[1] = false;
+    for (int p = 2; (long) p * p <= n; p++) {
+        if (isPrime[p]) {
+            for (int m = p * p; m <= n; m += p) {
+                isPrime[m] = false;
+            }
+        }
+    }
+    List<Integer> primes = new ArrayList<>();
+    for (int i = 2; i <= n; i++) {
+        if (isPrime[i]) primes.add(i);
+    }
+    return primes;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+int main(void) {
+    int n = 30;
+    char *is_prime = malloc(n + 1);
+    memset(is_prime, 1, n + 1);
+    is_prime[0] = is_prime[1] = 0;
+    for (int p = 2; p * p <= n; p++) {
+        if (is_prime[p]) {
+            for (int m = p * p; m <= n; m += p) {
+                is_prime[m] = 0;
+            }
+        }
+    }
+    for (int i = 2; i <= n; i++) {
+        if (is_prime[i]) printf("%d ", i);
+    }
+    free(is_prime);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+vector<int> sieve(int n) {
+    vector<bool> isPrime(n + 1, true);
+    isPrime[0] = isPrime[1] = false;
+    for (int p = 2; p * p <= n; p++) {
+        if (isPrime[p]) {
+            for (int m = p * p; m <= n; m += p) {
+                isPrime[m] = false;
+            }
+        }
+    }
+    vector<int> primes;
+    for (int i = 2; i <= n; i++) {
+        if (isPrime[i]) primes.push_back(i);
+    }
+    return primes;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Trial division per number | O(n·√n) | O(1) |
+| Sieve of Eratosthenes | O(n log log n) | O(n) |
+
+The `log log n` factor is nearly a constant — for practical `n` it is under 4 — so the
+sieve is effectively linear. The cost is the O(n) boolean array you keep in memory.
+
+## When to use it
+
+<Callout type="idea" title="Precompute once, query forever">
+The sieve shines when you need *all* primes up to a bound, or a fast prime check across many
+queries. It is the wrong tool for testing a single huge number — for that use a primality
+test. Watch memory: a sieve to 10^9 needs a gigabyte of booleans unless you switch to a bit
+array or a segmented sieve.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why start crossing out at p·p instead of 2·p?">
+
+Every multiple of `p` below `p·p` — like `2p, 3p, … up to (p−1)p` — has a smaller prime
+factor and was already crossed out when we processed that smaller prime. Starting at `p·p`
+skips redundant work and is the single biggest constant-factor win in the sieve.
+
+</Accordion>
+
+<Accordion title="Why is it enough to loop p only while p·p ≤ n?">
+
+If a number `m ≤ n` is composite, it has a factor `≤ √m ≤ √n`. That factor gets crossed out
+by a prime no larger than `√n`. So once `p` passes `√n`, every composite has already been
+marked, and the remaining unmarked numbers must be prime.
+
+</Accordion>
+
+<Accordion title="How would you also record each number's smallest prime factor?">
+
+Instead of a boolean, keep an int array `spf`. When you cross out multiple `m` from prime
+`p`, set `spf[m] = p` only if it is still unset. Afterwards you can factorize any number up
+to `n` in O(log n) by repeatedly dividing by its smallest prime factor.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Testing each number independently is O(n·√n) and repeats the same work endlessly.
+- The sieve crosses out multiples of known primes, running in near-linear O(n log log n).
+- Start crossings at `p·p` and stop the outer loop at `√n` for the fast, standard version.
+
+<Cards>
+  <Card title="Number Theory Essentials" href="/docs/dsa/22-number-theory/01-number-theory-intro" description="GCD, LCM, and the divisibility facts behind primes." />
+  <Card title="Modular Arithmetic" href="/docs/dsa/22-number-theory/03-modular-arithmetic" description="Work with remainders when numbers explode in size." />
+  <Card title="Primes and Factors" href="/docs/dsa/02-recursion-math/05-primes-and-factors" description="Trial-division factorization and prime basics." />
+</Cards>

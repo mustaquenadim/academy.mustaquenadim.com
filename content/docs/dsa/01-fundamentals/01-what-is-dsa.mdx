@@ -1,0 +1,305 @@
+---
+title: "What Is DSA?"
+description: "Two programs solve the same task — one finishes before you blink, the other never finishes at all. The difference is data structures and algorithms."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/02-order-of-growth
+  - href: /docs/dsa/01-fundamentals/04-big-o
+  - href: /docs/dsa/07-hashing/02-hash-tables
+---
+
+## The problem
+
+You're building the login screen for an app. Every time someone signs in, you have to
+check: does this email already exist in our user list? With a few hundred beta testers it
+feels instant. You launch, word spreads, and now there are ten million accounts.
+
+Suddenly logins crawl. The database is the same, the server is the same, the code is the
+same. The only thing that changed is the *amount of data* — and the way you chose to
+store and search it. That choice, made on day one without a second thought, is now the
+thing standing between your users and the app.
+
+## A first attempt
+
+The obvious way to check "is this email registered?" is to walk the whole list and
+compare each entry. It's honest and it works.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def is_registered(users, email):
+    for user in users:          # look at every single user
+        if user == email:
+            return True
+    return False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function isRegistered(users: string[], email: string): boolean {
+  for (const user of users) {   // look at every single user
+    if (user === email) return true;
+  }
+  return false;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean isRegistered(String[] users, String email) {
+    for (String user : users) {     // look at every single user
+        if (user.equals(email)) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+
+int is_registered(const char *users[], int n, const char *email) {
+    for (int i = 0; i < n; i++) {   /* look at every single user */
+        if (strcmp(users[i], email) == 0) return 1;
+    }
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <vector>
+
+bool isRegistered(const std::vector<std::string>& users, const std::string& email) {
+    for (const auto& user : users) {   // look at every single user
+        if (user == email) return true;
+    }
+    return false;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+With `n` users, this does up to `n` comparisons per login — that's `O(n)`. At ten million
+users, every failed login scans ten million strings. Multiply that by thousands of logins
+per second and the machine is on fire.
+
+## The insight
+
+The list forces you to *search*. But what if the data were organized so you could jump
+straight to the answer instead of scanning for it?
+
+That's the whole idea of a **data structure**: the shape you pour your data into decides
+which questions are cheap. A plain list makes "is this here?" expensive. A **hash set**
+makes the exact same question nearly free, because it computes *where* an item would live
+and checks only that spot.
+
+<Callout type="idea" title="The two halves of DSA">
+A **data structure** is how you *store* data; an **algorithm** is the *steps* you run on
+it. Picking the right pair is what turns a 10-second operation into a 10-microsecond one.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start with the question you ask most
+
+Here it's "does this email exist?" — asked on every login. Optimize for the hot path, not
+the rare one.
+
+</Step>
+
+<Step>
+
+### Choose a structure that answers it directly
+
+A hash set stores each email under a computed slot. To check membership it recomputes the
+slot and looks *only* there — no scan of the other entries.
+
+</Step>
+
+<Step>
+
+### Pay a small cost up front
+
+Building the set is `O(n)` once. After that, every membership check is `O(1)` on average
+— constant time no matter how many users you have.
+
+</Step>
+
+<Step>
+
+### Measure the payoff
+
+Ten million users: the list did ten million comparisons per login; the set does about one.
+Same result, a millionfold less work.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Swap the list for a set and the search disappears.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+registered = set(users)         # build once: O(n)
+
+def is_registered(email):
+    return email in registered  # check: O(1) average
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const registered = new Set<string>(users); // build once: O(n)
+
+function isRegistered(email: string): boolean {
+  return registered.has(email);            // check: O(1) average
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+Set<String> registered = new HashSet<>(Arrays.asList(users)); // build: O(n)
+
+boolean isRegistered(String email) {
+    return registered.contains(email);      // check: O(1) average
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* C has no built-in set; a hash table gives the same O(1) membership.
+   Here we sketch the idea with a fixed-size open-addressing table. */
+#include <string.h>
+
+#define SIZE 1000003
+static const char *table[SIZE];
+
+unsigned long hash(const char *s) {
+    unsigned long h = 5381;
+    while (*s) h = h * 33 + (unsigned char)*s++;
+    return h % SIZE;
+}
+
+int is_registered(const char *email) {
+    for (unsigned long i = hash(email); table[i]; i = (i + 1) % SIZE)
+        if (strcmp(table[i], email) == 0) return 1;   /* O(1) average */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+std::unordered_set<std::string> registered(users.begin(), users.end()); // O(n)
+
+bool isRegistered(const std::string& email) {
+    return registered.count(email) > 0;     // check: O(1) average
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach            | Search time    | Extra space |
+| ------------------- | -------------- | ----------- |
+| Scan a list         | `O(n)`         | `O(1)`      |
+| Hash set membership | `O(1)` average | `O(n)`      |
+
+The set trades a bit of memory for an enormous win in time — the central bargain of DSA.
+
+## When to use it
+
+<Callout type="info" title="Trade-offs">
+DSA isn't about memorizing tricks — it's about *matching structure to question*. A hash
+set is unbeatable for "does X exist?", but it can't give you sorted order or a "smallest
+element". There's no universally best structure; there's only the best one for the query
+you run most.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is knowing DSA useful even when languages already ship a Set and a Map?">
+
+Because you still have to *choose* the right one and know what it costs. A built-in `Set`
+answers "exists?" in `O(1)` but can't answer "what's the smallest key?" — that needs a
+sorted structure like a tree. The library gives you the tools; DSA tells you which tool
+fits the job.
+
+</Accordion>
+
+<Accordion title="The list scan is O(n) and the set check is O(1). When might the list still be fine?">
+
+When `n` is tiny or the check is rare. Scanning 20 items is instant, and a set costs extra
+memory plus hashing overhead per lookup. DSA describes how things behave *at scale* — for
+small, cold paths the simplest structure often wins.
+
+</Accordion>
+
+<Accordion title="What does the 'average' in O(1) average membership hide?">
+
+Hash collisions. If many emails land in the same slot, lookups degrade toward `O(n)` in
+the worst case. Good hash functions and resizing keep collisions rare, which is why the
+average is `O(1)` — see collision handling for the full story.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **data structure** is how you store data; an **algorithm** is the steps you run on it.
+  The pairing decides whether an operation is cheap or ruinous.
+- The same task can be `O(n)` or `O(1)` depending purely on the structure you chose — that
+  gap is why DSA exists.
+- There's no "best" structure, only the best fit for the question you ask most often.
+
+<Cards>
+  <Card title="Order of Growth" href="/docs/dsa/01-fundamentals/02-order-of-growth" description="How work scales as data grows from ten to ten million." />
+  <Card title="Big-O, Theta & Omega" href="/docs/dsa/01-fundamentals/04-big-o" description="The notation that predicts scaling from the code alone." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The O(1) structure that fixed our login check." />
+</Cards>

@@ -1,0 +1,362 @@
+---
+title: "Tree Traversals"
+description: "There’s no single path through a branching structure — so we have several orders to visit every node, each for a different job."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/01-binary-tree-intro
+  - href: /docs/dsa/16-binary-tree/03-iterative-traversals-and-morris
+  - href: /docs/dsa/16-binary-tree/06-construction
+---
+
+## The problem
+
+You want to print every node in a tree. With an array it's obvious — walk left to right. But a tree branches: from the root you can go left *or* right, and each of those branches again. There is no single "next" node.
+
+Worse, the *order* you visit in matters. To print a folder tree you want parents before their contents. To safely delete the tree you want children gone before their parent. To read a binary search tree in sorted order you want something else entirely. One structure, several jobs, and each job needs a different walking order.
+
+## A first attempt
+
+Maybe you grab all the nodes into a list and sort them? But sort by what? The tree carries no built-in index, and sorting by value destroys the structure you actually care about — a folder's *position* under its parent. You'd also pay `O(n log n)` to reorder data you were handed in a perfectly usable shape.
+
+The real trouble is you're treating the tree as a bag of nodes. It isn't. The relationships — this node, its left subtree, its right subtree — *are* the information. You need a walk that respects them.
+
+## The insight
+
+At any node you have exactly three things to do: **visit the node itself**, **walk the left subtree**, **walk the right subtree**. The only freedom is the order you do them in. Fix that order and apply it recursively at every node, and you get a well-defined traversal.
+
+Three natural orders fall out based on *when* you visit the node relative to its subtrees:
+
+- **Pre-order** — node, then left, then right (visit before descending).
+- **In-order** — left, then node, then right (visit between subtrees).
+- **Post-order** — left, then right, then node (visit after descending).
+
+A fourth, **level-order**, ignores depth-first recursion and sweeps the tree row by row using a queue.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick the position of "visit"
+
+Write the recursion for one node as three lines: recurse left, recurse right, and "visit" (do your work — print, collect, sum). Slide the visit line to the top, middle, or bottom and you have pre-, in-, or post-order. Nothing else changes.
+
+</Step>
+
+<Step>
+
+### Trace it on a small tree
+
+```
+        1
+       / \
+      2   3
+     / \
+    4   5
+```
+
+- **Pre-order**  (node, L, R): `1 2 4 5 3`
+- **In-order**   (L, node, R): `4 2 5 1 3`
+- **Post-order** (L, R, node): `4 5 2 3 1`
+
+Notice in-order on a binary search tree yields values in sorted order — that's its signature use.
+
+</Step>
+
+<Step>
+
+### Level-order needs a queue, not the stack
+
+Depth-first orders dive to the bottom of one branch first. To go row by row instead, push the root into a queue, then repeatedly pop a node, visit it, and enqueue its children. The FIFO queue naturally releases nodes in top-to-bottom, left-to-right order: `1 2 3 4 5`.
+
+</Step>
+
+<Step>
+
+### Match the order to the task
+
+Pre-order copies or serializes a tree (you see a parent before its children). In-order reads a BST in sorted order. Post-order frees or evaluates from the bottom up (children before parent). Level-order answers "what's on each level" — the basis of tree views.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+def preorder(node, out):
+    if node is None:
+        return
+    out.append(node.value)      # visit
+    preorder(node.left, out)
+    preorder(node.right, out)
+
+def inorder(node, out):
+    if node is None:
+        return
+    inorder(node.left, out)
+    out.append(node.value)      # visit
+    inorder(node.right, out)
+
+def postorder(node, out):
+    if node is None:
+        return
+    postorder(node.left, out)
+    postorder(node.right, out)
+    out.append(node.value)      # visit
+
+def level_order(root):
+    out, q = [], deque([root] if root else [])
+    while q:
+        node = q.popleft()
+        out.append(node.value)
+        if node.left:  q.append(node.left)
+        if node.right: q.append(node.right)
+    return out
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function preorder(node: TreeNode | null, out: number[]): void {
+  if (node === null) return;
+  out.push(node.value);       // visit
+  preorder(node.left, out);
+  preorder(node.right, out);
+}
+
+function inorder(node: TreeNode | null, out: number[]): void {
+  if (node === null) return;
+  inorder(node.left, out);
+  out.push(node.value);       // visit
+  inorder(node.right, out);
+}
+
+function postorder(node: TreeNode | null, out: number[]): void {
+  if (node === null) return;
+  postorder(node.left, out);
+  postorder(node.right, out);
+  out.push(node.value);       // visit
+}
+
+function levelOrder(root: TreeNode | null): number[] {
+  const out: number[] = [];
+  const q: TreeNode[] = root ? [root] : [];
+  while (q.length) {
+    const node = q.shift()!;
+    out.push(node.value);
+    if (node.left) q.push(node.left);
+    if (node.right) q.push(node.right);
+  }
+  return out;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Traversals {
+    static void preorder(TreeNode node, List<Integer> out) {
+        if (node == null) return;
+        out.add(node.value);        // visit
+        preorder(node.left, out);
+        preorder(node.right, out);
+    }
+
+    static void inorder(TreeNode node, List<Integer> out) {
+        if (node == null) return;
+        inorder(node.left, out);
+        out.add(node.value);        // visit
+        inorder(node.right, out);
+    }
+
+    static void postorder(TreeNode node, List<Integer> out) {
+        if (node == null) return;
+        postorder(node.left, out);
+        postorder(node.right, out);
+        out.add(node.value);        // visit
+    }
+
+    static List<Integer> levelOrder(TreeNode root) {
+        List<Integer> out = new ArrayList<>();
+        Queue<TreeNode> q = new LinkedList<>();
+        if (root != null) q.add(root);
+        while (!q.isEmpty()) {
+            TreeNode node = q.poll();
+            out.add(node.value);
+            if (node.left != null) q.add(node.left);
+            if (node.right != null) q.add(node.right);
+        }
+        return out;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+void preorder(Node *node) {
+    if (node == NULL) return;
+    printf("%d ", node->value);     // visit
+    preorder(node->left);
+    preorder(node->right);
+}
+
+void inorder(Node *node) {
+    if (node == NULL) return;
+    inorder(node->left);
+    printf("%d ", node->value);     // visit
+    inorder(node->right);
+}
+
+void postorder(Node *node) {
+    if (node == NULL) return;
+    postorder(node->left);
+    postorder(node->right);
+    printf("%d ", node->value);     // visit
+}
+
+/* Level-order using a simple array-backed queue */
+void levelOrder(Node *root) {
+    if (root == NULL) return;
+    Node *q[1000];
+    int head = 0, tail = 0;
+    q[tail++] = root;
+    while (head < tail) {
+        Node *node = q[head++];
+        printf("%d ", node->value);
+        if (node->left)  q[tail++] = node->left;
+        if (node->right) q[tail++] = node->right;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+void preorder(Node *node, vector<int> &out) {
+    if (node == nullptr) return;
+    out.push_back(node->value);     // visit
+    preorder(node->left, out);
+    preorder(node->right, out);
+}
+
+void inorder(Node *node, vector<int> &out) {
+    if (node == nullptr) return;
+    inorder(node->left, out);
+    out.push_back(node->value);     // visit
+    inorder(node->right, out);
+}
+
+void postorder(Node *node, vector<int> &out) {
+    if (node == nullptr) return;
+    postorder(node->left, out);
+    postorder(node->right, out);
+    out.push_back(node->value);     // visit
+}
+
+vector<int> levelOrder(Node *root) {
+    vector<int> out;
+    queue<Node*> q;
+    if (root) q.push(root);
+    while (!q.empty()) {
+        Node *node = q.front(); q.pop();
+        out.push_back(node->value);
+        if (node->left)  q.push(node->left);
+        if (node->right) q.push(node->right);
+    }
+    return out;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Traversal | Time | Space |
+| --- | --- | --- |
+| Pre-order (recursive) | O(n) | O(h) call stack |
+| In-order (recursive) | O(n) | O(h) call stack |
+| Post-order (recursive) | O(n) | O(h) call stack |
+| Level-order (BFS) | O(n) | O(w) queue (w = max width) |
+
+Every traversal touches each node once, so time is always `O(n)`. Depth-first space follows the height `h`; level-order space follows the widest level `w`, which can be up to `n/2` in a full tree.
+
+## When to use it
+
+<Callout type="idea" title="Choose the order by what needs to happen first">
+Pre-order when a parent must be handled before its children (copying, serializing, rendering a menu). In-order to read a binary search tree in sorted order. Post-order when children must be handled before the parent (deleting, evaluating an expression, computing sizes bottom-up). Level-order when you care about rows — shortest paths, tree width, or the left/right views. Reaching for the wrong order is a common source of subtle tree bugs.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does in-order traversal of a binary search tree produce sorted output?">
+
+In a BST every value in the left subtree is smaller than the node, and every value in the right subtree is larger. In-order visits *all* of the smaller (left) subtree first, then the node, then *all* of the larger (right) subtree. Apply that rule recursively at every node and the values come out in strictly increasing order. This is why in-order is the go-to way to validate a BST or list its keys in order.
+
+</Accordion>
+
+<Accordion title="You need to delete an entire tree and free every node. Which traversal is safe, and why?">
+
+Post-order. You must free a node only after its children are gone, otherwise you'd free the parent and lose the pointers to its still-allocated subtrees, leaking them. Post-order visits left subtree, then right subtree, then the node — exactly the children-before-parent order that makes freeing safe. Pre-order would free a parent while its children are still reachable only through it.
+
+</Accordion>
+
+<Accordion title="How would you print each level of the tree on its own line?">
+
+Use level-order, but process the queue one level at a time: before the loop body, record the current queue size `k` (the count of nodes on this level), then pop exactly `k` nodes, printing them and enqueuing their children. After those `k` pops the queue holds precisely the next level, so start a new line and repeat. This "size snapshot" trick is the foundation for level-based problems like zigzag traversal and right-side view.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A traversal is just fixing *when* you visit a node relative to walking its two subtrees.
+- Pre-, in-, and post-order are depth-first; level-order is breadth-first with a queue.
+- Match the order to the task: in-order for sorted BST output, post-order for bottom-up work, level-order for row-by-row questions.
+
+<Cards>
+  <Card title="Binary Trees" href="/docs/dsa/16-binary-tree/01-binary-tree-intro" description="The node-and-pointer structure these traversals walk." />
+  <Card title="Iterative & Morris Traversal" href="/docs/dsa/16-binary-tree/03-iterative-traversals-and-morris" description="The same orders without recursion — and even without extra space." />
+  <Card title="Building Trees" href="/docs/dsa/16-binary-tree/06-construction" description="Reverse the process: rebuild a tree from its traversals." />
+</Cards>

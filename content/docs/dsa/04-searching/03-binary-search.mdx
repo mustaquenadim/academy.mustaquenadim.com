@@ -1,0 +1,333 @@
+---
+title: "Binary Search"
+description: "Finding a word in a dictionary without reading every page — you open to the middle and halve the problem each time."
+extractedReferences:
+  - href: /docs/dsa/04-searching/01-searching-intro
+  - href: /docs/dsa/04-searching/04-binary-search-variants
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You're looking up the word *"serendipity"* in a physical dictionary. You do **not** start
+at page 1 and read every word. You flip to the middle, land on *"M"*, and instantly know:
+*serendipity* is in the second half. You've thrown away half the dictionary with one look.
+Flip to the middle of what's left, land on *"T"* — too far, back up. A few flips and
+you're there.
+
+Now imagine a program searching a sorted list of 1 billion records. Scanning one by one
+([linear search](/docs/dsa/04-searching/01-searching-intro)) could take a billion steps.
+The dictionary trick? About **30**. That trick is binary search.
+
+## A first attempt
+
+Without the trick, we check every element until we find the target:
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def linear_search(arr, target):
+    for i, value in enumerate(arr):
+        if value == target:
+            return i
+    return -1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function linearSearch(arr: number[], target: number): number {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === target) return i;
+  }
+  return -1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int linearSearch(int[] arr, int target) {
+    for (int i = 0; i < arr.length; i++) {
+        if (arr[i] == target) return i;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int linear_search(const int arr[], int n, int target) {
+    for (int i = 0; i < n; i++) {
+        if (arr[i] == target) return i;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+int linearSearch(const std::vector<int>& arr, int target) {
+    for (size_t i = 0; i < arr.size(); i++) {
+        if (arr[i] == target) return static_cast<int>(i);
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+This is `O(n)` — fine for a hundred items, hopeless for a billion. But notice it makes
+**no use of the fact that the data is sorted.** That wasted information is exactly what
+binary search exploits.
+
+## The insight
+
+If the array is **sorted**, then one comparison tells you not just whether the middle
+element matches, but *which half the target must be in*. Every guess that isn't a match
+still eliminates half of what's left.
+
+Halving repeatedly is the definition of `O(log n)`. That's why a billion items collapse to
+~30 steps: `log₂(1,000,000,000) ≈ 30`.
+
+<Callout type="warning" title="The one precondition">
+Binary search **only works on sorted data**. If the array isn't sorted, the "target must
+be in the other half" reasoning falls apart. Sorting first costs `O(n log n)` — worth it
+only if you'll search many times.
+</Callout>
+
+## How it works
+
+Keep two boundaries, `low` and `high`, marking the slice still in play. Look at the middle;
+shrink the slice toward the target.
+
+<Steps>
+
+<Step>
+
+### Start with the whole array
+
+`low = 0`, `high = n - 1`. The target, if present, is somewhere in `[low, high]`.
+
+</Step>
+
+<Step>
+
+### Look at the middle
+
+`mid = (low + high) / 2`. Compare `arr[mid]` to the target.
+
+</Step>
+
+<Step>
+
+### Throw away half
+
+If `arr[mid] < target`, the target must be to the **right** — set `low = mid + 1`.
+If `arr[mid] > target`, it's to the **left** — set `high = mid - 1`. If it's equal, you're
+done.
+
+</Step>
+
+<Step>
+
+### Repeat until the slice is empty
+
+If `low` ever passes `high`, the slice is empty and the target isn't there — return `-1`.
+
+</Step>
+
+</Steps>
+
+Here's the search for `target = 7` in a sorted array. `[` and `]` mark `low` and `high`,
+`^` marks `mid`:
+
+```text
+index:   0   1   2   3   4   5   6
+value:   1   3   5   7   9  11  13
+        [1   3   5   7   9  11  13]      mid=3 → arr[3]=7  ✓ found at index 3
+                     ^
+```
+
+A harder one, `target = 11`:
+
+```text
+        [1   3   5   7   9  11  13]      mid=3 → arr[3]=7  < 11, go right
+                     ^
+         1   3   5  [7   9  11  13]      mid=5 → arr[5]=11 ✓ found at index 5
+                             ^
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def binary_search(arr, target):
+    low, high = 0, len(arr) - 1
+    while low <= high:
+        mid = low + (high - low) // 2   # avoids overflow in other languages
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            low = mid + 1
+        else:
+            high = mid - 1
+    return -1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function binarySearch(arr: number[], target: number): number {
+  let low = 0;
+  let high = arr.length - 1;
+  while (low <= high) {
+    const mid = low + Math.floor((high - low) / 2);
+    if (arr[mid] === target) return mid;
+    else if (arr[mid] < target) low = mid + 1;
+    else high = mid - 1;
+  }
+  return -1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int binarySearch(int[] arr, int target) {
+    int low = 0, high = arr.length - 1;
+    while (low <= high) {
+        int mid = low + (high - low) / 2; // avoids int overflow
+        if (arr[mid] == target) return mid;
+        else if (arr[mid] < target) low = mid + 1;
+        else high = mid - 1;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int binary_search(const int arr[], int n, int target) {
+    int low = 0, high = n - 1;
+    while (low <= high) {
+        int mid = low + (high - low) / 2; // avoids int overflow
+        if (arr[mid] == target) return mid;
+        else if (arr[mid] < target) low = mid + 1;
+        else high = mid - 1;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+int binarySearch(const std::vector<int>& arr, int target) {
+    int low = 0, high = static_cast<int>(arr.size()) - 1;
+    while (low <= high) {
+        int mid = low + (high - low) / 2; // avoids int overflow
+        if (arr[mid] == target) return mid;
+        else if (arr[mid] < target) low = mid + 1;
+        else high = mid - 1;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="idea" title="Why mid = low + (high - low) / 2, not (low + high) / 2?">
+In fixed-width integer languages like Java and C++, `low + high` can overflow past the
+maximum int when the array is huge, producing a negative `mid` and a crash. `low + (high -
+low) / 2` computes the same midpoint without ever adding two large numbers. A famous bug
+that lived in production libraries for years.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                        |
+| ------ | ---------- | ------------------------------------------ |
+| Time   | `O(log n)` | the slice halves every step                |
+| Space  | `O(1)`     | iterative version keeps just two pointers  |
+
+The recursive version is also `O(log n)` time but uses `O(log n)` space for the call
+stack — one reason the iterative form above is usually preferred.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is the loop condition `low <= high` and not `low < high`?">
+
+Because the slice `[low, high]` is **inclusive** on both ends. When `low == high` there's
+still exactly one element left to check — the target could be it. Using `<` would skip that
+final element and miss valid matches. Off-by-one boundary choices are the number-one source
+of binary-search bugs.
+
+</Accordion>
+
+<Accordion title="The array has duplicates and you want the FIRST occurrence of the target. Does this code work?">
+
+Not quite — it returns *some* matching index, not necessarily the first. To find the first,
+don't stop on a match: record it and keep searching **left** (`high = mid - 1`). That's the
+"lower bound" variant covered in
+[Binary Search Variants](/docs/dsa/04-searching/04-binary-search-variants).
+
+</Accordion>
+
+<Accordion title="Could you binary-search an array that is sorted but then rotated, like [7, 9, 1, 3, 5]?">
+
+Yes — with a twist. At each step, one half is still sorted; check whether the target lies
+within that sorted half to decide which way to go. Still `O(log n)`. This is a classic
+follow-up, also in the variants lesson.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Binary search finds a target in **sorted** data in `O(log n)` by discarding half the
+  remaining range with every comparison.
+- Track an inclusive `[low, high]` slice; move `low`/`high` past the eliminated half; stop
+  when `low > high`.
+- Watch two classic bugs: the `low <= high` condition and the overflow-safe midpoint.
+
+<Cards>
+  <Card title="Linear Search" href="/docs/dsa/04-searching/01-searching-intro" description="The O(n) baseline binary search improves on." />
+  <Card title="Binary Search Variants" href="/docs/dsa/04-searching/04-binary-search-variants" description="First/last occurrence, bounds, and rotated arrays." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Where the O(log n) comes from." />
+</Cards>

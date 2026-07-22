@@ -1,0 +1,10 @@
+{
+  "title": "Backtracking",
+  "icon": "GitBranch",
+  "pages": [
+    "01-backtracking-intro",
+    "02-permutations-and-subsets",
+    "03-grid-backtracking",
+    "04-constraint-solving"
+  ]
+}

@@ -1,0 +1,225 @@
+---
+title: "Linear Search"
+description: "Looking for one item by checking each in turn is the most natural thing in the world — and the baseline every faster search must beat."
+extractedReferences:
+  - href: /docs/dsa/04-searching/02-linear-search-patterns
+  - href: /docs/dsa/04-searching/03-binary-search
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+Your phone shows an unsorted list of 300 contacts and you need to find *"Priya"*. There's
+no alphabetical order to lean on — names arrived in whatever order you saved them. So what
+do you actually do? You start at the top and read down: *Aman, no. Zoya, no. Ben, no…*
+until Priya's name appears or the list runs out.
+
+That's not a clever trick. It's the most honest thing you can do when the data has no
+structure. And it's worth understanding precisely, because it's the yardstick every faster
+search — binary search, hashing, trees — is measured against.
+
+## A first attempt
+
+Maybe you think: *sort the contacts first, then I can jump around cleverly.* Sorting 300
+names costs `O(n log n)`, and then you still have to search. For a **single** lookup that's
+pure waste — you paid to reorganize the whole list to find one name once.
+
+If you're only searching once, and the data isn't already sorted, there's nothing to
+exploit. You have to look. The only question is how to look cleanly.
+
+## The insight
+
+When data is unordered, any element could be the target, so you cannot safely skip a single
+one. Checking every element until you hit the target (or the end) is not just *a* solution —
+it's provably the best you can do on unsorted data. That's `O(n)`.
+
+The one improvement worth making: **stop the moment you find it.** On average you'll examine
+half the list, and if the item is missing you'll examine all of it. Name it now — this is
+**linear search**.
+
+<Callout type="idea" title="Sorted changes everything">
+Linear search shines precisely because it needs *no* structure. The instant your data is
+sorted, you can do far better — see [Binary Search](/docs/dsa/04-searching/03-binary-search),
+which throws away half the remaining items with every comparison.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start at the first element
+
+Point an index at position `0`. Everything from here to the end is still unchecked.
+
+</Step>
+
+<Step>
+
+### Compare with the target
+
+If the current element equals the target, you're done — return its index.
+
+</Step>
+
+<Step>
+
+### Step forward
+
+If it doesn't match, move the index one to the right and compare again.
+
+</Step>
+
+<Step>
+
+### Stop at the end
+
+If you walk off the end without a match, the target isn't in the list — return `-1`.
+
+</Step>
+
+</Steps>
+
+Searching for `target = 9`:
+
+```text
+index:   0   1   2   3   4
+value:   4   9   2   7   1
+         ^  4 ≠ 9, step right
+             ^  9 = 9  ✓ found at index 1
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def linear_search(arr, target):
+    for i, value in enumerate(arr):
+        if value == target:
+            return i
+    return -1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function linearSearch(arr: number[], target: number): number {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] === target) return i;
+  }
+  return -1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int linearSearch(int[] arr, int target) {
+    for (int i = 0; i < arr.length; i++) {
+        if (arr[i] == target) return i;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int linear_search(const int arr[], int n, int target) {
+    for (int i = 0; i < n; i++) {
+        if (arr[i] == target) return i;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int linearSearch(const std::vector<int>& arr, int target) {
+    for (int i = 0; i < (int)arr.size(); i++) {
+        if (arr[i] == target) return i;
+    }
+    return -1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                             |
+| ------ | ------ | ----------------------------------------------- |
+| Time   | `O(n)` | worst case scans every element                  |
+| Space  | `O(1)` | just one index, no extra memory                 |
+
+Best case is `O(1)` (the target is first); average is `O(n/2)`, which is still `O(n)`.
+
+## When to use it
+
+<Callout type="info" title="Reach for linear search when…">
+The data is **unsorted** and you'll search it only a few times, the collection is small, or
+you can't afford to sort or build an index. It's also the right call when you need *every*
+match, not just one. Once lookups become frequent on a large dataset, sort once and binary
+search, or build a hash table for `O(1)` lookups.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why can't linear search be faster than O(n) on unsorted data?">
+
+Because the target could be anywhere, and there's no rule connecting an element's value to
+its position. Skipping any element risks skipping the answer. An adversary could always hide
+the target in the one slot you didn't check. So examining all `n` elements in the worst case
+is unavoidable — `O(n)` is optimal here.
+
+</Accordion>
+
+<Accordion title="You need to find ALL positions where the target appears. How does the code change?">
+
+Don't return on the first match — collect matches instead. Keep a results list, append `i`
+whenever `arr[i] == target`, and return the list at the end. Still a single `O(n)` pass, but
+now it reports every occurrence rather than stopping early.
+
+</Accordion>
+
+<Accordion title="A colleague sorts the array and then linear-searches it. Did that help?">
+
+Not for a single lookup — sorting cost `O(n log n)`, more than the `O(n)` search it was
+meant to speed up. Sorting only pays off if you'll search many times, and even then you'd
+switch to [binary search](/docs/dsa/04-searching/03-binary-search) to actually cash in on
+the order.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Linear search checks each element in turn and stops at the first match — `O(n)` time,
+  `O(1)` space, no preconditions.
+- It's optimal on **unsorted** data: with no structure to exploit, you can't skip elements.
+- It's the baseline every faster search must beat — the moment data is sorted or indexed,
+  switch to something smarter.
+
+<Cards>
+  <Card title="Linear-Scan Patterns" href="/docs/dsa/04-searching/02-linear-search-patterns" description="Max, second max, and peaks in one sweep." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="What sorted data buys you: O(log n)." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why O(n) is the honest cost here." />
+</Cards>

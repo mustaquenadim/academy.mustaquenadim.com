@@ -1,0 +1,288 @@
+---
+title: "Reversal Patterns"
+description: "Reversing a linked list — whole, in groups, or as a reorder — is the rite of passage every pointer problem builds on."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/01-linked-list-intro
+  - href: /docs/dsa/12-linked-list/04-fast-slow-pointer
+  - href: /docs/dsa/12-linked-list/07-hard-lists
+---
+
+## The problem
+
+You are printing a shipping label. The address items arrived as a linked list in the order
+they were scanned, but the label needs them last-to-first. With an array you would just read
+it backward by index. With a singly linked list there is no "backward" — every node points
+only forward, and you have exactly one reference: the head.
+
+You need the same chain, flowing the other way. And you would rather not allocate a whole
+second list to do it, because the same pattern will show up again and again — reversing a
+sublist, reversing in groups of k, reordering — and each time a wasteful copy would hurt.
+
+## A first attempt
+
+The obvious move: walk the list, push every value into an array, then rebuild.
+
+```python
+vals = []
+node = head
+while node:
+    vals.append(node.value)
+    node = node.next
+# rebuild from vals[::-1] ...
+```
+
+It works, but it is **O(n) time and O(n) extra space**, and it throws away the original
+nodes. The real question interviewers and real systems care about is the *in-place* reversal:
+same nodes, rewired, **O(1)** extra space. Getting there teaches the pointer-juggling every
+harder list problem reuses.
+
+## The insight
+
+Reversing a chain in place is just flipping each arrow to point at the node behind it. Walk
+forward once, and at each node bend its `next` backward. The only trap: the moment you
+overwrite `node.next`, you lose your way forward — so you must **save the next node first**.
+
+Three pointers dance down the list: `prev` (the reversed part behind you), `curr` (the node
+you are flipping), and a saved `next` (so you can still advance). When `curr` runs off the
+end, `prev` is the new head.
+
+```text
+before:  null   a → b → c → null
+step:    prev  curr
+after:   null ← a ← b ← c   (prev now points at c)
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start prev at null
+
+`prev` represents everything already reversed. At the start nothing is reversed, so
+`prev = null`. `curr` starts at the head.
+
+</Step>
+
+<Step>
+
+### Save, flip, advance
+
+Save `nxt = curr.next` before you touch anything. Flip: `curr.next = prev`. Then slide both
+forward: `prev = curr`, `curr = nxt`. That saved pointer is the whole trick — without it,
+flipping the arrow strands the rest of the list.
+
+</Step>
+
+<Step>
+
+### Stop when curr is null
+
+The loop ends when `curr` falls off the end. At that instant `prev` points at the old last
+node, which is now the head of the reversed list. Return `prev`.
+
+</Step>
+
+<Step>
+
+### Reverse a sublist by isolating it
+
+To reverse only positions `left..right`, walk to the node before `left`, reverse exactly
+`right − left + 1` nodes with the same three-pointer loop, then stitch the reversed segment
+back to the untouched parts. Groups of k are the same idea, repeated.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value, next=None):
+        self.value = value
+        self.next = next
+
+def reverse(head):                   # O(n) time, O(1) space
+    prev, curr = None, head
+    while curr:
+        nxt = curr.next              # save
+        curr.next = prev             # flip
+        prev = curr                  # advance
+        curr = nxt
+    return prev                      # new head
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class ListNode {
+  value: number;
+  next: ListNode | null;
+  constructor(value: number, next: ListNode | null = null) {
+    this.value = value;
+    this.next = next;
+  }
+}
+
+function reverse(head: ListNode | null): ListNode | null { // O(n), O(1)
+  let prev: ListNode | null = null;
+  let curr = head;
+  while (curr) {
+    const nxt = curr.next;   // save
+    curr.next = prev;        // flip
+    prev = curr;             // advance
+    curr = nxt;
+  }
+  return prev;               // new head
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int value;
+    Node next;
+    Node(int value, Node next) { this.value = value; this.next = next; }
+}
+
+Node reverse(Node head) {            // O(n) time, O(1) space
+    Node prev = null, curr = head;
+    while (curr != null) {
+        Node nxt = curr.next;        // save
+        curr.next = prev;            // flip
+        prev = curr;                 // advance
+        curr = nxt;
+    }
+    return prev;                     // new head
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stddef.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+/* O(n) time, O(1) space. Returns the new head. */
+Node *reverse(Node *head) {
+    Node *prev = NULL, *curr = head;
+    while (curr != NULL) {
+        Node *nxt = curr->next;   /* save */
+        curr->next = prev;        /* flip */
+        prev = curr;              /* advance */
+        curr = nxt;
+    }
+    return prev;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct Node {
+    int value;
+    Node *next;
+    Node(int v, Node *n = nullptr) : value(v), next(n) {}
+};
+
+// O(n) time, O(1) space. Returns the new head.
+Node *reverse(Node *head) {
+    Node *prev = nullptr, *curr = head;
+    while (curr != nullptr) {
+        Node *nxt = curr->next;   // save
+        curr->next = prev;        // flip
+        prev = curr;              // advance
+        curr = nxt;
+    }
+    return prev;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach                 | Time | Space |
+| ------------------------ | ---- | ----- |
+| Copy to array + rebuild  | O(n) | O(n)  |
+| In-place three pointers  | O(n) | O(1)  |
+| Recursive reversal       | O(n) | O(n)\* |
+
+\*Recursion is elegant but uses O(n) stack frames — a hidden space cost that can overflow on
+long lists. The iterative form is what production code and interviews expect.
+
+## When to use it
+
+<Callout type="idea" title="Save-flip-advance is a reusable engine">
+The three-pointer loop is not one trick — it is the core of reverse-in-groups, palindrome
+checks (reverse the second half), reorder-list, and swap-in-pairs. Master it once and those
+problems become "walk to the boundary, run the engine, stitch the pieces." The single pitfall
+is overwriting `next` before saving it; do that and you strand the rest of the chain.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must you save curr.next before setting curr.next = prev?">
+
+Because `curr.next = prev` destroys the only link you have to the rest of the unreversed
+list. If you flip first, the node you were about to visit becomes unreachable and the loop
+either stops early or crashes. Saving `nxt = curr.next` first preserves your path forward —
+it is the reason three pointers are needed, not two.
+
+</Accordion>
+
+<Accordion title="How do you check if a linked list is a palindrome in O(1) space?">
+
+Find the middle with the fast/slow pointer trick, reverse the second half in place, then walk
+the two halves inward comparing values. If every pair matches, it is a palindrome. Optionally
+reverse the second half again to restore the list. Total: O(n) time, O(1) space — a direct
+application of reversal plus the fast/slow pattern.
+
+</Accordion>
+
+<Accordion title="To reverse nodes in groups of k, what do you do when fewer than k nodes remain?">
+
+Leave them as-is. First check whether k nodes exist ahead; if they do, reverse that group and
+recurse or loop on the rest. If the final chunk is shorter than k, you skip reversing it, so
+the tail stays in original order — that is the standard "reverse k-group" contract.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- In-place reversal flips each `next` backward using `prev`, `curr`, and a saved `next`.
+- Always save the next node before flipping — otherwise you strand the rest of the list.
+- The same three-pointer engine powers sublist reversal, k-groups, palindromes, and reorders.
+
+<Cards>
+  <Card title="Linked Lists" href="/docs/dsa/12-linked-list/01-linked-list-intro" description="The single-pointer node this whole technique rewires." />
+  <Card title="Fast & Slow Pointers" href="/docs/dsa/12-linked-list/04-fast-slow-pointer" description="Find the middle so you can reverse just the second half." />
+  <Card title="Advanced List Problems" href="/docs/dsa/12-linked-list/07-hard-lists" description="Where reversal combines with cloning and flattening." />
+</Cards>

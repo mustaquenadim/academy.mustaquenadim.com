@@ -1,0 +1,365 @@
+---
+title: "Queues from Stacks"
+description: "Can you build a first-in-first-out queue out of two last-in-first-out stacks? Surprisingly, yes."
+extractedReferences:
+  - href: /docs/dsa/14-queue/01-queue-intro
+  - href: /docs/dsa/13-stack/01-stack-intro
+  - href: /docs/dsa/13-stack/03-stack-design
+---
+
+## The problem
+
+You are handed a library that gives you exactly one tool: a **stack**. Push, pop, peek — that's it. Last in, first out. But the feature you're building needs the opposite: a fair line where the first item in is the first item out. A stack always hands back the *newest* item; you need the *oldest*.
+
+It sounds like the wrong tool entirely. A stack reverses order — the last plate you set down is the first you pick up. Yet with a little cleverness, two stacks together can behave as a perfect FIFO queue. This is a classic interview question precisely because the trick is not obvious.
+
+## A first attempt
+
+You have one stack `s`. To dequeue the oldest item, you must dig to the bottom. So pop everything off `s` into a temporary stack, take the bottom one, then pour everything back:
+
+```
+s = [A, B, C]   (A pushed first, sits at bottom)
+
+pour into tmp -> tmp = [C, B, A]   (A now on top)
+pop A          -> that's the oldest, return it
+pour back      -> s = [B, C]
+```
+
+It gives the right answer, but look at the cost: **every** dequeue empties and refills the whole stack — `O(n)` per call, `O(n²)` to drain the queue. You are pouring the same items back and forth over and over. The waste is obvious once you see it.
+
+## The insight
+
+Reversing a stack into a second stack flips its order — which is exactly the FIFO order you want. So keep **two stacks**: an `in` stack for arrivals and an `out` stack for departures.
+
+The trick is to **not pour back**. Push new items onto `in`. When you need to dequeue and `out` is empty, pour *all* of `in` into `out` once — reversing them so the oldest is on top — and then serve from `out` for as long as it has items. Each element moves from `in` to `out` **exactly once** in its lifetime. That single move, spread across all operations, makes dequeue **amortized O(1)**.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Enqueue always pushes onto `in`
+
+Arrivals go straight onto the `in` stack. Nothing else happens. This is always O(1).
+
+```
+enqueue A, B, C
+
+in  = [A, B, C]   (C on top)
+out = []
+```
+
+</Step>
+
+<Step>
+
+### Dequeue serves from `out`
+
+If `out` has items, pop the top — that's the oldest. Fast path, O(1). You only touch `in` when `out` runs dry.
+
+</Step>
+
+<Step>
+
+### Refill `out` only when it is empty
+
+When a dequeue finds `out` empty, pour every element of `in` into `out`. Popping `in` (C, B, A) and pushing each reverses them, so `out` becomes A on top — oldest first.
+
+```
+pour in -> out
+
+in  = []
+out = [C, B, A]   (A on top — the oldest)
+pop -> returns A
+```
+
+</Step>
+
+<Step>
+
+### Why refilling stays cheap overall
+
+Each item is moved from `in` to `out` exactly once, then popped once. Across `n` operations that is `O(n)` total work — **amortized O(1)** per dequeue — even though a single refill can be O(n). Do *not* pour back after each dequeue; that is what wrecked the first attempt.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class QueueFromStacks:
+    def __init__(self):
+        self._in = []
+        self._out = []
+
+    def enqueue(self, x):
+        self._in.append(x)
+
+    def _shift(self):
+        if not self._out:
+            while self._in:
+                self._out.append(self._in.pop())
+
+    def dequeue(self):
+        self._shift()
+        if not self._out:
+            raise IndexError("dequeue from empty queue")
+        return self._out.pop()
+
+    def peek(self):
+        self._shift()
+        return self._out[-1]
+
+    def is_empty(self):
+        return not self._in and not self._out
+
+
+q = QueueFromStacks()
+q.enqueue("A"); q.enqueue("B"); q.enqueue("C")
+print(q.dequeue())  # A
+print(q.dequeue())  # B
+q.enqueue("D")
+print(q.dequeue())  # C
+print(q.dequeue())  # D
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class QueueFromStacks<T> {
+  private inStack: T[] = [];
+  private outStack: T[] = [];
+
+  enqueue(x: T): void {
+    this.inStack.push(x);
+  }
+
+  private shift(): void {
+    if (this.outStack.length === 0) {
+      while (this.inStack.length > 0) {
+        this.outStack.push(this.inStack.pop() as T);
+      }
+    }
+  }
+
+  dequeue(): T {
+    this.shift();
+    if (this.outStack.length === 0) throw new Error("empty");
+    return this.outStack.pop() as T;
+  }
+
+  peek(): T {
+    this.shift();
+    return this.outStack[this.outStack.length - 1];
+  }
+
+  isEmpty(): boolean {
+    return this.inStack.length === 0 && this.outStack.length === 0;
+  }
+}
+
+const q = new QueueFromStacks<string>();
+q.enqueue("A"); q.enqueue("B"); q.enqueue("C");
+console.log(q.dequeue()); // A
+console.log(q.dequeue()); // B
+q.enqueue("D");
+console.log(q.dequeue()); // C
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+class QueueFromStacks<T> {
+    private final Deque<T> in = new ArrayDeque<>();
+    private final Deque<T> out = new ArrayDeque<>();
+
+    void enqueue(T x) {
+        in.push(x);
+    }
+
+    private void shift() {
+        if (out.isEmpty()) {
+            while (!in.isEmpty()) out.push(in.pop());
+        }
+    }
+
+    T dequeue() {
+        shift();
+        if (out.isEmpty()) throw new IllegalStateException("empty");
+        return out.pop();
+    }
+
+    T peek() {
+        shift();
+        return out.peek();
+    }
+
+    public static void main(String[] args) {
+        QueueFromStacks<String> q = new QueueFromStacks<>();
+        q.enqueue("A"); q.enqueue("B"); q.enqueue("C");
+        System.out.println(q.dequeue()); // A
+        System.out.println(q.dequeue()); // B
+        q.enqueue("D");
+        System.out.println(q.dequeue()); // C
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+#define CAP 128
+
+typedef struct { int data[CAP]; int top; } Stack;
+
+void s_init(Stack *s) { s->top = -1; }
+int  s_empty(Stack *s) { return s->top < 0; }
+void s_push(Stack *s, int x) { s->data[++s->top] = x; }
+int  s_pop(Stack *s) { return s->data[s->top--]; }
+
+typedef struct { Stack in, out; } Queue;
+
+void q_init(Queue *q) { s_init(&q->in); s_init(&q->out); }
+
+void enqueue(Queue *q, int x) { s_push(&q->in, x); }
+
+static void shift(Queue *q) {
+    if (s_empty(&q->out))
+        while (!s_empty(&q->in))
+            s_push(&q->out, s_pop(&q->in));
+}
+
+int dequeue(Queue *q) {   /* assumes non-empty */
+    shift(q);
+    return s_pop(&q->out);
+}
+
+int main(void) {
+    Queue q;
+    q_init(&q);
+    enqueue(&q, 1); enqueue(&q, 2); enqueue(&q, 3);
+    printf("%d\n", dequeue(&q)); /* 1 */
+    printf("%d\n", dequeue(&q)); /* 2 */
+    enqueue(&q, 4);
+    printf("%d\n", dequeue(&q)); /* 3 */
+    printf("%d\n", dequeue(&q)); /* 4 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <stack>
+#include <stdexcept>
+
+template <typename T>
+class QueueFromStacks {
+    std::stack<T> in, out;
+
+    void shift() {
+        if (out.empty())
+            while (!in.empty()) { out.push(in.top()); in.pop(); }
+    }
+public:
+    void enqueue(const T& x) { in.push(x); }
+
+    T dequeue() {
+        shift();
+        if (out.empty()) throw std::runtime_error("empty");
+        T x = out.top();
+        out.pop();
+        return x;
+    }
+
+    T peek() { shift(); return out.top(); }
+};
+
+int main() {
+    QueueFromStacks<int> q;
+    q.enqueue(1); q.enqueue(2); q.enqueue(3);
+    std::cout << q.dequeue() << "\n"; // 1
+    std::cout << q.dequeue() << "\n"; // 2
+    q.enqueue(4);
+    std::cout << q.dequeue() << "\n"; // 3
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Enqueue | O(1) | O(1) |
+| Dequeue | O(1) amortized, O(n) worst case | O(1) |
+| Peek | O(1) amortized | O(1) |
+| Whole queue | — | O(n) |
+
+A single dequeue that triggers a refill is `O(n)`, but each element is moved between stacks only once, so any sequence of `n` operations costs `O(n)` — hence amortized `O(1)`. The pour-back-every-time approach was a true `O(n)` per call.
+
+## When to use it
+
+<Callout type="idea" title="Mostly an interview and constraint puzzle">
+In real code you'd just use a deque-backed queue. This construction matters in two places: **interviews**, where it tests whether you understand amortized analysis, and **constrained settings** where only a stack primitive is available (some functional-programming queues use exactly this two-stack "banker's queue"). The one thing to get right: refill `out` *only* when it is empty. Refilling while `out` still has items scrambles the order and breaks FIFO.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is dequeue amortized O(1) even though one call can be O(n)?">
+
+Each element is pushed onto `in` once, moved to `out` once, and popped from `out` once — three constant-time touches over its entire lifetime. Across `n` operations the total work is `O(n)`, so the average per operation is `O(1)`. A single dequeue that triggers a full refill looks expensive, but it "pays forward" for the cheap O(1) dequeues that follow until `out` empties again.
+
+</Accordion>
+
+<Accordion title="What goes wrong if you refill `out` while it still has elements?">
+
+You break FIFO order. Say `out = [C, B]` (B on top, older) and `in = [D, E]`. Pouring `in` on top now gives `out = [C, B, E, D]` with D on top — so the next dequeue returns D, a newer item, before B. The invariant is that `out` holds a correctly-reversed prefix of the queue; you may only refill it from `in` when it is completely empty.
+
+</Accordion>
+
+<Accordion title="Enqueue A, B, then dequeue, then enqueue C, then dequeue twice. What comes out?">
+
+Enqueue A, B leaves `in = [A, B]`. First dequeue finds `out` empty, pours to `out = [B, A]` (A on top), returns **A**. Enqueue C goes to `in = [C]`; `out` still has `[B]`. Next dequeue serves from `out`, returns **B**. Now `out` is empty, so the final dequeue pours `in`, giving `out = [C]`, returns **C**. Output order: A, B, C — correct FIFO.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Two stacks make a queue: an **in** stack for arrivals, an **out** stack for departures.
+- Refill `out` from `in` **only when `out` is empty**; the reversal turns LIFO into FIFO.
+- Each item moves once, so dequeue is **amortized O(1)** despite an occasional O(n) refill.
+
+<Cards>
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="The FIFO behavior we are reconstructing." />
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="The LIFO primitive we build from." />
+  <Card title="Stack Design" href="/docs/dsa/13-stack/03-stack-design" description="More structures built on top of stacks." />
+</Cards>

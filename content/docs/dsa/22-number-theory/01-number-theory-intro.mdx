@@ -1,0 +1,254 @@
+---
+title: "Number Theory Essentials"
+description: "A handful of number facts — divisibility, GCD, primes — power a surprising range of algorithms."
+extractedReferences:
+  - href: /docs/dsa/22-number-theory/02-sieve-of-eratosthenes
+  - href: /docs/dsa/22-number-theory/03-modular-arithmetic
+  - href: /docs/dsa/02-recursion-math/05-primes-and-factors
+---
+
+## The problem
+
+You are building a recipe scaler. Someone enters that they used 750 grams of flour and
+1000 grams of water, and you want to show the ratio in its simplest form. Printing
+`750:1000` looks amateurish — you want `3:4`. To simplify a fraction you divide the top and
+bottom by the largest number that divides both. So the whole task comes down to one
+question: what is the biggest number that divides both 750 and 1000?
+
+That number has a name — the **greatest common divisor** — and it shows up everywhere:
+laying tiles evenly, syncing two blinking lights, cryptography, reducing fractions. Get a
+fast way to compute it and a surprising amount of downstream code becomes easy.
+
+## A first attempt
+
+The obvious move is to try every candidate. Count down from the smaller number and return
+the first value that divides both.
+
+```python
+def gcd_slow(a, b):
+    for d in range(min(a, b), 0, -1):
+        if a % d == 0 and b % d == 0:
+            return d
+    return 1
+```
+
+This works, but it walks one integer at a time. For two numbers near a billion it can do
+close to a billion checks — that is **O(min(a, b))** time. Fine for tiny inputs, far too
+slow when the numbers get large. There has to be a shortcut.
+
+## The insight
+
+Here is the trick the Greeks found. Any number that divides both `a` and `b` also divides
+their difference, and more usefully, their **remainder**. So
+
+```
+gcd(a, b) = gcd(b, a mod b)
+```
+
+Each step replaces the pair with a much smaller pair, and it stops the instant the
+remainder hits zero — at which point the other number is the answer. This is **Euclid's
+algorithm**, and it collapses that billion-step search into a couple dozen steps.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Take the remainder
+
+Compute `a mod b`. For `gcd(1000, 750)` that is `250`. This remainder shares every common
+divisor with the original pair.
+
+</Step>
+
+<Step>
+
+### Shift the pair down
+
+Throw away the larger number. The new pair is `(b, a mod b)` — here `(750, 250)`. The
+problem is now strictly smaller.
+
+</Step>
+
+<Step>
+
+### Repeat until the remainder is zero
+
+`gcd(750, 250)` gives remainder `0`, so we stop. The last non-zero value, `250`, is the
+GCD. Dividing `750/250` and `1000/250` gives the clean `3:4`.
+
+</Step>
+
+<Step>
+
+### Build LCM for free
+
+The least common multiple falls straight out: `lcm(a, b) = a / gcd(a, b) * b`. Divide
+before you multiply to avoid overflow.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def gcd(a, b):
+    while b:
+        a, b = b, a % b
+    return a
+
+def lcm(a, b):
+    return a // gcd(a, b) * b
+
+print(gcd(1000, 750))  # 250
+print(lcm(4, 6))       # 12
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function gcd(a: number, b: number): number {
+  while (b !== 0) {
+    [a, b] = [b, a % b];
+  }
+  return a;
+}
+
+function lcm(a: number, b: number): number {
+  return (a / gcd(a, b)) * b;
+}
+
+console.log(gcd(1000, 750)); // 250
+console.log(lcm(4, 6));      // 12
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static int gcd(int a, int b) {
+    while (b != 0) {
+        int t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+static long lcm(int a, int b) {
+    return (long) a / gcd(a, b) * b;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int gcd(int a, int b) {
+    while (b != 0) {
+        int t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+long lcm(int a, int b) {
+    return (long) a / gcd(a, b) * b;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int gcd(int a, int b) {
+    while (b != 0) {
+        int t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+long long lcm(int a, int b) {
+    return (long long) a / gcd(a, b) * b;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Trial division `gcd_slow` | O(min(a, b)) | O(1) |
+| Euclid's algorithm | O(log(min(a, b))) | O(1) |
+| LCM via GCD | O(log(min(a, b))) | O(1) |
+
+Euclid runs in logarithmic time because each two steps at least halve the smaller number —
+the same reason binary search is fast.
+
+## When to use it
+
+<Callout type="idea" title="Small facts, big reach">
+Reach for GCD whenever you need to reduce fractions, find a common cycle length, or split
+things into equal groups. Two pitfalls: `gcd(0, 0)` is undefined (guard it), and in LCM
+always divide by the GCD *before* multiplying, or the intermediate product can overflow.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does gcd(a, b) equal gcd(b, a mod b)?">
+
+Let `d` divide both `a` and `b`. Write `a = q·b + r`, so `r = a − q·b`. Since `d` divides
+`a` and `b`, it divides `q·b` and therefore divides `r`. The reverse holds too: anything
+dividing `b` and `r` divides `a`. So the two pairs have exactly the same set of common
+divisors, hence the same greatest one.
+
+</Accordion>
+
+<Accordion title="How would you compute the GCD of a whole array?">
+
+Fold the pairwise GCD across the list: start with the first element and repeatedly apply
+`result = gcd(result, next)`. Because `gcd(gcd(x, y), z) = gcd(x, y, z)`, order does not
+matter, and you can stop early if `result` ever reaches 1.
+
+</Accordion>
+
+<Accordion title="What is the worst case for Euclid's algorithm?">
+
+Consecutive Fibonacci numbers. `gcd(F(n+1), F(n))` forces the maximum number of steps
+because each remainder is the previous Fibonacci number. This is exactly why the running
+time is logarithmic — Fibonacci numbers grow exponentially.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- The GCD is the largest number dividing two integers; trial division is O(min(a, b)).
+- Euclid's `gcd(a, b) = gcd(b, a mod b)` runs in O(log) time and gives LCM for free.
+- These small facts underpin fractions, cycles, and much of the rest of number theory.
+
+<Cards>
+  <Card title="The Sieve of Eratosthenes" href="/docs/dsa/22-number-theory/02-sieve-of-eratosthenes" description="List every prime up to a million almost instantly." />
+  <Card title="Modular Arithmetic" href="/docs/dsa/22-number-theory/03-modular-arithmetic" description="Tame astronomically large numbers with remainders." />
+  <Card title="Primes and Factors" href="/docs/dsa/02-recursion-math/05-primes-and-factors" description="Factorization basics that build on divisibility." />
+</Cards>

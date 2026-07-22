@@ -1,0 +1,358 @@
+---
+title: "Circular Queues"
+description: "A fixed array wastes space as a queue drains — wrap the end around to the front and none is lost."
+extractedReferences:
+  - href: /docs/dsa/14-queue/01-queue-intro
+  - href: /docs/dsa/14-queue/04-queue-problems
+  - href: /docs/dsa/15-deque/01-deque-intro
+---
+
+## The problem
+
+You are writing firmware for a sensor that reports every 10 milliseconds. You want to buffer the last 8 readings — no more, no less — in a fixed block of memory, because on a microcontroller you cannot grow arrays on a whim. You have exactly 8 slots.
+
+Reading number 9 arrives. Where does it go? You have already read and discarded reading 1, so its slot is *free* — but it sits at the front of the array, and your writes have marched off the back. The space is right there, just in the wrong place. How do you reuse it without copying everything down?
+
+## A first attempt
+
+Use a plain array with a moving `front` and `back` index, like a normal array queue. Enqueue writes at `back` and increments it; dequeue reads at `front` and increments it.
+
+```
+capacity 8, after 8 enqueues then 3 dequeues:
+
+ front            back
+   v                v
+[ _ ][ _ ][ _ ][ d4 ][ d5 ][ d6 ][ d7 ][ d8 ]
+```
+
+Now enqueue reading 9. `back` is already at index 8 — off the end. Slots 0, 1, 2 are empty but `back` cannot reach them. Your only escape is to shift every element down to reclaim the front — an `O(n)` copy on *every* wrap — or to allocate a bigger array, which you promised not to do. The array holds 3 free slots and still reports itself full.
+
+## The insight
+
+The array isn't full — it's just that "the end" is an illusion. Treat the array as a **ring**: after the last index comes index 0 again. When `back` walks off index 7, wrap it to index 0 with **modular arithmetic**: `back = (back + 1) % capacity`. Now writes flow back into the freed front slots. No shifting, no reallocation.
+
+That is a **circular queue** (a ring buffer). Every operation stays `O(1)` and the memory footprint is fixed forever — exactly what constrained systems need.
+
+## How it works
+
+Keep `capacity` slots, a `front` index, and a `size` counter. The `size` counter is what disambiguates empty from full, since `front` and `back` can point at the same slot in both cases.
+
+<Steps>
+
+<Step>
+
+### Track front and size
+
+Store `front` (index of the oldest item) and `size` (how many items are in the ring). The back slot is always `(front + size) % capacity` — you can compute it, so you need not store it.
+
+</Step>
+
+<Step>
+
+### Enqueue writes at the computed back, then wraps
+
+If `size == capacity`, the ring is full — reject or overwrite. Otherwise write at `(front + size) % capacity` and do `size += 1`. The modulo makes index 8 land on 0.
+
+```
+capacity 8:  back = (front + size) % 8
+[ 9 ][ _ ][ _ ][ d4 ][ d5 ][ d6 ][ d7 ][ d8 ]
+   ^ reading 9 wrapped into slot 0
+```
+
+</Step>
+
+<Step>
+
+### Dequeue reads front, then advances it with a wrap
+
+Read the value at `front`, then `front = (front + 1) % capacity` and `size -= 1`. When `front` reaches the last slot, the next dequeue wraps it back to 0.
+
+</Step>
+
+<Step>
+
+### Empty vs full without ambiguity
+
+`size == 0` means empty; `size == capacity` means full. Relying on `front == back` alone cannot tell these apart in a ring — both look identical — which is exactly why the `size` counter earns its keep.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class CircularQueue:
+    def __init__(self, capacity):
+        self._data = [None] * capacity
+        self._cap = capacity
+        self._front = 0
+        self._size = 0
+
+    def enqueue(self, x):
+        if self._size == self._cap:
+            raise OverflowError("queue is full")
+        back = (self._front + self._size) % self._cap
+        self._data[back] = x
+        self._size += 1
+
+    def dequeue(self):
+        if self._size == 0:
+            raise IndexError("queue is empty")
+        x = self._data[self._front]
+        self._front = (self._front + 1) % self._cap
+        self._size -= 1
+        return x
+
+    def is_full(self):
+        return self._size == self._cap
+
+
+q = CircularQueue(3)
+q.enqueue(1); q.enqueue(2); q.enqueue(3)
+print(q.dequeue())  # 1
+q.enqueue(4)        # reuses the freed slot 0
+print(q.dequeue())  # 2
+print(q.dequeue())  # 3
+print(q.dequeue())  # 4
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class CircularQueue<T> {
+  private data: (T | undefined)[];
+  private front = 0;
+  private size = 0;
+
+  constructor(private cap: number) {
+    this.data = new Array(cap);
+  }
+
+  enqueue(x: T): void {
+    if (this.size === this.cap) throw new Error("queue is full");
+    const back = (this.front + this.size) % this.cap;
+    this.data[back] = x;
+    this.size++;
+  }
+
+  dequeue(): T {
+    if (this.size === 0) throw new Error("queue is empty");
+    const x = this.data[this.front] as T;
+    this.front = (this.front + 1) % this.cap;
+    this.size--;
+    return x;
+  }
+
+  isFull(): boolean {
+    return this.size === this.cap;
+  }
+}
+
+const q = new CircularQueue<number>(3);
+q.enqueue(1); q.enqueue(2); q.enqueue(3);
+console.log(q.dequeue()); // 1
+q.enqueue(4);             // reuses slot 0
+console.log(q.dequeue()); // 2
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class CircularQueue {
+    private final int[] data;
+    private final int cap;
+    private int front = 0;
+    private int size = 0;
+
+    CircularQueue(int capacity) {
+        this.cap = capacity;
+        this.data = new int[capacity];
+    }
+
+    void enqueue(int x) {
+        if (size == cap) throw new IllegalStateException("full");
+        int back = (front + size) % cap;
+        data[back] = x;
+        size++;
+    }
+
+    int dequeue() {
+        if (size == 0) throw new IllegalStateException("empty");
+        int x = data[front];
+        front = (front + 1) % cap;
+        size--;
+        return x;
+    }
+
+    boolean isFull() {
+        return size == cap;
+    }
+
+    public static void main(String[] args) {
+        CircularQueue q = new CircularQueue(3);
+        q.enqueue(1); q.enqueue(2); q.enqueue(3);
+        System.out.println(q.dequeue()); // 1
+        q.enqueue(4);                     // reuses slot 0
+        System.out.println(q.dequeue()); // 2
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct {
+    int *data;
+    int cap, front, size;
+} CircularQueue;
+
+CircularQueue *create(int capacity) {
+    CircularQueue *q = malloc(sizeof(CircularQueue));
+    q->data = malloc(sizeof(int) * capacity);
+    q->cap = capacity;
+    q->front = 0;
+    q->size = 0;
+    return q;
+}
+
+int enqueue(CircularQueue *q, int x) {
+    if (q->size == q->cap) return 0;        /* full */
+    int back = (q->front + q->size) % q->cap;
+    q->data[back] = x;
+    q->size++;
+    return 1;
+}
+
+int dequeue(CircularQueue *q, int *out) {
+    if (q->size == 0) return 0;             /* empty */
+    *out = q->data[q->front];
+    q->front = (q->front + 1) % q->cap;
+    q->size--;
+    return 1;
+}
+
+int main(void) {
+    CircularQueue *q = create(3);
+    enqueue(q, 1); enqueue(q, 2); enqueue(q, 3);
+    int v;
+    dequeue(q, &v); printf("%d\n", v);  /* 1 */
+    enqueue(q, 4);                       /* reuses slot 0 */
+    dequeue(q, &v); printf("%d\n", v);  /* 2 */
+    free(q->data); free(q);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <stdexcept>
+
+class CircularQueue {
+    std::vector<int> data;
+    int cap, front = 0, size = 0;
+public:
+    explicit CircularQueue(int capacity)
+        : data(capacity), cap(capacity) {}
+
+    void enqueue(int x) {
+        if (size == cap) throw std::runtime_error("full");
+        data[(front + size) % cap] = x;
+        size++;
+    }
+
+    int dequeue() {
+        if (size == 0) throw std::runtime_error("empty");
+        int x = data[front];
+        front = (front + 1) % cap;
+        size--;
+        return x;
+    }
+
+    bool isFull() const { return size == cap; }
+};
+
+int main() {
+    CircularQueue q(3);
+    q.enqueue(1); q.enqueue(2); q.enqueue(3);
+    std::cout << q.dequeue() << "\n"; // 1
+    q.enqueue(4);                     // reuses slot 0
+    std::cout << q.dequeue() << "\n"; // 2
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Enqueue | O(1) | O(1) |
+| Dequeue | O(1) | O(1) |
+| Peek / isFull | O(1) | O(1) |
+| Whole buffer | — | O(capacity) |
+
+Space is fixed at `capacity` and never grows. A naive fixed array that shifts to reclaim the front pays `O(n)` per enqueue after it fills; the ring keeps every operation `O(1)`.
+
+## When to use it
+
+<Callout type="warn" title="Great for fixed memory, but mind the two edge cases">
+Circular queues shine when memory is bounded and reuse matters: network packet buffers, audio/streaming pipelines, producer–consumer buffers, and OS scheduling. The two classic bugs are (1) confusing empty and full — always disambiguate with a `size` counter or a wasted slot, and (2) forgetting the `% capacity` on either pointer, which silently drops or overwrites data. Decide up front whether a full ring should reject writes or overwrite the oldest item; both are valid, but they are very different behaviors.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why can't you tell empty from full using only front and back indices?">
+
+When the ring wraps, a full queue and an empty queue can both end up with `back == front`. After enqueuing exactly `capacity` items, `back` wraps all the way around to `front`; after dequeuing everything, `front` also catches up to `back`. The two states are indistinguishable. Fixes: keep a separate `size` counter (used above), or deliberately leave one slot empty so "full" means `(back + 1) % cap == front`.
+
+</Accordion>
+
+<Accordion title="A ring of capacity 4 has front=3, size=2. Where does the next enqueue write?">
+
+The back index is `(front + size) % cap = (3 + 2) % 4 = 5 % 4 = 1`. So the next item is written to index 1 — the write has wrapped past the end of the array and back to the front. After it, `size` becomes 3.
+
+</Accordion>
+
+<Accordion title="How would you make a full ring overwrite the oldest item instead of rejecting?">
+
+On enqueue, if `size == cap`, skip the full check and instead advance `front` too: write at `(front + size) % cap` is not valid when full, so write at the current `back = (front + size) % cap` only after making room. Concretely: when full, overwrite the slot at `front` (the oldest), then move `front` forward by one with `front = (front + 1) % cap`, keeping `size` at `cap`. This is exactly how a fixed-size "keep the last N" log buffer behaves.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **circular queue** treats a fixed array as a ring using `(index + 1) % capacity`, reusing freed front slots.
+- Every operation is **O(1)** and memory is fixed at `capacity` — ideal for buffers and embedded systems.
+- Track a **size** counter to tell empty from full; both otherwise look like `front == back`.
+
+<Cards>
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="The FIFO basics this builds on." />
+  <Card title="Stream Problems" href="/docs/dsa/14-queue/04-queue-problems" description="Queues doing quiet bookkeeping over a stream." />
+  <Card title="Deques" href="/docs/dsa/15-deque/01-deque-intro" description="Fast operations at both ends of the line." />
+</Cards>

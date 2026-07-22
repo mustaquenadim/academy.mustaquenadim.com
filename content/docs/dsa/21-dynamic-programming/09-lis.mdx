@@ -1,0 +1,276 @@
+---
+title: "Longest Increasing Subsequence"
+description: "The longest run of values that keeps climbing, not necessarily adjacent — a deceptively deep DP with an O(n log n) twist."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/21-dynamic-programming/07-string-dp
+  - href: /docs/dsa/04-searching/03-binary-search
+---
+
+## The problem
+
+You are tracking a stock, or a player's rating, or a city's temperature over `n` days. You want
+the longest stretch of days — not necessarily consecutive — where the value kept going *up*. For
+`[10, 9, 2, 5, 3, 7, 101, 18]` the longest such climbing run is `[2, 3, 7, 18]` or
+`[2, 3, 7, 101]`, length 4.
+
+The catch is "not necessarily adjacent." You are free to skip days, so you cannot just scan for
+the longest ascending block. You must consider every subsequence — and there are 2ⁿ of them.
+
+## A first attempt
+
+For each element, ask: what is the longest increasing subsequence that *ends* here? Recurse over
+all earlier elements smaller than the current one.
+
+```python
+def lis(nums):
+    def ending_at(i):
+        best = 1
+        for j in range(i):
+            if nums[j] < nums[i]:
+                best = max(best, 1 + ending_at(j))
+        return best
+    return max(ending_at(i) for i in range(len(nums)))
+```
+
+Without caching, `ending_at(j)` is recomputed for every later `i`, giving exponential time. The
+subproblem "LIS ending at index `i`" clearly repeats — a textbook cue for DP.
+
+## The insight
+
+Define one value per index and fill left to right:
+
+> `dp[i]` = length of the longest increasing subsequence that **ends exactly at index `i`**. To
+> compute it, look at every earlier `j` with `nums[j] < nums[i]` and take the best `dp[j] + 1`.
+
+The answer is the largest entry in `dp`. That is a clean **O(n²)** DP. But there is a sharper
+idea. Instead of a length table, keep a list `tails`, where `tails[k]` is the *smallest possible
+tail value* of any increasing subsequence of length `k+1`. This list stays sorted, so each new
+number can be placed with **binary search** — dropping the whole thing to **O(n log n)**.
+
+```
+nums:  10  9  2  5  3  7  101  18
+tails evolves (smallest tail per length):
+ 10 -> 9 -> 2 -> 2 5 -> 2 3 -> 2 3 7 -> 2 3 7 101 -> 2 3 7 18
+length of tails = 4  = LIS length
+```
+
+## How it works
+
+The `tails` method:
+
+<Steps>
+
+<Step>
+
+### Keep the best tails
+
+Maintain `tails`, where `tails[k]` holds the smallest tail among all increasing subsequences of
+length `k+1`. A smaller tail is always at least as useful, because it leaves more room to extend.
+
+</Step>
+
+<Step>
+
+### Place each number by binary search
+
+For a new value `x`, find the leftmost `tails[k] >= x`. That position is where `x` improves (or
+extends) the best subsequence of that length.
+
+</Step>
+
+<Step>
+
+### Extend or improve
+
+If `x` is larger than every tail, append it — you have found a longer subsequence. Otherwise
+overwrite `tails[k]` with `x`, lowering that length's tail without changing its length.
+
+</Step>
+
+<Step>
+
+### Read the length
+
+`tails` stays sorted throughout, and its final length is the LIS length. (Its contents are *not*
+a valid subsequence — only the length is meaningful.)
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from bisect import bisect_left
+
+def lis(nums):
+    tails = []
+    for x in nums:
+        i = bisect_left(tails, x)   # leftmost tail >= x
+        if i == len(tails):
+            tails.append(x)         # x extends to a longer subsequence
+        else:
+            tails[i] = x            # x lowers this length's tail
+    return len(tails)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function lis(nums: number[]): number {
+  const tails: number[] = [];
+  for (const x of nums) {
+    let lo = 0, hi = tails.length;
+    while (lo < hi) {                 // leftmost tail >= x
+      const mid = (lo + hi) >> 1;
+      if (tails[mid] < x) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === tails.length) tails.push(x);
+    else tails[lo] = x;
+  }
+  return tails.length;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int lis(int[] nums) {
+        int[] tails = new int[nums.length];
+        int size = 0;
+        for (int x : nums) {
+            int lo = 0, hi = size;
+            while (lo < hi) {           // leftmost tail >= x
+                int mid = (lo + hi) >>> 1;
+                if (tails[mid] < x) lo = mid + 1;
+                else hi = mid;
+            }
+            tails[lo] = x;
+            if (lo == size) size++;
+        }
+        return size;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int lis(int *nums, int n) {
+    int tails[n];
+    int size = 0;
+    for (int k = 0; k < n; k++) {
+        int x = nums[k];
+        int lo = 0, hi = size;
+        while (lo < hi) {               /* leftmost tail >= x */
+            int mid = (lo + hi) / 2;
+            if (tails[mid] < x) lo = mid + 1;
+            else hi = mid;
+        }
+        tails[lo] = x;
+        if (lo == size) size++;
+    }
+    return size;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int lis(vector<int> &nums) {
+    vector<int> tails;
+    for (int x : nums) {
+        auto it = lower_bound(tails.begin(), tails.end(), x);
+        if (it == tails.end()) tails.push_back(x);
+        else *it = x;
+    }
+    return tails.size();
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | O(2ⁿ) | O(n) stack |
+| DP table (`dp[i]`) | O(n²) | O(n) |
+| Patience + binary search | O(n log n) | O(n) |
+
+The O(n²) table is the one to reach for when you also need to **reconstruct** the actual
+subsequence; the O(n log n) `tails` method gives only the length unless you track predecessor
+indices alongside it.
+
+## When to use it
+
+<Callout type="idea" title="lower_bound vs upper_bound">
+Use `lower_bound` (leftmost tail ≥ x) for a **strictly** increasing subsequence. For a
+**non-decreasing** one, where equal values may repeat, switch to `upper_bound` (leftmost tail
+> x). This one-character change is a classic interview trap — pick the wrong bound and your
+count is silently off.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why can you binary-search the tails array — what guarantees it stays sorted?">
+
+Each `tails[k]` is the smallest tail of an increasing subsequence of length `k+1`. A longer
+subsequence must end in a strictly larger value than a shorter one it extends, so the smallest
+achievable tails are strictly increasing across lengths. Every update either appends a new
+maximum or replaces an element with a smaller value in place, both of which preserve the
+sortedness.
+
+</Accordion>
+
+<Accordion title="The tails array is not itself a valid increasing subsequence. Why does its length still equal the LIS?">
+
+`tails` mixes values discovered at different times, so reading it end to end may not correspond
+to any real subsequence. But `tails[k]` existing means *some* increasing subsequence of length
+`k+1` was seen, and it can never grow beyond the true maximum length. So its final length is
+exactly the LIS length, even though its contents are not the subsequence.
+
+</Accordion>
+
+<Accordion title="How do you actually recover the subsequence, not just its length?">
+
+Use the O(n²) DP: store `dp[i]` and a `parent[i]` pointing to the `j` that produced the best
+`dp[i]`. Find the index with the maximum `dp`, then follow `parent` links backward, collecting
+values, and reverse. The `tails` method can also reconstruct if you record, for each element,
+the position it landed in and a predecessor.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- LIS asks for the longest climbing subsequence, allowing skips — a 2ⁿ search tamed by DP.
+- The straightforward DP is **O(n²)** with `dp[i]` = best subsequence ending at `i`.
+- Keeping the **smallest tail per length** plus **binary search** gives an elegant **O(n log n)**
+  solution.
+
+<Cards>
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="The single-array DP style LIS starts from." />
+  <Card title="DP on Strings" href="/docs/dsa/21-dynamic-programming/07-string-dp" description="More subsequence problems on text." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The log-factor trick that speeds LIS up." />
+</Cards>

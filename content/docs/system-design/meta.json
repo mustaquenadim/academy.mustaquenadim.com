@@ -1,0 +1,14 @@
+{
+  "title": "System Design, A Story",
+  "icon": "Server",
+  "root": true,
+  "pages": [
+    "index",
+    "intro",
+    "part-1-networking",
+    "part-2-databases",
+    "part-3-architecture",
+    "part-4-reliability",
+    "part-5-case-studies"
+  ]
+}

@@ -1,0 +1,381 @@
+---
+title: "Representing Graphs"
+description: "Cities linked by roads, people by friendships, tasks by dependencies — before we explore a network, we must store it."
+extractedReferences:
+  - href: /docs/dsa/19-graph/02-bfs
+  - href: /docs/dsa/19-graph/03-dfs
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You're building a small social app. Alice knows Bob, Bob knows Carol, Carol knows Alice
+and Dave. Before you can answer a single interesting question — *who are Bob's friends?*,
+*is Dave connected to Alice?* — you have to **store** those connections somewhere your code
+can walk through them.
+
+The connections aren't a list and they aren't a grid. Any person can link to any other
+person, in any number, in any direction. That shape is a **graph**: a set of *vertices*
+(the people) joined by *edges* (the friendships). The very first decision — before any
+clever algorithm — is how to lay that graph out in memory. Get it wrong and every later
+step pays for it.
+
+## A first attempt
+
+The most literal idea: a big square table. Number the people `0..n-1`, make an `n × n`
+grid, and put a `1` in cell `[u][v]` when `u` links to `v`. This is an **adjacency
+matrix**.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+# 4 people, adjacency matrix
+n = 4
+matrix = [[0] * n for _ in range(n)]
+
+def add_edge(u, v):          # undirected
+    matrix[u][v] = 1
+    matrix[v][u] = 1
+
+# is u connected to v?  ->  matrix[u][v] == 1   (O(1))
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const n = 4;
+const matrix: number[][] = Array.from({ length: n }, () => Array(n).fill(0));
+
+function addEdge(u: number, v: number): void {
+  matrix[u][v] = 1;
+  matrix[v][u] = 1;
+}
+// matrix[u][v] === 1  ->  connected, O(1)
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int n = 4;
+int[][] matrix = new int[n][n];
+
+void addEdge(int u, int v) {
+    matrix[u][v] = 1;
+    matrix[v][u] = 1;
+}
+// matrix[u][v] == 1  ->  connected, O(1)
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#define N 4
+int matrix[N][N] = {0};
+
+void add_edge(int u, int v) {
+    matrix[u][v] = 1;
+    matrix[v][u] = 1;
+}
+/* matrix[u][v] == 1 -> connected, O(1) */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+int n = 4;
+std::vector<std::vector<int>> matrix(n, std::vector<int>(n, 0));
+
+void addEdge(int u, int v) {
+    matrix[u][v] = 1;
+    matrix[v][u] = 1;
+}
+// matrix[u][v] == 1 -> connected, O(1)
+```
+
+</Tab>
+
+</Tabs>
+
+Checking *"are u and v linked?"* is a lovely `O(1)`. But look at the cost: the table is
+always `n × n`, so it uses `O(n²)` space **whether or not the edges exist**. A social
+network with 1 million users would need a trillion cells — mostly zeros, because real
+people have hundreds of friends, not millions. And listing one person's friends means
+scanning a whole row of `n` cells even if they have three friends.
+
+## The insight
+
+Real graphs are **sparse**: the number of edges is far smaller than `n²`. So don't reserve
+space for links that don't exist. Instead, give each vertex a *list of only the neighbors
+it actually has*. That's an **adjacency list**.
+
+Now space is `O(n + m)` where `m` is the edge count, and *"who are Bob's friends?"* is just
+"read Bob's list." You trade the matrix's instant edge lookup for a layout that matches how
+graphs are really shaped and how algorithms really walk them — neighbor by neighbor.
+
+<Callout type="idea" title="The rule of thumb">
+Use an **adjacency list** almost always — it's what BFS and DFS want. Reach for an
+**adjacency matrix** only when the graph is dense (`m ≈ n²`) or you need constant-time
+"is there an edge?" checks on a small `n`.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Number the vertices
+
+Map each entity to an index `0..n-1` (or use a hash map keyed by name). Indices make the
+neighbor lists cheap arrays.
+
+</Step>
+
+<Step>
+
+### Give every vertex a bucket
+
+Create `n` empty lists — `adj[u]` will hold the vertices reachable directly from `u`.
+
+</Step>
+
+<Step>
+
+### Add each edge to the right bucket(s)
+
+For a directed edge `u → v`, append `v` to `adj[u]`. For an **undirected** edge, also
+append `u` to `adj[v]` — the friendship goes both ways. For a **weighted** edge, store a
+pair `(v, w)` instead of just `v`.
+
+</Step>
+
+<Step>
+
+### Traverse by reading a bucket
+
+To visit a vertex's neighbors, iterate its list. No scanning of absent edges, ever.
+
+</Step>
+
+</Steps>
+
+Here is the graph `0-1, 0-2, 1-2, 2-3` in both layouts:
+
+```text
+        (1)
+       /   \
+     (0)---(2)---(3)
+
+adjacency matrix          adjacency list
+    0 1 2 3               0 -> [1, 2]
+  0 0 1 1 0               1 -> [0, 2]
+  1 1 0 1 0               2 -> [0, 1, 3]
+  2 1 1 0 1               3 -> [2]
+  3 0 0 1 0
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Graph:
+    def __init__(self, n):
+        self.adj = [[] for _ in range(n)]
+
+    def add_edge(self, u, v, directed=False):
+        self.adj[u].append(v)
+        if not directed:
+            self.adj[v].append(u)
+
+    def neighbors(self, u):
+        return self.adj[u]
+
+g = Graph(4)
+for u, v in [(0, 1), (0, 2), (1, 2), (2, 3)]:
+    g.add_edge(u, v)
+print(g.neighbors(2))   # [0, 1, 3]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Graph {
+  adj: number[][];
+  constructor(n: number) {
+    this.adj = Array.from({ length: n }, () => []);
+  }
+  addEdge(u: number, v: number, directed = false): void {
+    this.adj[u].push(v);
+    if (!directed) this.adj[v].push(u);
+  }
+  neighbors(u: number): number[] {
+    return this.adj[u];
+  }
+}
+
+const g = new Graph(4);
+for (const [u, v] of [[0, 1], [0, 2], [1, 2], [2, 3]]) g.addEdge(u, v);
+console.log(g.neighbors(2)); // [0, 1, 3]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Graph {
+    List<List<Integer>> adj;
+
+    Graph(int n) {
+        adj = new ArrayList<>();
+        for (int i = 0; i < n; i++) adj.add(new ArrayList<>());
+    }
+
+    void addEdge(int u, int v, boolean directed) {
+        adj.get(u).add(v);
+        if (!directed) adj.get(v).add(u);
+    }
+
+    List<Integer> neighbors(int u) {
+        return adj.get(u);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int v;
+    struct Node* next;
+} Node;
+
+Node* adj[100];   /* head pointers, one per vertex */
+
+void add_edge(int u, int v, int directed) {
+    Node* a = malloc(sizeof(Node));
+    a->v = v; a->next = adj[u]; adj[u] = a;
+    if (!directed) {
+        Node* b = malloc(sizeof(Node));
+        b->v = u; b->next = adj[v]; adj[v] = b;
+    }
+}
+/* iterate: for (Node* p = adj[u]; p; p = p->next) use p->v; */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <iostream>
+
+struct Graph {
+    std::vector<std::vector<int>> adj;
+    Graph(int n) : adj(n) {}
+
+    void addEdge(int u, int v, bool directed = false) {
+        adj[u].push_back(v);
+        if (!directed) adj[v].push_back(u);
+    }
+    const std::vector<int>& neighbors(int u) { return adj[u]; }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation             | Adjacency list | Adjacency matrix |
+| --------------------- | -------------- | ---------------- |
+| Space                 | `O(n + m)`     | `O(n²)`          |
+| Add an edge           | `O(1)`         | `O(1)`           |
+| Check edge `u–v`?     | `O(deg(u))`    | `O(1)`           |
+| List `u`'s neighbors  | `O(deg(u))`    | `O(n)`           |
+
+Here `n` is the vertex count, `m` the edge count, and `deg(u)` the number of neighbors of
+`u`. For sparse graphs the list wins decisively on space and on traversal.
+
+## When to use it
+
+<Callout type="info" title="Picking a representation">
+Default to the **adjacency list** — it's what
+[BFS](/docs/dsa/19-graph/02-bfs) and [DFS](/docs/dsa/19-graph/03-dfs) traverse and it's
+memory-friendly. Choose a **matrix** only for dense graphs, tiny `n`, or when you repeatedly
+ask "is there an edge between these two?" Also decide up front: **directed vs. undirected**
+(add one bucket or two) and **weighted vs. unweighted** (store `(v, w)` pairs).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Your graph has 100,000 vertices and about 300,000 edges. Which representation, and how much memory does the other one waste?">
+
+Use an **adjacency list**: space is `O(n + m) ≈ 400,000` entries. A matrix would be
+`100,000² = 10,000,000,000` cells — ten billion, almost all zero. The list is roughly 25,000×
+smaller here. This is the typical sparse-graph situation, and it's why the list is the
+default.
+
+</Accordion>
+
+<Accordion title="How do you store a weighted, directed graph — say roads with distances?">
+
+Keep it a list, but store pairs. `adj[u]` holds `(v, w)` meaning "an edge from `u` to `v`
+with weight `w`." Only add the reverse pair `(u, w)` to `adj[v]` if the road is two-way.
+This is exactly the form [Dijkstra and Bellman-Ford](/docs/dsa/19-graph/06-shortest-paths)
+consume.
+
+</Accordion>
+
+<Accordion title="With an adjacency list, how expensive is checking whether edge u–v exists, and how could you speed it up?">
+
+It's `O(deg(u))` because you scan `u`'s neighbor list. If you need fast membership tests,
+store each vertex's neighbors in a hash set instead of an array — that makes the check
+`O(1)` on average while keeping `O(n + m)` space. You lose a little on iteration locality,
+so only do it when edge-existence queries dominate.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A graph is **vertices + edges**; the first choice is how to store the edges.
+- An **adjacency matrix** gives `O(1)` edge checks but costs `O(n²)` space — good only for
+  dense or tiny graphs.
+- An **adjacency list** costs `O(n + m)` and matches how traversals walk the graph — make it
+  your default.
+
+<Cards>
+  <Card title="Breadth-First Search" href="/docs/dsa/19-graph/02-bfs" description="Explore the list ripple by ripple." />
+  <Card title="Depth-First Search" href="/docs/dsa/19-graph/03-dfs" description="Explore the list path by path." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Where O(n + m) and O(n²) come from." />
+</Cards>

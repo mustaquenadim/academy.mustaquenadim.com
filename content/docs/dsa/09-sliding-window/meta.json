@@ -1,0 +1,10 @@
+{
+  "title": "Sliding Window",
+  "icon": "RectangleHorizontal",
+  "pages": [
+    "01-sliding-window-intro",
+    "02-fixed-window",
+    "03-variable-window",
+    "04-window-with-hashing"
+  ]
+}

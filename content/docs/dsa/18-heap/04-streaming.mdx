@@ -1,0 +1,371 @@
+---
+title: "Streaming with Heaps"
+description: "Reporting the running median of an endless stream is two heaps balancing each other in real time."
+extractedReferences:
+  - href: /docs/dsa/18-heap/01-heap-intro
+  - href: /docs/dsa/18-heap/03-top-k-patterns
+  - href: /docs/dsa/05-sorting/03-merge-sort
+---
+
+## The problem
+
+You are monitoring response times on a busy API. Numbers pour in without end — thousands per second — and your on-call dashboard must show the **median** latency, live, updated on every single sample. The median matters more than the average here: one 30-second timeout would drag the mean up and hide the fact that most requests are fine.
+
+So after each new measurement you need the current middle value of *everything seen so far*. The catch is "so far" keeps growing, and "after each" means you cannot afford heavy work per sample.
+
+## A first attempt
+
+The median is the middle of the sorted data, so keep a sorted list and read the middle.
+
+```python
+import bisect
+
+class MedianTracker:
+    def __init__(self):
+        self.data = []
+
+    def add(self, x):
+        bisect.insort(self.data, x)   # O(n) to shift elements
+        n = len(self.data)
+        mid = n // 2
+        if n % 2:
+            return self.data[mid]
+        return (self.data[mid - 1] + self.data[mid]) / 2
+```
+
+Finding the median is now `O(1)`, but *inserting* is `O(n)` — `bisect` finds the spot in `O(log n)`, then shifting the array to open a gap costs `O(n)`. Over `n` samples that is `O(n²)` total. On a stream doing thousands of inserts a second, the dashboard falls behind and never catches up.
+
+## The insight
+
+You do not need the whole thing sorted. You only need the **boundary in the middle**. So split the numbers into two halves and guard only the frontier between them.
+
+Keep a **max-heap** for the smaller half and a **min-heap** for the larger half. The max-heap's root is the biggest of the low numbers; the min-heap's root is the smallest of the high numbers. Those two roots sit right at the median line. If you keep the two heaps balanced in size, the median is either the top of the larger heap (odd count) or the average of the two tops (even count) — all in `O(1)`, with each insert costing only `O(log n)`.
+
+Two heaps, facing each other across the middle, each holding back one half of the stream.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Set up two heaps facing the median
+
+`lo` is a **max-heap** holding the smaller half — its root is the largest small value. `hi` is a **min-heap** holding the larger half — its root is the smallest large value. Every element in `lo` is `<=` every element in `hi`.
+
+```text
+  lo (max-heap)        hi (min-heap)
+   [ ... 6 ]   <=   [ 8 ... ]
+     root=6           root=8
+        \______  ______/
+             median line
+```
+
+</Step>
+
+<Step>
+
+### Route each new number to the correct side
+
+If the new value is `<=` the root of `lo`, it belongs in the smaller half, so push it into `lo`. Otherwise push it into `hi`. This keeps the ordering invariant (everything in `lo` stays below everything in `hi`).
+
+</Step>
+
+<Step>
+
+### Rebalance so sizes differ by at most one
+
+After inserting, one heap may hold two more elements than the other. Move the offending heap's root across to the other heap. Now their sizes differ by at most one — the precondition for reading the median cheaply.
+
+</Step>
+
+<Step>
+
+### Read the median in O(1)
+
+If the heaps are equal size, the median is the average of the two roots. If one is larger (by our convention, `lo`), the median is that heap's root. No scanning, no sorting — just look at the tops.
+
+</Step>
+
+</Steps>
+
+## The code
+
+A running-median tracker using two heaps.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import heapq
+
+class MedianFinder:
+    def __init__(self):
+        self.lo = []  # max-heap (store negated values)
+        self.hi = []  # min-heap
+
+    def add(self, x):
+        if not self.lo or x <= -self.lo[0]:
+            heapq.heappush(self.lo, -x)
+        else:
+            heapq.heappush(self.hi, x)
+        # rebalance: |len(lo) - len(hi)| <= 1, lo may hold the extra
+        if len(self.lo) > len(self.hi) + 1:
+            heapq.heappush(self.hi, -heapq.heappop(self.lo))
+        elif len(self.hi) > len(self.lo):
+            heapq.heappush(self.lo, -heapq.heappop(self.hi))
+
+    def median(self):
+        if len(self.lo) > len(self.hi):
+            return -self.lo[0]
+        return (-self.lo[0] + self.hi[0]) / 2
+
+mf = MedianFinder()
+for x in [5, 15, 1, 3]:
+    mf.add(x)
+print(mf.median())  # 4.0
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class BinaryHeap {
+  a: number[] = [];
+  constructor(private cmp: (x: number, y: number) => boolean) {}
+  size() { return this.a.length; }
+  peek() { return this.a[0]; }
+  push(x: number) {
+    this.a.push(x);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (!this.cmp(this.a[i], this.a[p])) break;
+      [this.a[p], this.a[i]] = [this.a[i], this.a[p]];
+      i = p;
+    }
+  }
+  pop(): number {
+    const top = this.a[0];
+    const last = this.a.pop()!;
+    if (this.a.length) {
+      this.a[0] = last;
+      let i = 0;
+      const n = this.a.length;
+      while (true) {
+        let best = i;
+        const l = 2 * i + 1, r = 2 * i + 2;
+        if (l < n && this.cmp(this.a[l], this.a[best])) best = l;
+        if (r < n && this.cmp(this.a[r], this.a[best])) best = r;
+        if (best === i) break;
+        [this.a[i], this.a[best]] = [this.a[best], this.a[i]];
+        i = best;
+      }
+    }
+    return top;
+  }
+}
+
+class MedianFinder {
+  private lo = new BinaryHeap((x, y) => x > y); // max-heap
+  private hi = new BinaryHeap((x, y) => x < y); // min-heap
+
+  add(x: number) {
+    if (this.lo.size() === 0 || x <= this.lo.peek()) this.lo.push(x);
+    else this.hi.push(x);
+    if (this.lo.size() > this.hi.size() + 1) this.hi.push(this.lo.pop());
+    else if (this.hi.size() > this.lo.size()) this.lo.push(this.hi.pop());
+  }
+
+  median(): number {
+    if (this.lo.size() > this.hi.size()) return this.lo.peek();
+    return (this.lo.peek() + this.hi.peek()) / 2;
+  }
+}
+
+const mf = new MedianFinder();
+[5, 15, 1, 3].forEach((x) => mf.add(x));
+console.log(mf.median()); // 4
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.PriorityQueue;
+import java.util.Collections;
+
+public class MedianFinder {
+    private final PriorityQueue<Integer> lo =
+        new PriorityQueue<>(Collections.reverseOrder()); // max-heap
+    private final PriorityQueue<Integer> hi =
+        new PriorityQueue<>();                           // min-heap
+
+    public void add(int x) {
+        if (lo.isEmpty() || x <= lo.peek()) lo.offer(x);
+        else hi.offer(x);
+        if (lo.size() > hi.size() + 1) hi.offer(lo.poll());
+        else if (hi.size() > lo.size()) lo.offer(hi.poll());
+    }
+
+    public double median() {
+        if (lo.size() > hi.size()) return lo.peek();
+        return (lo.peek() + hi.peek()) / 2.0;
+    }
+
+    public static void main(String[] args) {
+        MedianFinder mf = new MedianFinder();
+        for (int x : new int[]{5, 15, 1, 3}) mf.add(x);
+        System.out.println(mf.median()); // 4.0
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+/* lo is a max-heap, hi is a min-heap, each in its own array. */
+int lo[256], hi[256], nlo = 0, nhi = 0;
+
+void push(int h[], int *n, int x, int is_max) {
+    int i = (*n)++;
+    h[i] = x;
+    while (i > 0) {
+        int p = (i - 1) / 2;
+        int ordered = is_max ? h[p] >= h[i] : h[p] <= h[i];
+        if (ordered) break;
+        int t = h[p]; h[p] = h[i]; h[i] = t;
+        i = p;
+    }
+}
+
+int pop(int h[], int *n, int is_max) {
+    int top = h[0];
+    h[0] = h[--(*n)];
+    int i = 0;
+    while (1) {
+        int best = i, l = 2 * i + 1, r = 2 * i + 2;
+        if (l < *n && (is_max ? h[l] > h[best] : h[l] < h[best])) best = l;
+        if (r < *n && (is_max ? h[r] > h[best] : h[r] < h[best])) best = r;
+        if (best == i) break;
+        int t = h[i]; h[i] = h[best]; h[best] = t;
+        i = best;
+    }
+    return top;
+}
+
+void add(int x) {
+    if (nlo == 0 || x <= lo[0]) push(lo, &nlo, x, 1);
+    else push(hi, &nhi, x, 0);
+    if (nlo > nhi + 1) push(hi, &nhi, pop(lo, &nlo, 1), 0);
+    else if (nhi > nlo) push(lo, &nlo, pop(hi, &nhi, 0), 1);
+}
+
+double median(void) {
+    if (nlo > nhi) return lo[0];
+    return (lo[0] + hi[0]) / 2.0;
+}
+
+int main(void) {
+    int stream[] = {5, 15, 1, 3};
+    for (int i = 0; i < 4; i++) add(stream[i]);
+    printf("%.1f\n", median()); /* 4.0 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+using namespace std;
+
+class MedianFinder {
+    priority_queue<int> lo;                              // max-heap
+    priority_queue<int, vector<int>, greater<int>> hi;   // min-heap
+public:
+    void add(int x) {
+        if (lo.empty() || x <= lo.top()) lo.push(x);
+        else hi.push(x);
+        if (lo.size() > hi.size() + 1) { hi.push(lo.top()); lo.pop(); }
+        else if (hi.size() > lo.size()) { lo.push(hi.top()); hi.pop(); }
+    }
+    double median() {
+        if (lo.size() > hi.size()) return lo.top();
+        return (lo.top() + hi.top()) / 2.0;
+    }
+};
+
+int main() {
+    MedianFinder mf;
+    for (int x : {5, 15, 1, 3}) mf.add(x);
+    cout << mf.median() << "\n"; // 4
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Two heaps | Sorted-list baseline |
+| --- | --- | --- |
+| Add a number | O(log n) | O(n) |
+| Query median | O(1) | O(1) |
+| n numbers, total | O(n log n) | O(n²) |
+| Space | O(n) | O(n) |
+
+## When to use it
+
+<Callout type="idea" title="The two-heap balance is a reusable pattern">
+Any time you must track a *boundary statistic* over a growing or sliding dataset — the median, a percentile, the k-th element straddling a partition — think two heaps balancing across the line. The same structure powers "find median from a data stream" and sliding-window median problems. If you need arbitrary percentiles at scale (p95, p99 over millions of streams), switch to an approximate sketch like t-digest; exact two-heap medians shine when precision matters and one value is enough.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is the smaller half a MAX-heap and the larger half a MIN-heap, rather than the reverse?">
+
+Because the median lives at the frontier between the two halves, and you need `O(1)` access to the two values that touch that frontier. The largest of the small numbers and the smallest of the large numbers are the median candidates. A max-heap surfaces the largest of the small half at its root; a min-heap surfaces the smallest of the large half at its root. Reverse the polarities and the roots would point *outward* — at the global min and max — which tells you nothing about the middle.
+
+</Accordion>
+
+<Accordion title="After inserting, one heap can end up two elements bigger than the other. Why exactly two, and how do you fix it?">
+
+Each `add` pushes into exactly one heap, so a size gap grows by at most one per insert. Starting from a balanced state (gap 0 or 1), a single insert can push the gap to 2 at most. You fix it by moving one element — pop the root of the oversized heap and push it onto the other. Because that root is the extreme value on its side, it slots correctly into the neighbor and restores the ordering invariant, leaving the gap at most 1.
+
+</Accordion>
+
+<Accordion title="How would you extend this to a SLIDING-window median, where numbers also leave the window?">
+
+Additions work the same, but now you must also *remove* the element that fell out of the window, which may sit deep inside either heap — and a binary heap has no `O(log n)` delete-arbitrary. Two options: use a lazy-deletion scheme, marking the departed value and a hash map of pending removals, then skipping stale roots when you peek and rebalance by *effective* sizes; or swap the heaps for a balanced BST / ordered multiset that supports `O(log n)` deletion by value. Both keep per-step cost at `O(log n)`; the lazy-heap version reuses everything you already built here.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Tracking a running median needs only the middle boundary, not a fully sorted stream.
+- A max-heap on the low half and a min-heap on the high half put both median candidates at the roots — `O(1)` to read, `O(log n)` to insert.
+- Keep the two heaps within one element of each other; the same two-heap balance generalizes to percentiles and sliding-window statistics.
+
+<Cards>
+  <Card title="Heaps & Priority Queues" href="/docs/dsa/18-heap/01-heap-intro" description="The max-heap and min-heap this lesson pairs up." />
+  <Card title="Top-K Patterns" href="/docs/dsa/18-heap/03-top-k-patterns" description="Another streaming pattern built on a bounded heap." />
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="The sorted-order baseline this approach beats." />
+</Cards>

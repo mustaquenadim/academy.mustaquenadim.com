@@ -1,0 +1,12 @@
+{
+  "title": "Part 3 · Architecture",
+  "icon": "Boxes",
+  "pages": [
+    "01-monolith-vs-microservices",
+    "02-api-gateway",
+    "03-message-queues",
+    "04-pub-sub",
+    "05-rate-limiting",
+    "06-idempotency"
+  ]
+}

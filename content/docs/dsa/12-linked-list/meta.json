@@ -1,0 +1,13 @@
+{
+  "title": "Linked List",
+  "icon": "Link",
+  "pages": [
+    "01-linked-list-intro",
+    "02-doubly-and-circular",
+    "03-reversal-patterns",
+    "04-fast-slow-pointer",
+    "05-sorting-merging",
+    "06-design-with-lists",
+    "07-hard-lists"
+  ]
+}

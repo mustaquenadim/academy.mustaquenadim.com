@@ -1,0 +1,139 @@
+---
+title: "HTTP & APIs"
+description: "Two machines that have never met need to agree on how to talk — HTTP is that shared language, and APIs are the menu of what you can ask for."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/01-how-the-internet-carries-a-request
+  - href: /docs/system-design/part-1-networking/05-load-balancing
+  - href: /docs/system-design/part-1-networking/07-caching-fundamentals
+---
+
+## The problem
+
+Your browser, written by one company, needs to fetch data from a server written by another, running a different language, in a different country. They have never coordinated. Yet it just works.
+
+For that to happen, both sides must agree — in advance — on the shape of every message: how you ask, how the server answers, how you signal success or failure. Without a shared contract, every pair of programs would need a custom, hand-negotiated protocol. That is unworkable at internet scale. You need one language everyone already speaks.
+
+## A first attempt
+
+Say each service invents its own protocol: open a raw TCP socket and send whatever bytes you like. Client and server author agree privately on the format.
+
+It technically works for *one* pair. But now every new client must learn every server's private dialect, caches and proxies in the middle cannot understand the traffic, and there is no shared notion of "success," "not found," or "try again." Debugging means reverse-engineering bytes. The moment you have thousands of independent teams, bespoke protocols collapse under their own coordination cost. You need a *standard*.
+
+## The insight
+
+Standardize on a simple, text-based **request/response** format with a small, fixed vocabulary — and make it **stateless** so any server can handle any request.
+
+That standard is **HTTP**. A request names a **method** (the verb: what you want done), a **path** (the resource), some **headers** (metadata), and an optional **body**. The response carries a **status code** (a shared three-digit outcome) and its own headers and body. Because each request carries everything needed to understand it, the server keeps no memory of you between requests — and *that* is what lets you put a hundred interchangeable servers behind a load balancer.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Client sends a request
+
+The client picks a **method** and **path**: `GET /users/42`. `GET` reads, `POST` creates, `PUT`/`PATCH` update, `DELETE` removes. Headers carry auth tokens, content types, and caching hints.
+
+</Step>
+
+<Step>
+
+### Server maps it to a resource
+
+An **API** defines what paths exist and what they mean. In REST, paths are *nouns* (resources) and methods are the *verbs* acting on them: `GET /orders` lists orders, `POST /orders` creates one. The server runs the logic and builds a response.
+
+</Step>
+
+<Step>
+
+### Server returns a status code
+
+A three-digit code states the outcome in a shared vocabulary — no guessing. **2xx** success, **3xx** redirect, **4xx** you (the client) erred, **5xx** the server erred. Plus a body, usually JSON.
+
+</Step>
+
+<Step>
+
+### Nothing is remembered
+
+The request is **stateless**: it carried its own auth and context, so the server needs no session memory of prior calls. The next request can safely land on a totally different server.
+
+</Step>
+
+</Steps>
+
+A single exchange in the wire's own words:
+
+```
+REQUEST                          RESPONSE
+─────────────────────────        ─────────────────────────
+GET /users/42 HTTP/1.1           HTTP/1.1 200 OK
+Host: api.example.com            Content-Type: application/json
+Authorization: Bearer <token>    Cache-Control: max-age=60
+Accept: application/json
+                                 { "id": 42, "name": "Ada" }
+```
+
+Status codes worth memorizing:
+
+- **200 OK** / **201 Created** — it worked.
+- **301 / 302** — moved; follow the redirect.
+- **400 Bad Request** / **401 Unauthorized** / **403 Forbidden** / **404 Not Found** — the client's fault.
+- **429 Too Many Requests** — you are being rate-limited; back off.
+- **500 Internal Server Error** / **503 Service Unavailable** — the server's fault; safe to retry later.
+
+## The numbers
+
+- **Request overhead:** an HTTP request/response is typically a few hundred bytes to a few KB of headers, plus the body.
+- **Connection reuse (keep-alive / HTTP/2):** amortizes the TCP+TLS handshake (~2 round trips, ~60–100 ms) across many requests on one connection — huge for API-heavy pages.
+- **HTTP/2 multiplexing:** many requests share one connection concurrently, killing the old 6-connections-per-host bottleneck.
+- **Idempotency:** `GET`, `PUT`, `DELETE` are idempotent — running them twice lands the same final state — so clients and load balancers can safely **retry** on timeout. `POST` is *not*, which is why double-clicking "Buy" can charge you twice.
+
+<Callout type="warn" title="Statelessness has a cost you pay elsewhere">
+Stateless requests scale beautifully — any server handles any request, so you can add machines freely. But the state has to live *somewhere*: every request re-sends auth tokens and you push session/cart data into a shared cache or database. You trade per-server memory for repeated payload and a dependency on shared storage. That is usually a great trade, but it is a trade.
+</Callout>
+
+<Callout type="idea" title="Idempotency = safe retries">
+Design write endpoints to be idempotent when you can — accept a client-supplied idempotency key on `POST /payments` so a retried request is recognized and not charged twice. In a world of flaky networks and automatic retries, "exactly once" is bought with idempotency, not wished into existence.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does statelessness make horizontal scaling easy?">
+
+Because no server holds context that only *it* knows, any request can be routed to any server behind the load balancer. You can add or remove machines freely, and one server crashing does not lose a user's session. The catch is that shared state (sessions, carts) must move to a shared store like Redis or a database — you have relocated the state, not eliminated it.
+
+</Accordion>
+
+<Accordion title="A payment request times out. Is it safe to retry?">
+
+Only if it is idempotent. A raw `POST /payments` is not — the first attempt may have succeeded before the timeout, so a blind retry can double-charge. Make it safe by sending an **idempotency key**: the server records the key, and a retry with the same key returns the original result instead of charging again. Idempotent methods (`GET`, `PUT`, `DELETE`) are retry-safe by definition.
+
+</Accordion>
+
+<Accordion title="Your client gets a 503, then a 500, then a 404. How should it react to each?">
+
+`503` (service unavailable) and `500` (server error) are the server's fault and often transient — back off and retry, ideally with exponential backoff. `404` (not found) is a client-side condition: the resource does not exist, so retrying is pointless — fix the request instead. The status-code classes tell you *whose* problem it is and whether retrying can ever help.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- HTTP is a **stateless request/response** standard: method + path + headers + body in, status code + body out.
+- **REST** models the system as resources (nouns) acted on by methods (verbs), with status codes as a shared outcome vocabulary.
+- **Statelessness** enables horizontal scaling (push state to shared storage), and **idempotency** is what makes retries safe on a flaky network.
+
+<Cards>
+  <Card title="How a Request Travels the Internet" href="/docs/system-design/part-1-networking/01-how-the-internet-carries-a-request" description="The connection HTTP rides on top of." />
+  <Card title="Load Balancing" href="/docs/system-design/part-1-networking/05-load-balancing" description="Why stateless HTTP lets any server take any request." />
+  <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="How HTTP headers drive caching everywhere." />
+</Cards>
+
+<Callout type="idea" title="In an interview">
+When you sketch an API, say the endpoints as resource + method (`POST /orders`, `GET /orders/{id}`) and call out statelessness explicitly — it is the reason your design can scale horizontally. If writes are involved, mention idempotency keys before the interviewer asks "what if the request is retried?"
+</Callout>

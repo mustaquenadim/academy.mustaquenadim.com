@@ -1,0 +1,395 @@
+---
+title: "Permutations & Subsets"
+description: "Generating every arrangement or every subset is the same choose / explore / un-choose skeleton wearing different clothes."
+extractedReferences:
+  - href: /docs/dsa/11-backtracking/01-backtracking-intro
+  - href: /docs/dsa/11-backtracking/03-grid-backtracking
+  - href: /docs/dsa/02-recursion-math/03-recursion-patterns
+---
+
+## The problem
+
+You are seating four guests at a dinner table and want to see *every* possible order before you commit. Or you are packing for a trip and want to list every possible combination of items you might bring. Both feel like the same kind of chore: you keep making a choice, writing down where it leads, then rewinding to try the choice you skipped.
+
+Arrangements (order matters) are **permutations**. Selections (order does not matter) are **subsets**. They sound like two different problems, and most people write two unrelated tangles of loops for them. There is a cleaner truth hiding underneath: they are the same walk through a decision tree, and only the *decision* at each node differs.
+
+## A first attempt
+
+For permutations, the tempting move is nested loops. Four guests? Four `for` loops, skip when indices repeat:
+
+```text
+for a in guests:
+  for b in guests:
+    for c in guests:
+      for d in guests:
+        if a,b,c,d all distinct: record (a,b,c,d)
+```
+
+It works for four. But the loop count is hardwired to the input size. Five guests needs five loops; `n` guests needs `n` loops you cannot write ahead of time. And you generate `n^n` tuples only to throw away the ones with repeats — for `n = 8` that is 16 million candidates for just 40 thousand real permutations. Subsets have the mirror-image mess: you would need `n` nested `if include/exclude` blocks, again impossible to write for general `n`.
+
+The fixed-loop approach cannot scale to a size chosen at runtime. We need recursion to make the depth flexible.
+
+## The insight
+
+Let the recursion depth *be* the number of decisions. At each level you make one choice, recurse, then undo it — the exact **choose / explore / un-choose** skeleton from the intro. Only the choice changes:
+
+- **Permutations:** the choice is "which unused element goes in the next position?"
+- **Subsets:** the choice is "do I include element `i` — yes or no?"
+
+Same tree walk, same eraser. Once you see that, you never write nested-loop enumeration again.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick the decision at each level
+
+For permutations, a level chooses the next element from the ones not yet used. For subsets, a level chooses include-or-skip for element `i`. This single decision defines the whole tree.
+
+</Step>
+
+<Step>
+
+### Choose and mark
+
+Add the chosen element to the current path. For permutations, mark it used so it cannot appear twice. For subsets, just move a pointer forward.
+
+</Step>
+
+<Step>
+
+### Explore the rest
+
+Recurse to the next level. The recursion depth equals the number of decisions, so it adapts to any input size automatically.
+
+</Step>
+
+<Step>
+
+### Record at the leaf
+
+For permutations, a leaf is reached when the path length equals `n`. For subsets, *every node* is a valid subset, so you record on entry — there is no "reject" step, only more choices.
+
+</Step>
+
+<Step>
+
+### Un-choose
+
+Remove the element from the path (and unmark it if permuting), then let the loop try the next option. This is what frees the shared path to represent the next branch.
+
+</Step>
+
+</Steps>
+
+The two trees, side by side:
+
+```text
+Permutations of [1,2,3]        Subsets of [1,2,3]  (include? at each level)
+      1     2     3                       {}
+     / \   / \   / \               inc1 /    \ skip1
+    2   3 1   3 1   2               {1}        {}
+    |   | |   | |   |              /  \       /  \
+    3   2 3   1 2   1           {1,2} {1}  {2}   {}
+                                 ...
+```
+
+## The code
+
+Both generators in one file so the shared skeleton is obvious: `permute` and `subsets` differ only in their per-level decision.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def permutations(nums):
+    results, path, used = [], [], [False] * len(nums)
+
+    def backtrack():
+        if len(path) == len(nums):
+            results.append(path[:])          # a leaf -> full arrangement
+            return
+        for i, x in enumerate(nums):
+            if used[i]:
+                continue
+            used[i] = True                   # choose
+            path.append(x)
+            backtrack()                      # explore
+            path.pop()                       # un-choose
+            used[i] = False
+
+    backtrack()
+    return results
+
+
+def subsets(nums):
+    results, path = [], []
+
+    def backtrack(start):
+        results.append(path[:])              # every node is a subset
+        for i in range(start, len(nums)):
+            path.append(nums[i])             # choose to include
+            backtrack(i + 1)                 # explore
+            path.pop()                       # un-choose
+
+    backtrack(0)
+    return results
+
+
+print(permutations([1, 2, 3]))  # 6 arrangements
+print(subsets([1, 2, 3]))       # 8 subsets
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function permutations(nums: number[]): number[][] {
+  const results: number[][] = [];
+  const path: number[] = [];
+  const used: boolean[] = new Array(nums.length).fill(false);
+
+  function backtrack(): void {
+    if (path.length === nums.length) {
+      results.push([...path]);               // a leaf -> full arrangement
+      return;
+    }
+    for (let i = 0; i < nums.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;                        // choose
+      path.push(nums[i]);
+      backtrack();                           // explore
+      path.pop();                            // un-choose
+      used[i] = false;
+    }
+  }
+
+  backtrack();
+  return results;
+}
+
+function subsets(nums: number[]): number[][] {
+  const results: number[][] = [];
+  const path: number[] = [];
+
+  function backtrack(start: number): void {
+    results.push([...path]);                 // every node is a subset
+    for (let i = start; i < nums.length; i++) {
+      path.push(nums[i]);                    // choose to include
+      backtrack(i + 1);                      // explore
+      path.pop();                            // un-choose
+    }
+  }
+
+  backtrack(0);
+  return results;
+}
+
+console.log(permutations([1, 2, 3])); // 6 arrangements
+console.log(subsets([1, 2, 3]));      // 8 subsets
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class PermSubsets {
+    public static List<List<Integer>> permutations(int[] nums) {
+        List<List<Integer>> results = new ArrayList<>();
+        permute(nums, new ArrayList<>(), new boolean[nums.length], results);
+        return results;
+    }
+
+    private static void permute(int[] nums, List<Integer> path,
+                                boolean[] used, List<List<Integer>> results) {
+        if (path.size() == nums.length) {
+            results.add(new ArrayList<>(path));  // a leaf -> full arrangement
+            return;
+        }
+        for (int i = 0; i < nums.length; i++) {
+            if (used[i]) continue;
+            used[i] = true;                      // choose
+            path.add(nums[i]);
+            permute(nums, path, used, results);  // explore
+            path.remove(path.size() - 1);        // un-choose
+            used[i] = false;
+        }
+    }
+
+    public static List<List<Integer>> subsets(int[] nums) {
+        List<List<Integer>> results = new ArrayList<>();
+        subset(nums, 0, new ArrayList<>(), results);
+        return results;
+    }
+
+    private static void subset(int[] nums, int start,
+                               List<Integer> path, List<List<Integer>> results) {
+        results.add(new ArrayList<>(path));      // every node is a subset
+        for (int i = start; i < nums.length; i++) {
+            path.add(nums[i]);                   // choose to include
+            subset(nums, i + 1, path, results);  // explore
+            path.remove(path.size() - 1);        // un-choose
+        }
+    }
+
+    public static void main(String[] args) {
+        System.out.println(permutations(new int[]{1, 2, 3})); // 6
+        System.out.println(subsets(new int[]{1, 2, 3}));      // 8
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+static void permute(int *nums, int n, int *path, int depth, int *used) {
+    if (depth == n) {                        /* a leaf -> full arrangement */
+        for (int i = 0; i < n; i++) printf("%d", path[i]);
+        printf(" ");
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        if (used[i]) continue;
+        used[i] = 1;                         /* choose */
+        path[depth] = nums[i];
+        permute(nums, n, path, depth + 1, used); /* explore */
+        used[i] = 0;                         /* un-choose */
+    }
+}
+
+static void subsets(int *nums, int n, int *path, int depth, int start) {
+    printf("{");                             /* every node is a subset */
+    for (int i = 0; i < depth; i++) printf("%d", path[i]);
+    printf("} ");
+    for (int i = start; i < n; i++) {
+        path[depth] = nums[i];               /* choose to include */
+        subsets(nums, n, path, depth + 1, i + 1); /* explore */
+        /* un-choose is implicit: depth shrinks on return */
+    }
+}
+
+int main(void) {
+    int nums[] = {1, 2, 3};
+    int path[3], used[3] = {0};
+    permute(nums, 3, path, 0, used);
+    printf("\n");
+    subsets(nums, 3, path, 0, 0);
+    printf("\n");
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+using namespace std;
+
+void permute(const vector<int> &nums, vector<int> &path,
+             vector<bool> &used, vector<vector<int>> &results) {
+    if (path.size() == nums.size()) {
+        results.push_back(path);             // a leaf -> full arrangement
+        return;
+    }
+    for (size_t i = 0; i < nums.size(); i++) {
+        if (used[i]) continue;
+        used[i] = true;                      // choose
+        path.push_back(nums[i]);
+        permute(nums, path, used, results);  // explore
+        path.pop_back();                     // un-choose
+        used[i] = false;
+    }
+}
+
+void subsets(const vector<int> &nums, int start,
+             vector<int> &path, vector<vector<int>> &results) {
+    results.push_back(path);                 // every node is a subset
+    for (size_t i = start; i < nums.size(); i++) {
+        path.push_back(nums[i]);             // choose to include
+        subsets(nums, i + 1, path, results); // explore
+        path.pop_back();                     // un-choose
+    }
+}
+
+int main() {
+    vector<int> nums = {1, 2, 3}, path;
+    vector<bool> used(nums.size(), false);
+    vector<vector<int>> perms, subs;
+    permute(nums, path, used, perms);
+    subsets(nums, 0, path, subs);
+    cout << perms.size() << " perms, " << subs.size() << " subsets\n"; // 6, 8
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+For `n` input elements:
+
+| Problem | Time | Space |
+| --- | --- | --- |
+| Permutations | `O(n * n!)` | `O(n)` recursion depth (plus output) |
+| Subsets | `O(n * 2^n)` | `O(n)` recursion depth (plus output) |
+
+There are `n!` permutations and `2^n` subsets, and copying each finished path costs `O(n)`. The output itself dominates memory; the working space (the recursion and the single shared path) stays linear.
+
+## When to use it
+
+<Callout type="idea" title="Order matters vs. order doesn't">
+Choose **permutations** when the arrangement is the answer (schedules, tour orders, password guesses). Choose **subsets** when membership is the answer (which items to pack, which features to enable). If the input has duplicates, sort first and skip a value when it equals the previous *and* its predecessor was not used — that one line kills duplicate outputs without a hash set.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why do subsets record a result at every node but permutations only at the leaves?">
+
+Because every prefix of a subset is *itself* a valid subset — `{}`, `{1}`, `{1,2}` are all legitimate answers, so you emit on entry to each node. A permutation is only valid once *all* `n` positions are filled; a half-built path like `[1]` is not a permutation of `[1,2,3]`, so you wait until `path.length == n` before recording.
+
+</Accordion>
+
+<Accordion title="Why does the subsets recursion pass `i + 1` while permutations loops from 0 every time?">
+
+Subsets care about membership, not order, so `{1,2}` and `{2,1}` are the same answer — passing `start = i + 1` forbids ever looking back, which visits each combination exactly once. Permutations care about order, so every unused element must be available at every position; that is why they scan from index 0 and rely on a `used[]` flag instead of a moving start pointer.
+
+</Accordion>
+
+<Accordion title="How would you generate only the subsets of a fixed size k (combinations)?">
+
+Reuse the subsets skeleton but record only when `path.length == k`, and prune: stop recursing once `path.length` plus the number of remaining elements is less than `k`. That is exactly the "combinations" problem — subsets with a size gate — and the pruning keeps it at `O(k * C(n, k))` instead of touching all `2^n` subsets.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Permutations and subsets are the **same choose / explore / un-choose walk**; only the per-level decision differs.
+- Recursion makes the number of decisions **flexible**, replacing impossible fixed nested loops.
+- There are `n!` permutations (`O(n * n!)`) and `2^n` subsets (`O(n * 2^n)`), with linear working space.
+
+<Cards>
+  <Card title="Backtracking" href="/docs/dsa/11-backtracking/01-backtracking-intro" description="The choose / explore / un-choose skeleton these problems share." />
+  <Card title="Backtracking on Grids" href="/docs/dsa/11-backtracking/03-grid-backtracking" description="The same idea applied to mazes, word searches, and boards." />
+  <Card title="Recursion Patterns" href="/docs/dsa/02-recursion-math/03-recursion-patterns" description="The recurring shapes of recursive solutions." />
+</Cards>

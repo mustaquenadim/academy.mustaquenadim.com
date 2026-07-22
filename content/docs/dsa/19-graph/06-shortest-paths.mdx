@@ -1,0 +1,354 @@
+---
+title: "Shortest Paths"
+description: "Your GPS finds the fastest route through thousands of roads with different lengths — a weighted shortest-path problem."
+extractedReferences:
+  - href: /docs/dsa/19-graph/02-bfs
+  - href: /docs/dsa/19-graph/01-graph-representations
+  - href: /docs/dsa/18-heap/01-heap-intro
+---
+
+## The problem
+
+Your GPS has to route you home. The roads aren't all equal — a highway segment is fast, a
+side street is slow, a bridge might be closed. Each road has a **weight** (minutes, miles,
+cost), and you want the route that minimizes the *total* weight, not the fewest roads.
+
+[BFS](/docs/dsa/19-graph/02-bfs) solved the unweighted version — fewest hops — because every
+edge cost 1. But here a three-road highway route can beat a two-road crawl through downtown.
+Counting edges is meaningless; you must **sum weights** and minimize the sum. That's the
+weighted shortest-path problem, and two classic algorithms own it: **Dijkstra** and
+**Bellman-Ford**.
+
+## A first attempt
+
+Why not just run BFS and add up weights along the way? Because BFS finalizes a vertex the
+first time it's reached — by hop count — and that first arrival may not be the *cheapest*
+arrival. Imagine reaching city C in one long 10-minute road, while a two-road path costs
+3 + 4 = 7. BFS would lock in 10 and never reconsider.
+
+So the order of finalizing matters. You can't finalize by number of edges; you must finalize
+by **cheapest total cost so far**. And if any road had a *negative* weight (a rebate, an
+energy gain), even that reasoning breaks — a later detour could undercut a settled value.
+
+## The insight
+
+**Dijkstra:** always expand the **unfinalized vertex with the smallest tentative distance**.
+Once you pick it, its distance is final — because every other route to it would have to go
+through some vertex that's already at least as far, and all weights are non-negative, so it
+can't come back cheaper. To always grab the current minimum efficiently, use a
+[min-heap](/docs/dsa/18-heap/01-heap-intro) (priority queue). This is BFS generalized: a
+priority queue by cost instead of a plain queue by hops.
+
+**Bellman-Ford:** if edges can be **negative**, Dijkstra's "can't come back cheaper"
+assumption fails. Instead, brute-force it: **relax every edge, `n − 1` times**. Each pass
+guarantees correct distances for one more edge of path length, and a shortest path has at
+most `n − 1` edges. A bonus: one extra pass that still improves something proves a **negative
+cycle** exists.
+
+<Callout type="idea" title="Relaxation, the shared heartbeat">
+Both algorithms are built on one move: for an edge `u → v` with weight `w`, if
+`dist[u] + w < dist[v]`, then `dist[v] = dist[u] + w`. Dijkstra chooses the *order* of
+relaxations greedily; Bellman-Ford just relaxes *everything, repeatedly*.
+</Callout>
+
+## How it works
+
+Dijkstra with a min-heap:
+
+<Steps>
+
+<Step>
+
+### Initialize distances
+
+`dist[source] = 0`, every other `dist = ∞`. Push `(0, source)` into a min-heap keyed by
+distance.
+
+</Step>
+
+<Step>
+
+### Pop the closest unfinalized vertex
+
+Take the smallest-distance entry from the heap. If its stored distance is stale (larger than
+the recorded `dist[u]`), skip it. Otherwise `u` is now finalized.
+
+</Step>
+
+<Step>
+
+### Relax its edges
+
+For each edge `u → v` of weight `w`, if `dist[u] + w < dist[v]`, update `dist[v]` and push
+`(dist[v], v)` into the heap.
+
+</Step>
+
+<Step>
+
+### Repeat until the heap is empty
+
+Every vertex is finalized once, in increasing distance order. `dist` now holds the shortest
+distance from the source to every reachable vertex.
+
+</Step>
+
+</Steps>
+
+Finding shortest distances from `A`:
+
+```text
+        2        3
+   (A)-----(B)-------(D)
+    |        \       /
+   4|        1\    5/
+    |          \   /
+   (C)----------(E)
+          6
+
+heap pops:  A(0) -> B(2), C(4)
+            B(2) -> E(3), D(5)
+            E(3) -> C stays 4 (3+6=9 worse)
+            C(4), D(5)
+final dist: A0 B2 C4 D5 E3
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import heapq
+
+def dijkstra(adj, source):
+    # adj[u] = list of (v, w) with w >= 0
+    n = len(adj)
+    dist = [float('inf')] * n
+    dist[source] = 0
+    heap = [(0, source)]
+    while heap:
+        d, u = heapq.heappop(heap)
+        if d > dist[u]:
+            continue                 # stale entry
+        for v, w in adj[u]:
+            if d + w < dist[v]:
+                dist[v] = d + w
+                heapq.heappush(heap, (dist[v], v))
+    return dist
+
+
+def bellman_ford(edges, n, source):
+    # edges = list of (u, v, w); w may be negative
+    dist = [float('inf')] * n
+    dist[source] = 0
+    for _ in range(n - 1):
+        for u, v, w in edges:
+            if dist[u] != float('inf') and dist[u] + w < dist[v]:
+                dist[v] = dist[u] + w
+    for u, v, w in edges:            # extra pass -> negative cycle?
+        if dist[u] != float('inf') and dist[u] + w < dist[v]:
+            return None
+    return dist
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// Dijkstra with a binary-heap-backed priority queue (sketched with a sorted array)
+function dijkstra(adj: [number, number][][], source: number): number[] {
+  const n = adj.length;
+  const dist = new Array(n).fill(Infinity);
+  dist[source] = 0;
+  // min-heap of [dist, vertex]; a real heap is preferred for large graphs
+  const heap: [number, number][] = [[0, source]];
+  while (heap.length) {
+    heap.sort((a, b) => a[0] - b[0]);
+    const [d, u] = heap.shift()!;
+    if (d > dist[u]) continue;
+    for (const [v, w] of adj[u]) {
+      if (d + w < dist[v]) {
+        dist[v] = d + w;
+        heap.push([dist[v], v]);
+      }
+    }
+  }
+  return dist;
+}
+
+function bellmanFord(edges: [number, number, number][], n: number, source: number): number[] | null {
+  const dist = new Array(n).fill(Infinity);
+  dist[source] = 0;
+  for (let i = 0; i < n - 1; i++) {
+    for (const [u, v, w] of edges) {
+      if (dist[u] !== Infinity && dist[u] + w < dist[v]) dist[v] = dist[u] + w;
+    }
+  }
+  for (const [u, v, w] of edges) {
+    if (dist[u] !== Infinity && dist[u] + w < dist[v]) return null; // negative cycle
+  }
+  return dist;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int[] dijkstra(List<int[]>[] adj, int source) { // adj[u] = list of {v, w}
+    int n = adj.length;
+    int[] dist = new int[n];
+    Arrays.fill(dist, Integer.MAX_VALUE);
+    dist[source] = 0;
+    PriorityQueue<int[]> pq = new PriorityQueue<>((a, b) -> a[0] - b[0]);
+    pq.add(new int[]{0, source});
+    while (!pq.isEmpty()) {
+        int[] top = pq.poll();
+        int d = top[0], u = top[1];
+        if (d > dist[u]) continue;
+        for (int[] e : adj[u]) {
+            int v = e[0], w = e[1];
+            if (d + w < dist[v]) {
+                dist[v] = d + w;
+                pq.add(new int[]{dist[v], v});
+            }
+        }
+    }
+    return dist;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <limits.h>
+
+/* Bellman-Ford: edges as parallel arrays; returns 1 ok, 0 negative cycle */
+int bellman_ford(int eu[], int ev[], int ew[], int m, int n, int src, long dist[]) {
+    for (int i = 0; i < n; i++) dist[i] = LONG_MAX;
+    dist[src] = 0;
+    for (int pass = 0; pass < n - 1; pass++)
+        for (int e = 0; e < m; e++)
+            if (dist[eu[e]] != LONG_MAX && dist[eu[e]] + ew[e] < dist[ev[e]])
+                dist[ev[e]] = dist[eu[e]] + ew[e];
+    for (int e = 0; e < m; e++)
+        if (dist[eu[e]] != LONG_MAX && dist[eu[e]] + ew[e] < dist[ev[e]])
+            return 0;   /* negative cycle */
+    return 1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <queue>
+#include <climits>
+using namespace std;
+
+vector<long long> dijkstra(const vector<vector<pair<int,int>>>& adj, int source) {
+    int n = adj.size();
+    vector<long long> dist(n, LLONG_MAX);
+    dist[source] = 0;
+    priority_queue<pair<long long,int>, vector<pair<long long,int>>, greater<>> pq;
+    pq.push({0, source});
+    while (!pq.empty()) {
+        auto [d, u] = pq.top(); pq.pop();
+        if (d > dist[u]) continue;
+        for (auto [v, w] : adj[u]) {
+            if (d + w < dist[v]) {
+                dist[v] = d + w;
+                pq.push({dist[v], v});
+            }
+        }
+    }
+    return dist;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Dijkstra breaks on negative edges">
+Dijkstra finalizes a vertex the moment it's popped, trusting that nothing cheaper can arrive
+later. A negative edge violates that — a detour could undercut the settled value — and
+Dijkstra will silently return wrong answers. If any weight can be negative, use Bellman-Ford.
+</Callout>
+
+## Complexity
+
+| Algorithm     | Time              | Space    | Handles negatives?          |
+| ------------- | ----------------- | -------- | --------------------------- |
+| Dijkstra      | `O((n + m) log n)` | `O(n)`   | No                          |
+| Bellman-Ford  | `O(n · m)`        | `O(n)`   | Yes, and detects neg cycles |
+
+The `log n` in Dijkstra comes from the heap operations. Bellman-Ford's `n` passes over `m`
+edges make it slower but strictly more general.
+
+## When to use it
+
+<Callout type="info" title="Choosing between them">
+Use **Dijkstra** for the common case: non-negative weights and you want speed (routing,
+network latency, game maps). Use **Bellman-Ford** when edges can be **negative** — currency
+arbitrage, cost models with rebates — or when you must **detect a negative cycle**. If the
+graph is unweighted, skip both and use plain [BFS](/docs/dsa/19-graph/02-bfs); it's `O(n + m)`.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does Dijkstra push a new heap entry instead of updating the old one, and why the `d > dist[u]` check?">
+
+Most binary heaps don't support an efficient "decrease-key," so the simplest correct approach
+is to push a fresh `(newDist, v)` and leave the stale entry in the heap. When a stale entry
+is later popped, its `d` is larger than the already-improved `dist[u]`, so the `d > dist[u]`
+guard skips it. This keeps the code simple while staying `O((n + m) log n)`.
+
+</Accordion>
+
+<Accordion title="Bellman-Ford relaxes n − 1 times. Why exactly n − 1, not n or n − 2?">
+
+A shortest path in a graph of `n` vertices visits at most `n` vertices, so it has at most
+`n − 1` edges. Each full relaxation pass guarantees correctness for paths one edge longer, so
+after `n − 1` passes every shortest path is settled. A path needing an `n`-th edge would
+repeat a vertex — a cycle — which a shortest path never does (unless it's negative, which the
+extra pass catches).
+
+</Accordion>
+
+<Accordion title="How do you recover the actual route, not just the distance?">
+
+Keep a `parent` array. Whenever you relax `u → v` (in either algorithm) and improve
+`dist[v]`, set `parent[v] = u`. After the run, start at the destination and follow `parent`
+pointers back to the source, then reverse. It's `O(n)` extra space and turns a cost into a
+turn-by-turn path.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Weighted shortest paths minimize the **sum of edge weights**, generalizing BFS's hop count.
+- **Dijkstra** greedily finalizes the closest vertex via a min-heap — `O((n + m) log n)`, but
+  only with **non-negative** weights.
+- **Bellman-Ford** relaxes all edges `n − 1` times — `O(n · m)`, handles **negative** edges,
+  and detects negative cycles.
+
+<Cards>
+  <Card title="Breadth-First Search" href="/docs/dsa/19-graph/02-bfs" description="Shortest paths when every edge costs 1." />
+  <Card title="Representing Graphs" href="/docs/dsa/19-graph/01-graph-representations" description="Weighted adjacency lists store (v, w) pairs." />
+  <Card title="Heaps" href="/docs/dsa/18-heap/01-heap-intro" description="The priority queue Dijkstra relies on." />
+</Cards>

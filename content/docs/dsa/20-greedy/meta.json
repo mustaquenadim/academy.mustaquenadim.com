@@ -1,0 +1,10 @@
+{
+  "title": "Greedy",
+  "icon": "Zap",
+  "pages": [
+    "01-greedy-intro",
+    "02-activity-and-intervals",
+    "03-huffman-coding",
+    "04-greedy-classics"
+  ]
+}

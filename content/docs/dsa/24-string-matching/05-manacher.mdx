@@ -1,0 +1,309 @@
+---
+title: "Manacher’s Algorithm"
+description: "Finding the longest palindrome in linear time seems too good to be true — Manacher’s reuses its own past work to do it."
+extractedReferences:
+  - href: /docs/dsa/24-string-matching/04-z-algorithm
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+  - href: /docs/dsa/24-string-matching/02-kmp
+---
+
+## The problem
+
+A user types a message and your editor highlights the longest palindrome inside it — `racecar`, `level`, `abcba`. Simple enough on a tweet. Now the input is a million-character DNA strand and you need the longest palindromic run for a bioinformatics pass, thousands of times a second.
+
+Palindromes have an awkward property: they grow from a *center* outward, and a center can be a letter (`aba`) or the gap between two letters (`abba`). Handling both, fast, is the whole game.
+
+## A first attempt
+
+Try every center and expand outward while the characters mirror. There are `2n - 1` centers (each letter and each gap), and each expansion can run up to `n/2` steps, so the worst case is **O(n²)**. A string like `aaaa…a` is exactly that worst case — every center expands almost fully.
+
+And again, the pain is repeated work: when you expand around one center, you re-check pairs that a nearby center already confirmed were mirrored. The [Z-algorithm](/docs/dsa/24-string-matching/04-z-algorithm) beat this same kind of waste with a reuse window; Manacher's does the palindrome version of the same trick.
+
+## The insight
+
+First, kill the odd/even headache. Transform `abba` into `^#a#b#b#a#$` by inserting `#` between every character (and sentinels at the ends). Now *every* palindrome has an odd length and sits on a single center — one uniform case.
+
+Then keep the rightmost palindrome found so far as a window with center `c` and right edge `r`. For a new center `i` inside that window, its mirror `2c - i` already has a known radius. By symmetry, `i` starts with at least `min(r - i, radius[mirror])` — free radius, no comparisons — and you only expand past what's already guaranteed.
+
+```text
+T = ^ # a # b # b # a # $
+p =   0 1 0 1 4 1 0 1 0     <- p[4]=4: radius 4 around the middle '#' => "abba"
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Transform the string
+
+Insert `#` between every character and add distinct sentinels `^` and `$` at the ends. Every palindrome is now odd-length with a single center, and the sentinels stop expansion from running off the array.
+
+</Step>
+
+<Step>
+
+### Track the current window [c, r]
+
+`c` is the center and `r` the right boundary of the rightmost palindrome discovered so far.
+
+</Step>
+
+<Step>
+
+### Seed from the mirror
+
+For center `i`, if `i < r`, initialize `p[i] = min(r - i, p[2c - i])`. That radius is guaranteed by symmetry — no character comparison needed.
+
+</Step>
+
+<Step>
+
+### Expand and re-center
+
+Grow `p[i]` while `T[i - p[i] - 1] == T[i + p[i] + 1]`. If `i + p[i]` passes `r`, move the window: `c = i`, `r = i + p[i]`. The largest `p[i]` gives the longest palindrome; map its center and radius back to the original string.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def longest_palindrome(s: str) -> str:
+    if not s:
+        return ""
+    t = "^#" + "#".join(s) + "#$"
+    n = len(t)
+    p = [0] * n
+    c = r = 0
+    for i in range(1, n - 1):
+        if i < r:
+            p[i] = min(r - i, p[2 * c - i])
+        while t[i - p[i] - 1] == t[i + p[i] + 1]:
+            p[i] += 1
+        if i + p[i] > r:
+            c, r = i, i + p[i]
+    max_len, center = max((p[i], i) for i in range(1, n - 1))
+    start = (center - max_len) // 2
+    return s[start:start + max_len]
+
+
+print(longest_palindrome("babad"))  # "bab" (or "aba")
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function longestPalindrome(s: string): string {
+  if (s.length === 0) return "";
+  const t = "^#" + s.split("").join("#") + "#$";
+  const n = t.length;
+  const p = new Array(n).fill(0);
+  let c = 0;
+  let r = 0;
+  for (let i = 1; i < n - 1; i++) {
+    if (i < r) p[i] = Math.min(r - i, p[2 * c - i]);
+    while (t[i - p[i] - 1] === t[i + p[i] + 1]) p[i]++;
+    if (i + p[i] > r) {
+      c = i;
+      r = i + p[i];
+    }
+  }
+  let maxLen = 0;
+  let center = 0;
+  for (let i = 1; i < n - 1; i++) {
+    if (p[i] > maxLen) {
+      maxLen = p[i];
+      center = i;
+    }
+  }
+  const start = (center - maxLen) >> 1;
+  return s.slice(start, start + maxLen);
+}
+
+console.log(longestPalindrome("babad")); // "bab"
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+public class Manacher {
+    static String longestPalindrome(String s) {
+        if (s.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder("^#");
+        for (char ch : s.toCharArray()) sb.append(ch).append('#');
+        sb.append('$');
+        String t = sb.toString();
+        int n = t.length();
+        int[] p = new int[n];
+        int c = 0, r = 0;
+        for (int i = 1; i < n - 1; i++) {
+            if (i < r) p[i] = Math.min(r - i, p[2 * c - i]);
+            while (t.charAt(i - p[i] - 1) == t.charAt(i + p[i] + 1)) p[i]++;
+            if (i + p[i] > r) {
+                c = i;
+                r = i + p[i];
+            }
+        }
+        int maxLen = 0, center = 0;
+        for (int i = 1; i < n - 1; i++) {
+            if (p[i] > maxLen) {
+                maxLen = p[i];
+                center = i;
+            }
+        }
+        int start = (center - maxLen) / 2;
+        return s.substring(start, start + maxLen);
+    }
+
+    public static void main(String[] args) {
+        System.out.println(longestPalindrome("babad")); // bab
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void longest_palindrome(const char *s) {
+    int sn = (int)strlen(s);
+    if (sn == 0) { printf("\n"); return; }
+    int n = 2 * sn + 3;
+    char *t = malloc(n + 1);
+    int k = 0;
+    t[k++] = '^';
+    for (int i = 0; i < sn; i++) { t[k++] = '#'; t[k++] = s[i]; }
+    t[k++] = '#';
+    t[k++] = '$';
+    t[k] = '\0';
+    int *p = calloc(n, sizeof(int));
+    int c = 0, r = 0;
+    for (int i = 1; i < n - 1; i++) {
+        if (i < r) {
+            int mirror = p[2 * c - i];
+            p[i] = (r - i < mirror) ? r - i : mirror;
+        }
+        while (t[i - p[i] - 1] == t[i + p[i] + 1]) p[i]++;
+        if (i + p[i] > r) { c = i; r = i + p[i]; }
+    }
+    int max_len = 0, center = 0;
+    for (int i = 1; i < n - 1; i++)
+        if (p[i] > max_len) { max_len = p[i]; center = i; }
+    int start = (center - max_len) / 2;
+    printf("%.*s\n", max_len, s + start);
+    free(t);
+    free(p);
+}
+
+int main(void) {
+    longest_palindrome("babad"); /* bab */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+string longest_palindrome(const string &s) {
+    if (s.empty()) return "";
+    string t = "^#";
+    for (char ch : s) { t += ch; t += '#'; }
+    t += '$';
+    int n = (int)t.size();
+    vector<int> p(n, 0);
+    int c = 0, r = 0;
+    for (int i = 1; i < n - 1; i++) {
+        if (i < r) p[i] = min(r - i, p[2 * c - i]);
+        while (t[i - p[i] - 1] == t[i + p[i] + 1]) p[i]++;
+        if (i + p[i] > r) { c = i; r = i + p[i]; }
+    }
+    int max_len = 0, center = 0;
+    for (int i = 1; i < n - 1; i++)
+        if (p[i] > max_len) { max_len = p[i]; center = i; }
+    int start = (center - max_len) / 2;
+    return s.substr(start, max_len);
+}
+
+int main() {
+    cout << longest_palindrome("babad") << "\n"; // bab
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Measure | Cost |
+| --- | --- |
+| Time | O(n) |
+| Space | O(n) for the transformed string and radius array |
+
+Each expansion only compares characters beyond the current right boundary `r`, and `r` never moves backward — so the total expansion work across all centers is bounded by `n`. Everything else per center is O(1) thanks to the mirror seed.
+
+## When to use it
+
+<Callout type="warn" title="A precise tool, easy to get subtly wrong">
+Manacher's is *the* answer for the longest palindromic substring in linear time and for counting all palindromic substrings. But the index arithmetic — the `#` transform, mapping the center and radius back to the original string — is fiddly, so guard it with tests. If linear time isn't required, the O(n²) expand-around-center approach is far easier to write correctly and is fine up to a few thousand characters.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why insert '#' between every character?">
+
+It unifies odd- and even-length palindromes. In the original string, `aba` centers on a letter while `abba` centers between letters — two cases. After inserting separators, both become odd-length palindromes centered on a single position (`a#b#a` and `a#b#b#a`), so one expansion routine handles everything. The sentinels `^`/`$` additionally stop the expansion from stepping off either end.
+
+</Accordion>
+
+<Accordion title="How does the mirror give a free starting radius?">
+
+Inside the current palindrome window centered at `c`, position `i` reflects to `2c - i`. Because the window is itself a palindrome, the neighborhood around `i` mirrors the neighborhood around `2c - i`, so `i` inherits at least that mirror's radius — capped at `r - i` so it can't exceed what the window guarantees. Only radius beyond that cap requires real character comparisons.
+
+</Accordion>
+
+<Accordion title="Why is the total running time linear, not quadratic?">
+
+The only place characters are compared is the `while` loop, and it compares just past the right boundary `r`. Every successful comparison advances `r`, which moves monotonically from 0 to at most `n`. So all expansions combined do at most `n` comparisons — the per-center seeding is O(1) — giving O(n) overall.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- The `#` transform makes every palindrome odd-length and single-centered, erasing the odd/even split.
+- A mirror-and-window reuse (the same idea as the Z-algorithm) seeds each center's radius for free, so the scan is O(n).
+- Use it for the longest palindromic substring or counting palindromes when you truly need linear time; otherwise expand-around-center is simpler.
+
+<Cards>
+  <Card title="The Z-Algorithm" href="/docs/dsa/24-string-matching/04-z-algorithm" description="The same window-reuse idea for prefix matching." />
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="The module's shared starting point." />
+  <Card title="The KMP Algorithm" href="/docs/dsa/24-string-matching/02-kmp" description="Another linear-time reuse-the-past classic." />
+</Cards>

@@ -1,0 +1,146 @@
+---
+title: "Latency vs Bandwidth"
+description: "A fat pipe doesn’t help if every drop takes a second to arrive — confusing latency with bandwidth is behind countless \"why is it slow?\" mysteries."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/01-how-the-internet-carries-a-request
+  - href: /docs/system-design/part-1-networking/06-cdns
+  - href: /docs/system-design/part-1-networking/07-caching-fundamentals
+---
+
+## The problem
+
+Your team upgrades from a 100 Mbps line to a 1 Gbps line. Ten times the bandwidth. Everyone expects the app to feel ten times snappier. It feels exactly the same.
+
+The bug reports pour in: "the API is slow," "the dashboard takes forever." You throw more bandwidth at it, and nothing changes. The reason is that most people quietly assume "faster internet" means one thing, when it is really two very different things — and you almost certainly optimized the wrong one.
+
+## A first attempt
+
+The instinct is: *slow = not enough bandwidth, so buy a bigger pipe.*
+
+Sometimes that is right. If you are moving a 4 GB file, a fatter pipe genuinely finishes sooner. But most app slowness is not one giant transfer — it is many small requests, each waiting on a round trip. Widening the pipe does nothing for the *wait before data starts flowing*. It is like widening a highway to fix a problem that is actually the distance between two cities: more lanes, same drive time. Throwing bandwidth at a latency problem is money set on fire.
+
+## The insight
+
+Speed is **two independent numbers**, and confusing them is the root of most "why is it slow?" mysteries.
+
+- **Latency** — the *delay* before data starts arriving. Measured in milliseconds. Set mostly by distance and number of round trips. This is the *when*.
+- **Bandwidth** — the *rate* data flows once it is moving. Measured in Mbps/Gbps. This is the *how much per second*.
+
+Think of a pipe carrying water. Latency is how long until the first drop reaches you. Bandwidth is how wide the pipe is. A wide pipe does not make the first drop arrive sooner — and for small, chatty requests, the first drop is almost the whole story.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Separate the two questions
+
+For any slow interaction ask: is it slow to *start* (latency) or slow to *finish once started* (bandwidth)? Small API calls are latency-bound; large downloads are bandwidth-bound.
+
+</Step>
+
+<Step>
+
+### Count the round trips
+
+Latency multiplies with round trips. DNS, TCP handshake, TLS handshake, then the request itself — each is a trip across the wire. Ten sequential API calls on a 100 ms link cost 1,000 ms of pure waiting, no matter how fat the pipe.
+
+</Step>
+
+<Step>
+
+### Attack latency by cutting distance and trips
+
+Move data closer (CDNs, edge), reuse connections (keep-alive, HTTP/2), and batch chatty calls into one. Every round trip you delete is pure win on small requests.
+
+</Step>
+
+<Step>
+
+### Attack bandwidth by shrinking bytes
+
+Compress payloads, resize images, paginate results. This helps big transfers and does nothing for round-trip count — which is exactly why you must diagnose first.
+
+</Step>
+
+</Steps>
+
+The highway picture:
+
+```
+LATENCY = distance / trip time         BANDWIDTH = lanes / throughput
+
+  City A ─────────────────── City B      ═══════════  narrow: 1 car/sec
+        one lap = fixed minutes          ═══════════
+                                         ═══════════  wide:  8 cars/sec
+  More lanes do NOT shorten the lap.     ═══════════
+  Only a shorter road (or fewer laps)    ═══════════
+  reduces latency.                       more lanes ≠ shorter trip
+```
+
+## The numbers
+
+Latency to hold in your head (the "numbers every engineer should know"):
+
+- **L1 / L2 cache:** ~1–7 ns
+- **Main memory (RAM):** ~100 ns
+- **SSD random read:** ~100 µs (100,000 ns)
+- **Same-datacenter round trip:** ~0.5 ms
+- **Same-region network round trip:** ~1–10 ms
+- **US coast-to-coast round trip:** ~60–80 ms
+- **New York ↔ London round trip:** ~55–80 ms (speed-of-light floor ~55 ms)
+- **New York ↔ Sydney round trip:** ~150–250 ms
+
+And the arithmetic that traps people:
+
+- Downloading a **10 MB** file over **100 Mbps** takes ~0.8 s of transfer — bandwidth-bound, so a bigger pipe helps.
+- Making **20 sequential API calls** over an **80 ms** transcontinental link costs **1.6 s** of pure round-trip waiting — latency-bound, so a bigger pipe helps *not at all*. Batching them into 2 calls cuts it to 160 ms.
+
+<Callout type="warn" title="Diagnose before you buy">
+Big transfers are bandwidth-bound; chatty small requests are latency-bound. Adding bandwidth to a latency problem changes nothing. Before spending on a fatter pipe, measure whether you are waiting to *start* or waiting to *finish* — the fix is completely different.
+</Callout>
+
+<Callout type="idea" title="You cannot beat the speed of light">
+Light in fiber travels ~200,000 km/s, so distance sets a hard latency floor no budget can cross. The only real move against it is to *not send the request that far* — which is the entire reason CDNs and edge computing exist.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You upgrade from 100 Mbps to 1 Gbps and page load is unchanged. What went wrong?">
+
+The page was latency-bound, not bandwidth-bound. It is made of many small requests, each waiting on round trips (DNS, handshakes, sequential API calls), and round-trip time is set by distance, not pipe width. Ten times the bandwidth does nothing for the *waiting*. The real fixes are fewer round trips (batching, connection reuse) and shorter distance (a CDN), not more Mbps.
+
+</Accordion>
+
+<Accordion title="When does buying more bandwidth actually help?">
+
+When you are moving large payloads: video streaming, big file downloads/uploads, backups, bulk data transfer. There the transfer time is `bytes / rate`, so doubling the rate roughly halves the time. The tell is a single sustained transfer rather than many tiny requests — that is a bandwidth-bound workload, and a fatter pipe genuinely pays off.
+
+</Accordion>
+
+<Accordion title="A mobile user in Sydney complains your US-hosted app is sluggish. What's the cheapest big win?">
+
+Cut the distance and the round trips. A Sydney↔US round trip is ~200 ms, and a page doing several sequential calls stacks that up fast. Put static assets (and ideally an edge/API cache) on a CDN node in Australia so most requests never cross the Pacific. That attacks the dominant cost — latency from distance — far more effectively than any bandwidth upgrade.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- **Latency** is the delay before data starts (ms, driven by distance and round trips); **bandwidth** is the rate once it flows (Mbps/Gbps).
+- Small, chatty requests are **latency-bound**; large transfers are **bandwidth-bound** — diagnose which before you spend.
+- Beat latency by **cutting round trips and distance** (batching, connection reuse, CDNs); beat bandwidth by **shrinking bytes** (compression, pagination).
+
+<Cards>
+  <Card title="How a Request Travels the Internet" href="/docs/system-design/part-1-networking/01-how-the-internet-carries-a-request" description="Where each round trip in the latency budget comes from." />
+  <Card title="Content Delivery Networks" href="/docs/system-design/part-1-networking/06-cdns" description="The primary weapon against distance-driven latency." />
+  <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="Skip the round trip entirely by keeping the answer close." />
+</Cards>
+
+<Callout type="idea" title="In an interview">
+When someone says a system is "slow," your first move is to ask *latency or throughput?* — it signals you know they are different problems with different fixes. Quote a couple of the latency numbers (same-DC ~0.5 ms, cross-country ~70 ms) to reason about round-trip budgets out loud; that is exactly the instinct interviewers are checking for.
+</Callout>

@@ -1,0 +1,297 @@
+---
+title: "Querying a BST"
+description: "The kth smallest element, or a pair that sums to a target — questions an in-order walk answers almost for free."
+extractedReferences:
+  - href: /docs/dsa/17-binary-search-tree/02-bst-operations
+  - href: /docs/dsa/16-binary-tree/02-traversals
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+---
+
+## The problem
+
+Your BST holds ten thousand exam scores. Now the questions get harder than "is 87 present?"
+A teacher asks for the **3rd lowest** score. A dashboard wants **every score between 60 and
+70**. A fraud check wants to know if **two scores sum to exactly 150**. These aren't
+membership tests — they're questions about *order and range*.
+
+You could dump every key into an array, sort it, and answer from there. But you already paid
+to keep the tree sorted. Flattening and re-sorting on every query throws that away and drags
+each answer toward O(n log n). The tree should be able to answer ordered questions directly.
+
+## A first attempt
+
+The brute-force route: do an in-order traversal into a list (that list is already sorted),
+then solve on the array — index `k-1` for the kth smallest, a linear scan for the range, two
+pointers for the pair-sum.
+
+That works and it's O(n) time with **O(n) extra space** for the array. But it ignores what the
+tree gives you. For "kth smallest" you don't need the whole array — you can stop the moment
+you've counted `k` nodes. For a range query you can skip entire subtrees that fall outside the
+bounds. The array approach visits everything; the tree lets you visit only what matters.
+
+## The insight
+
+**An in-order traversal of a BST yields keys in ascending order** — and you can steer that
+walk using the ordering to prune.
+
+- **kth smallest:** walk in order, counting. The kth node you visit is the answer, so stop
+  there instead of finishing the tree.
+- **Range [lo, hi]:** at each node, only recurse left when `node.key > lo`, only recurse right
+  when `node.key < hi`. Whole subtrees outside the range never get visited.
+- **Pair with sum = target:** an in-order walk gives a sorted stream, so the classic
+  two-pointer trick applies — advance from both ends of the sorted order toward each other.
+
+The tree isn't just storage; its shape *is* an index on order.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### In-order is the sorted spine
+
+Visit left subtree, then node, then right subtree. Because left < node < right everywhere,
+this emits keys smallest-to-largest. Every query below rides on this one traversal.
+
+</Step>
+
+<Step>
+
+### kth smallest: count as you go
+
+Do the in-order walk but keep a counter. Each time you *visit* a node (after its left subtree),
+increment. When the counter hits `k`, that node is the answer — return immediately and skip
+the rest of the tree.
+
+</Step>
+
+<Step>
+
+### Range query: prune with the bounds
+
+At a node, if `node.key > lo` there may be answers on the left, so recurse left. Report the
+node if `lo <= node.key <= hi`. If `node.key < hi`, recurse right. The comparisons cut off
+subtrees that can't contain in-range keys.
+
+</Step>
+
+<Step>
+
+### Pair sum: two pointers on the sorted order
+
+Flatten in order (or use forward/backward in-order iterators). Point `i` at the smallest and
+`j` at the largest. If the sum is too small advance `i`; too large, retreat `j`; equal, done.
+
+</Step>
+
+</Steps>
+
+Counting to the 3rd smallest in this tree visits `1, 3, 4` and stops — it never touches the
+right subtree:
+
+```text
+          8
+        /   \
+       3      10
+      / \       \
+     1   6       14
+        / \
+       4   7
+
+in-order: 1  3  4  6  7  8  10  14
+             └────┘
+          3rd smallest = 4
+```
+
+## The code
+
+The `kth smallest` query, shown iteratively with an explicit stack.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def kth_smallest(root, k):
+    stack = []
+    node = root
+    while stack or node is not None:
+        while node is not None:      # dive to the leftmost
+            stack.append(node)
+            node = node.left
+        node = stack.pop()           # visit in ascending order
+        k -= 1
+        if k == 0:
+            return node.key
+        node = node.right
+    return None  # k larger than tree size
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function kthSmallest(root: Node | null, k: number): number | null {
+  const stack: Node[] = [];
+  let node = root;
+  while (stack.length > 0 || node !== null) {
+    while (node !== null) {          // dive to the leftmost
+      stack.push(node);
+      node = node.left;
+    }
+    node = stack.pop()!;             // visit in ascending order
+    k -= 1;
+    if (k === 0) return node.key;
+    node = node.right;
+  }
+  return null; // k larger than tree size
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+Integer kthSmallest(Node root, int k) {
+    Deque<Node> stack = new ArrayDeque<>();
+    Node node = root;
+    while (!stack.isEmpty() || node != null) {
+        while (node != null) {       // dive to the leftmost
+            stack.push(node);
+            node = node.left;
+        }
+        node = stack.pop();          // visit in ascending order
+        if (--k == 0) return node.key;
+        node = node.right;
+    }
+    return null; // k larger than tree size
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int kth_smallest(struct Node *root, int k, int *found) {
+    struct Node *stack[256];
+    int top = 0;
+    struct Node *node = root;
+    while (top > 0 || node != NULL) {
+        while (node != NULL) {       /* dive to the leftmost */
+            stack[top++] = node;
+            node = node->left;
+        }
+        node = stack[--top];         /* visit in ascending order */
+        if (--k == 0) { *found = 1; return node->key; }
+        node = node->right;
+    }
+    *found = 0;
+    return -1; /* k larger than tree size */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <stack>
+#include <optional>
+
+std::optional<int> kthSmallest(Node *root, int k) {
+    std::stack<Node *> stk;
+    Node *node = root;
+    while (!stk.empty() || node != nullptr) {
+        while (node != nullptr) {    // dive to the leftmost
+            stk.push(node);
+            node = node->left;
+        }
+        node = stk.top();            // visit in ascending order
+        stk.pop();
+        if (--k == 0) return node->key;
+        node = node->right;
+    }
+    return std::nullopt; // k larger than tree size
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Query          | Time                | Space          |
+| -------------- | ------------------- | -------------- |
+| kth smallest   | O(h + k)            | O(h)           |
+| Range [lo, hi] | O(h + m), m in range | O(h)          |
+| Pair with sum  | O(n)                | O(h) or O(n)   |
+| Full in-order  | O(n)                | O(h)           |
+
+`h` is the tree height. The kth-smallest walk touches only the first `k` visited nodes plus
+the O(h) descent to reach them; the range query pays only for the descent plus the `m` keys it
+actually reports.
+
+## When to use it
+
+<Callout type="idea" title="The tree is a live sorted index">
+When your data changes and you keep asking ordered questions — rank, range, successor, nearest
+— a BST answers them without a re-sort, which a static sorted array can't do after inserts. If
+you query kth-smallest *constantly*, augment each node with a `size` field (count of nodes in
+its subtree); then kth-smallest drops to pure O(h) by comparing `k` against left-subtree sizes
+instead of counting one node at a time.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How do you find the in-order successor of a node without a full traversal?">
+
+Two cases. If the node has a right child, the successor is the *smallest* key in that right
+subtree: go right once, then follow left pointers to the bottom — O(h). If it has no right
+child, the successor is the lowest ancestor for which the node lies in the left subtree: walk
+from the root, and each time you go left, remember that node as a candidate. Either way it's
+O(h), no full scan needed.
+
+</Accordion>
+
+<Accordion title="For the pair-sum query, why not use a hash set like you would on an array?">
+
+You can — one in-order pass, and for each key check whether `target - key` was already seen.
+That's O(n) time and O(n) space. The two-pointer version trades that hash set for two
+iterators over the sorted order, keeping it O(n) time but avoiding the extra set when you
+already have ordered access. Both are valid; the two-pointer form leans on the BST's sortedness
+directly.
+
+</Accordion>
+
+<Accordion title="A range query on [lo, hi] returns m keys. Why is it O(h + m), not O(n)?">
+
+The bound checks prune. When `node.key <= lo` you never enter the left subtree; when
+`node.key >= hi` you never enter the right. So the only nodes you touch are the `m` in-range
+keys plus the O(h) boundary nodes on the two paths to `lo` and `hi`. Subtrees entirely below
+`lo` or above `hi` are skipped whole, so you never pay for the full `n`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Every ordered query rides on the fact that **in-order traversal yields sorted keys**.
+- Steer the walk with the BST ordering to **prune**: stop early for kth-smallest, skip
+  out-of-range subtrees for range queries.
+- Augmenting nodes with subtree **size** turns rank/kth-smallest queries into pure O(h).
+
+<Cards>
+  <Card title="BST Operations" href="/docs/dsa/17-binary-search-tree/02-bst-operations" description="Search, insert, and delete on the same structure." />
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="In-order, pre-order, and post-order in depth." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="The technique behind the pair-sum query." />
+</Cards>

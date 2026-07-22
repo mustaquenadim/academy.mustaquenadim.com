@@ -1,0 +1,336 @@
+---
+title: "Building & Validating BSTs"
+description: "Turning a sorted array into a balanced BST, or proving a tree really obeys the BST rule, are two sides of one idea."
+extractedReferences:
+  - href: /docs/dsa/17-binary-search-tree/01-bst-intro
+  - href: /docs/dsa/17-binary-search-tree/03-bst-traversal
+  - href: /docs/dsa/16-binary-tree/06-construction
+---
+
+## The problem
+
+You have a sorted list of a million usernames and you want a BST for fast lookups. If you
+insert them one by one in order, you get the disaster from the intro: a right-leaning chain of
+height a million, and every search is O(n). The very sortedness that should help you has ruined
+the tree.
+
+Later, a teammate hands you a tree they built and swears it's a valid BST. Before you trust it
+for binary-search-style lookups, you want to *prove* it — no node smaller than something in its
+left subtree, no node larger than something in its right subtree, anywhere. Building a good tree
+and checking a tree turn out to be mirror images of the same ordering property.
+
+## A first attempt
+
+**Building:** insert the sorted keys one at a time. Simple, and utterly degenerate — height n,
+O(n²) to build, O(n) per later search.
+
+**Validating:** at each node, check `node.left.key < node.key < node.right.key` and recurse.
+This feels right but is **wrong**. It only compares a node to its direct children, missing
+violations deeper down. This tree passes the local check yet is not a BST — `6` sits in the
+left subtree of `5`:
+
+```text
+        5
+       / \
+      3   8
+       \
+        6      <- 6 > 5, but it's in 5's left subtree. Invalid!
+```
+
+Checking `3 < 5` and `6 > 3` both pass, so the naive test says "valid." You need a check that
+carries the constraints down from *every* ancestor, not just the parent.
+
+## The insight
+
+Both problems are solved by remembering that **in-order = sorted** for a BST.
+
+- **To build balanced:** the middle element of a sorted array must be the root — that splits
+  the remaining keys evenly into left (smaller) and right (larger) halves. Recurse on each
+  half. Picking the median every time guarantees height O(log n).
+- **To validate:** every node must fall inside an `(low, high)` range that tightens as you
+  descend. Going left lowers the ceiling to the parent's key; going right raises the floor.
+  A node outside its inherited range breaks the BST rule — this catches the deep `6` the naive
+  check missed. Equivalently, an in-order traversal must come out **strictly increasing**.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build: pick the median as root
+
+Take the sorted array. The middle element becomes the root — everything left of it is smaller,
+everything right is larger. This balances the two subtrees by construction.
+
+</Step>
+
+<Step>
+
+### Build: recurse on halves
+
+Recurse on the left half to build the left subtree and the right half for the right subtree.
+Each recursion halves the range, so the tree's height is O(log n) and building is O(n).
+
+</Step>
+
+<Step>
+
+### Validate: carry a range down
+
+Validate with an allowed open interval `(low, high)`, starting `(-∞, +∞)`. A node's key must
+lie strictly inside it, or the tree is invalid.
+
+</Step>
+
+<Step>
+
+### Validate: tighten on the way down
+
+Recurse left with `(low, node.key)` — everything left must be below this node. Recurse right
+with `(node.key, high)`. The bounds accumulate every ancestor's constraint, so a value in the
+wrong subtree is caught no matter how deep.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Build a balanced BST from a sorted array, and validate an arbitrary tree with the range method.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+
+def build_balanced(keys, lo=0, hi=None):
+    if hi is None:
+        hi = len(keys) - 1
+    if lo > hi:
+        return None
+    mid = (lo + hi) // 2
+    node = Node(keys[mid])
+    node.left = build_balanced(keys, lo, mid - 1)
+    node.right = build_balanced(keys, mid + 1, hi)
+    return node
+
+def is_valid_bst(node, low=float("-inf"), high=float("inf")):
+    if node is None:
+        return True
+    if not (low < node.key < high):
+        return False
+    return (is_valid_bst(node.left, low, node.key) and
+            is_valid_bst(node.right, node.key, high))
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Node {
+  key: number;
+  left: Node | null = null;
+  right: Node | null = null;
+  constructor(key: number) {
+    this.key = key;
+  }
+}
+
+function buildBalanced(keys: number[], lo = 0, hi = keys.length - 1): Node | null {
+  if (lo > hi) return null;
+  const mid = (lo + hi) >> 1;
+  const node = new Node(keys[mid]);
+  node.left = buildBalanced(keys, lo, mid - 1);
+  node.right = buildBalanced(keys, mid + 1, hi);
+  return node;
+}
+
+function isValidBST(
+  node: Node | null,
+  low = -Infinity,
+  high = Infinity,
+): boolean {
+  if (node === null) return true;
+  if (!(low < node.key && node.key < high)) return false;
+  return (
+    isValidBST(node.left, low, node.key) &&
+    isValidBST(node.right, node.key, high)
+  );
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int key;
+    Node left, right;
+    Node(int key) { this.key = key; }
+}
+
+Node buildBalanced(int[] keys, int lo, int hi) {
+    if (lo > hi) return null;
+    int mid = (lo + hi) >>> 1;
+    Node node = new Node(keys[mid]);
+    node.left = buildBalanced(keys, lo, mid - 1);
+    node.right = buildBalanced(keys, mid + 1, hi);
+    return node;
+}
+
+boolean isValidBST(Node node, long low, long high) {
+    if (node == null) return true;
+    if (node.key <= low || node.key >= high) return false;
+    return isValidBST(node.left, low, node.key)
+        && isValidBST(node.right, node.key, high);
+}
+// call: isValidBST(root, Long.MIN_VALUE, Long.MAX_VALUE)
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+#include <limits.h>
+
+struct Node {
+    int key;
+    struct Node *left, *right;
+};
+
+struct Node *build_balanced(int *keys, int lo, int hi) {
+    if (lo > hi) return NULL;
+    int mid = lo + (hi - lo) / 2;
+    struct Node *node = malloc(sizeof(struct Node));
+    node->key = keys[mid];
+    node->left = build_balanced(keys, lo, mid - 1);
+    node->right = build_balanced(keys, mid + 1, hi);
+    return node;
+}
+
+int is_valid_bst(struct Node *node, long low, long high) {
+    if (node == NULL) return 1;
+    if (node->key <= low || node->key >= high) return 0;
+    return is_valid_bst(node->left, low, node->key)
+        && is_valid_bst(node->right, node->key, high);
+}
+/* call: is_valid_bst(root, LONG_MIN, LONG_MAX) */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <climits>
+
+struct Node {
+    int key;
+    Node *left = nullptr, *right = nullptr;
+    Node(int k) : key(k) {}
+};
+
+Node *buildBalanced(int *keys, int lo, int hi) {
+    if (lo > hi) return nullptr;
+    int mid = lo + (hi - lo) / 2;
+    Node *node = new Node(keys[mid]);
+    node->left = buildBalanced(keys, lo, mid - 1);
+    node->right = buildBalanced(keys, mid + 1, hi);
+    return node;
+}
+
+bool isValidBST(Node *node, long low, long high) {
+    if (node == nullptr) return true;
+    if (node->key <= low || node->key >= high) return false;
+    return isValidBST(node->left, low, node->key)
+        && isValidBST(node->right, node->key, high);
+}
+// call: isValidBST(root, LONG_MIN, LONG_MAX)
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Task                       | Time     | Space              |
+| -------------------------- | -------- | ------------------ |
+| Build balanced from sorted | O(n)     | O(log n) recursion |
+| Validate (range method)    | O(n)     | O(h) recursion     |
+| Naive one-by-one insert    | O(n²)    | O(n) height        |
+
+Both good algorithms touch each node once, so they're linear. The balanced build's recursion
+depth is O(log n) because it always splits at the median.
+
+## When to use it
+
+<Callout type="warn" title="Watch the boundary and the overflow">
+Two traps in validation. First, use **strict** inequalities (`<`, not `<=`) so duplicates or a
+child equal to an ancestor are rejected — unless your BST explicitly allows duplicates. Second,
+if keys can be `INT_MIN`/`INT_MAX`, seeding the range with those exact values causes false
+failures; widen the bounds to `long` (as above) or track predecessor via in-order instead.
+Building the median-rooted tree only stays balanced if the input is truly sorted — sort first
+if you're not sure.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does taking the middle element as root guarantee a balanced tree?">
+
+The middle element splits the sorted array into a left half and a right half whose sizes differ
+by at most one. Those halves become the left and right subtrees, so their heights differ by at
+most one at every level — the definition of height-balanced. Recursing with the median each
+time keeps the depth at O(log n). Choosing any non-median pivot lets one side grow larger and
+the balance guarantee is lost.
+
+</Accordion>
+
+<Accordion title="Give a tree that passes the 'check only direct children' test but is not a valid BST.">
+
+The one from this lesson: root `5`, left child `3`, and `3` has a right child `6`. Locally
+`3 < 5` and `6 > 3` both hold, so the naive parent-child check passes. But `6` lives in `5`'s
+left subtree while `6 > 5`, violating the BST rule. The range method catches it: `6` is
+validated against `(3, 5)` and `6 >= 5` fails.
+
+</Accordion>
+
+<Accordion title="How can an in-order traversal validate a BST, and what's the catch?">
+
+In-order traversal of a valid BST is strictly increasing, so walk in order and check that each
+key is greater than the previous one — a single O(n) pass with one `prev` variable. The catch
+is the equality boundary: use strict `>` (not `>=`) to reject duplicates, and keep `prev` as a
+nullable value so the first node has nothing to compare against. It's an equally valid
+alternative to the range method.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Build a **balanced** BST by making the sorted array's **median the root** and recursing on
+  each half — O(n) time, O(log n) height.
+- Validate with a **tightening `(low, high)` range** carried down from every ancestor, not just
+  a parent-child check — or equivalently, confirm the in-order walk is strictly increasing.
+- Watch strict inequalities and integer-bound overflow; naive sorted insertion gives an O(n²)
+  degenerate tree.
+
+<Cards>
+  <Card title="Binary Search Trees" href="/docs/dsa/17-binary-search-tree/01-bst-intro" description="The invariant these algorithms build and check." />
+  <Card title="Querying a BST" href="/docs/dsa/17-binary-search-tree/03-bst-traversal" description="In-order queries once the tree is built." />
+  <Card title="Tree Construction" href="/docs/dsa/16-binary-tree/06-construction" description="Building binary trees from traversal data." />
+</Cards>

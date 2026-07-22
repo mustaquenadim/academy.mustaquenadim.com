@@ -1,0 +1,315 @@
+---
+title: "Asymptotic Analysis"
+description: "Stopwatches lie — they depend on your laptop, your language, the weather. We need a way to compare algorithms that ignores all of that."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/02-order-of-growth
+  - href: /docs/dsa/01-fundamentals/04-big-o
+  - href: /docs/dsa/01-fundamentals/05-time-complexity
+---
+
+## The problem
+
+Your teammate says their sorting function is "faster" than yours. They ran it on their
+M3 laptop and got 12 milliseconds; you ran yours on a five-year-old cloud box and got 30.
+Case closed?
+
+Not even close. Their machine is newer, they used C while you used Python, and their input
+happened to be half-sorted already. Change any one of those and the winner flips. A raw
+timing measures the *machine and the moment*, not the *algorithm*. To honestly compare two
+algorithms you need a ruler that cancels out the hardware, the language, and the luck.
+
+## A first attempt
+
+The naive comparison is to count *exact* operations. Let's tally every step for a function
+that sums a list.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def total(data):
+    s = 0                       # 1 assignment
+    for x in data:              # n iterations
+        s += x                  # 1 add + 1 assign, each iteration
+    return s                    # 1 return
+# exact count: 1 + 2n + 1 = 2n + 2
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function total(data: number[]): number {
+  let s = 0;                    // 1 assignment
+  for (const x of data) {       // n iterations
+    s += x;                     // 1 add + 1 assign
+  }
+  return s;                     // 1 return
+} // exact count: 2n + 2
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int total(int[] data) {
+    int s = 0;                  // 1 assignment
+    for (int x : data) {        // n iterations
+        s += x;                 // 1 add + 1 assign
+    }
+    return s;                   // 1 return
+} // exact count: 2n + 2
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int total(const int *data, int n) {
+    int s = 0;                  /* 1 assignment */
+    for (int i = 0; i < n; i++) /* n iterations */
+        s += data[i];           /* 1 add + 1 assign */
+    return s;                   /* 1 return */
+} /* exact count: 2n + 2 */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int total(const std::vector<int>& data) {
+    int s = 0;                  // 1 assignment
+    for (int x : data)          // n iterations
+        s += x;                 // 1 add + 1 assign
+    return s;                   // 1 return
+} // exact count: 2n + 2
+```
+
+</Tab>
+
+</Tabs>
+
+But `2n + 2` is already a fiction. Is `s += x` really *one* step, or two, or five once the
+CPU decodes it? On a different machine the constant changes. Counting exact operations just
+trades one hardware-dependent number for another. We're still not comparing algorithms.
+
+## The insight
+
+Here's the move that makes comparison honest: **ignore constants and lower-order terms,
+and only ask how the count behaves as `n → ∞`.** That's *asymptotic analysis* — the study
+of behavior in the limit.
+
+`2n + 2`, `100n`, and `n + 7` all flatten to the same thing: they grow *linearly*. The
+constants came from the machine and the language, so we throw them away. What's left —
+"linear" — is a property of the algorithm alone. Now the comparison is fair.
+
+<Callout type="idea" title="Asymptotic means 'in the limit'">
+We don't care about `n = 10`, where constants dominate and everything looks similar. We
+care about `n → ∞`, where the growth *shape* is all that survives. That's the only regime
+where one algorithm is genuinely, machine-independently better than another.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Write the exact step count
+
+Tally operations as a function of `n`, e.g. `T(n) = 2n + 2` or `T(n) = 3n² + 5n + 8`.
+
+</Step>
+
+<Step>
+
+### Drop the lower-order terms
+
+Keep only the fastest-growing term. `3n² + 5n + 8` becomes `3n²`, because for large `n` the
+`n²` term dwarfs the rest.
+
+</Step>
+
+<Step>
+
+### Drop the constant factor
+
+`3n²` becomes `n²`. The constant `3` reflects your CPU and language, not the algorithm's
+nature.
+
+</Step>
+
+<Step>
+
+### State the bound
+
+What remains is the asymptotic class: `O(n²)`. Two algorithms in the same class scale the
+same way, whatever machine you run them on.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Watch two functions with wildly different constants collapse to the *same* asymptotic
+class — proof the constants were never the point.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def a(data):                    # T(n) = n
+    for x in data:
+        step()
+
+def b(data):                    # T(n) = 5n + 20
+    for _ in range(20):
+        setup()
+    for x in data:
+        step(); step(); step(); step(); step()
+
+# Both are O(n): drop the 20, drop the 5.
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function a(data: number[]) {              // T(n) = n
+  for (const x of data) step();
+}
+
+function b(data: number[]) {              // T(n) = 5n + 20
+  for (let i = 0; i < 20; i++) setup();
+  for (const x of data) { step(); step(); step(); step(); step(); }
+}
+// Both are O(n): drop the 20, drop the 5.
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void a(int[] data) {                      // T(n) = n
+    for (int x : data) step();
+}
+
+void b(int[] data) {                      // T(n) = 5n + 20
+    for (int i = 0; i < 20; i++) setup();
+    for (int x : data) { step(); step(); step(); step(); step(); }
+}
+// Both are O(n): drop the 20, drop the 5.
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void a(const int *data, int n) {          /* T(n) = n */
+    for (int i = 0; i < n; i++) step();
+}
+
+void b(const int *data, int n) {          /* T(n) = 5n + 20 */
+    for (int i = 0; i < 20; i++) setup();
+    for (int i = 0; i < n; i++) { step(); step(); step(); step(); step(); }
+}
+/* Both are O(n): drop the 20, drop the 5. */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+void a(const std::vector<int>& data) {    // T(n) = n
+    for (int x : data) step();
+}
+
+void b(const std::vector<int>& data) {    // T(n) = 5n + 20
+    for (int i = 0; i < 20; i++) setup();
+    for (int x : data) { step(); step(); step(); step(); step(); }
+}
+// Both are O(n): drop the 20, drop the 5.
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+The three asymptotic bounds you'll cite constantly:
+
+| Notation | Name        | Bound  | Reads as                        |
+| -------- | ----------- | ------ | ------------------------------- |
+| `O(f)`   | Big-O       | upper  | "grows *no faster* than `f`"    |
+| `Ω(f)`   | Omega       | lower  | "grows *at least* as fast as `f`" |
+| `Θ(f)`   | Theta       | tight  | "grows *exactly* like `f`"      |
+
+Our `sum` is `Θ(n)`: it's `O(n)` (never worse than linear) and `Ω(n)` (never better,
+since it must touch every element), so the bound is tight.
+
+## When to use it
+
+<Callout type="info" title="Where the model leaks">
+Asymptotic analysis is the right tool for *comparing how algorithms scale* — but the
+constants it discards are real. A cache-friendly `O(n log n)` routine can beat a
+pointer-chasing `O(n)` one on realistic data. Use asymptotics to rule out the wrong
+algorithm; use measurement to tune the right one.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Are O(n), O(2n), and O(n/2) different complexities?">
+
+No — they're all `O(n)`. Big-O deliberately ignores constant factors, so `2n`, `n/2`, and
+`n` collapse to the same class. The constant reflects your hardware and language, which is
+exactly what asymptotic analysis is designed to cancel out.
+
+</Accordion>
+
+<Accordion title="If an algorithm is Θ(n log n), what do you know about its Big-O and Omega?">
+
+Both. `Θ(n log n)` means the algorithm is *simultaneously* `O(n log n)` (upper bound) and
+`Ω(n log n)` (lower bound) — the two bounds match, so the growth is pinned exactly. Θ is
+the strongest of the three statements; it's only available when best and worst case grow
+at the same rate.
+
+</Accordion>
+
+<Accordion title="Why can't we just compare two algorithms by timing them once each?">
+
+Because a timing entangles the algorithm with the machine, the language, the compiler, the
+input, and background load. Change any one and the "winner" can flip. Asymptotic analysis
+strips all of that away and compares the one thing intrinsic to the algorithm: how its work
+grows with `n`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Asymptotic analysis compares algorithms by their **growth as `n → ∞`**, discarding
+  constants and lower-order terms so the machine and language drop out.
+- Method: exact count → drop lower-order terms → drop the constant factor → state the
+  bound.
+- **O** is the upper bound, **Ω** the lower bound, **Θ** a tight bound when the two meet.
+
+<Cards>
+  <Card title="Order of Growth" href="/docs/dsa/01-fundamentals/02-order-of-growth" description="The intuition that asymptotics formalizes." />
+  <Card title="Big-O, Theta & Omega" href="/docs/dsa/01-fundamentals/04-big-o" description="A deeper look at the three bounds." />
+  <Card title="Analyzing Time Complexity" href="/docs/dsa/01-fundamentals/05-time-complexity" description="Turn real code into a Big-O, step by step." />
+</Cards>

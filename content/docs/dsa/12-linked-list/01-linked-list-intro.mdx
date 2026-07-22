@@ -1,0 +1,319 @@
+---
+title: "Linked Lists"
+description: "Inserting at the front of a giant array means shifting everything — what if each item just pointed to the next instead?"
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/02-doubly-and-circular
+  - href: /docs/dsa/12-linked-list/03-reversal-patterns
+  - href: /docs/dsa/13-stack/01-stack-intro
+---
+
+## The problem
+
+You are building a music player. Every time the user drops a new song at the top of the
+queue, your app freezes for a heartbeat. The queue is an array, and to put something at
+index 0 you have to slide every existing song down one slot. With ten songs nobody
+notices. With fifty thousand, the whole UI stutters on every insert.
+
+The frustrating part is that the work is pure bookkeeping. The songs did not change — you
+just wanted one at the front. You are paying to move data that had no reason to move.
+
+## A first attempt
+
+The array-backed queue looks innocent:
+
+```python
+queue = ["b", "c", "d"]
+queue.insert(0, "a")   # every element shifts right
+```
+
+`insert(0, x)` is **O(n)**: the runtime physically copies each of the `n` existing elements
+one address to the right to open a gap. Do that for every song the user adds and a playlist
+build becomes **O(n²)**. Arrays are wonderful for random access by index, but their strength
+— contiguous memory — is exactly what makes front insertion expensive.
+
+## The insight
+
+What if each item did not need to sit next to its neighbor at all? What if a song only had
+to remember *who comes after me*? Then inserting at the front costs nothing but rewiring one
+arrow: the new node points at the old first song, and you call the new node the head.
+Nothing moves.
+
+That is a **linked list**: a chain of nodes, each holding a value and a reference (a
+*pointer*) to the next node. The list itself only remembers where the chain starts.
+
+```text
+head
+ │
+ ▼
+[a|·]──▶[b|·]──▶[c|·]──▶ null
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### A node is value plus next
+
+Each node stores its data and a single pointer to the following node. The last node points
+to nothing (`null` / `None` / `nullptr`), which marks the end of the chain.
+
+</Step>
+
+<Step>
+
+### The list holds only the head
+
+You never keep an index. You keep one reference — the head. Everything else is reached by
+following `next` arrows from there.
+
+</Step>
+
+<Step>
+
+### Prepending rewires one arrow
+
+To add at the front: make a new node, point its `next` at the current head, then move the
+head to the new node. Two assignments, no shifting. **O(1)**.
+
+</Step>
+
+<Step>
+
+### Traversal walks the chain
+
+To find or print, start at the head and hop along `next` until you hit `null`. Reaching the
+k-th element is **O(k)** — there is no random access, which is the price you pay for cheap
+inserts.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value, next=None):
+        self.value = value
+        self.next = next
+
+class LinkedList:
+    def __init__(self):
+        self.head = None
+
+    def prepend(self, value):        # O(1)
+        self.head = Node(value, self.head)
+
+    def find(self, value):           # O(n)
+        node = self.head
+        while node:
+            if node.value == value:
+                return node
+            node = node.next
+        return None
+
+    def to_list(self):
+        out, node = [], self.head
+        while node:
+            out.append(node.value)
+            node = node.next
+        return out
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class ListNode<T> {
+  value: T;
+  next: ListNode<T> | null;
+  constructor(value: T, next: ListNode<T> | null = null) {
+    this.value = value;
+    this.next = next;
+  }
+}
+
+class LinkedList<T> {
+  head: ListNode<T> | null = null;
+
+  prepend(value: T): void {          // O(1)
+    this.head = new ListNode(value, this.head);
+  }
+
+  find(value: T): ListNode<T> | null { // O(n)
+    let node = this.head;
+    while (node) {
+      if (node.value === value) return node;
+      node = node.next;
+    }
+    return null;
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int value;
+    Node next;
+    Node(int value, Node next) { this.value = value; this.next = next; }
+}
+
+class LinkedList {
+    Node head;
+
+    void prepend(int value) {        // O(1)
+        head = new Node(value, head);
+    }
+
+    Node find(int value) {           // O(n)
+        Node node = head;
+        while (node != null) {
+            if (node.value == value) return node;
+            node = node.next;
+        }
+        return null;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+Node *make_node(int value, Node *next) {
+    Node *n = malloc(sizeof(Node));
+    n->value = value;
+    n->next = next;
+    return n;
+}
+
+/* Prepend: O(1). Returns the new head. */
+Node *prepend(Node *head, int value) {
+    return make_node(value, head);
+}
+
+/* Find: O(n). */
+Node *find(Node *head, int value) {
+    for (Node *n = head; n != NULL; n = n->next)
+        if (n->value == value) return n;
+    return NULL;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct Node {
+    int value;
+    Node *next;
+    Node(int v, Node *n = nullptr) : value(v), next(n) {}
+};
+
+class LinkedList {
+public:
+    Node *head = nullptr;
+
+    void prepend(int value) {        // O(1)
+        head = new Node(value, head);
+    }
+
+    Node *find(int value) const {    // O(n)
+        for (Node *n = head; n != nullptr; n = n->next)
+            if (n->value == value) return n;
+        return nullptr;
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation            | Time  | Space |
+| -------------------- | ----- | ----- |
+| Prepend (push front) | O(1)  | O(1)  |
+| Access k-th element  | O(k)  | O(1)  |
+| Search by value      | O(n)  | O(1)  |
+| Insert after a node  | O(1)  | O(1)  |
+| Delete a given node  | O(1)* | O(1)  |
+
+\*Given a pointer to the node's predecessor, or in a doubly linked list. In a singly linked
+list you first spend O(n) to find the predecessor.
+
+## When to use it
+
+<Callout type="idea" title="Lists trade random access for cheap edits">
+Reach for a linked list when you insert and delete near known positions far more than you
+index into the middle — queues, adjacency lists, LRU chains, undo stacks. Avoid it when you
+need `arr[i]` in constant time or you care about cache locality: nodes scattered across the
+heap are far slower to scan than a contiguous array, even at the same Big-O.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is finding the middle of a singly linked list not O(1)?">
+
+Because the list only knows where the chain starts. There is no index and no length stored
+by default, so the only way to reach position `n/2` is to walk `n/2` arrows from the head —
+that is O(n). The next lessons show a two-pointer trick that finds the middle in one pass
+without ever computing the length.
+
+</Accordion>
+
+<Accordion title="You have a pointer to a node in the middle of a list. How do you delete it in O(1) without the head?">
+
+You cannot truly remove *that* node without its predecessor, but you can fake it: copy the
+next node's value into the current node, then splice out the next node by setting
+`current.next = current.next.next`. The node object is gone in effect. This fails only if
+the target is the last node, since there is nothing to copy forward.
+
+</Accordion>
+
+<Accordion title="What breaks if you forget to set the last node's next to null?">
+
+The chain never ends. Traversal loops forever (or reads garbage memory in C/C++), because
+your `while (node)` condition never becomes false. Always initialise a new node's `next` to
+null unless you are explicitly linking it to something.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A linked list is nodes chained by `next` pointers; the list remembers only the head.
+- Front insertion is O(1) because you rewire one arrow instead of shifting an array.
+- The cost is O(k) access — no indexing — and poor cache locality versus contiguous arrays.
+
+<Cards>
+  <Card title="Doubly & Circular Lists" href="/docs/dsa/12-linked-list/02-doubly-and-circular" description="Add a backward pointer for O(1) deletes, then join the ends into a ring." />
+  <Card title="Reversal Patterns" href="/docs/dsa/12-linked-list/03-reversal-patterns" description="The pointer-rewiring rite of passage every list problem builds on." />
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="A linked list restricted to push and pop at one end." />
+</Cards>

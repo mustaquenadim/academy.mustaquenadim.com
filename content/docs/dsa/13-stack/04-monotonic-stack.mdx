@@ -1,0 +1,287 @@
+---
+title: "The Monotonic Stack"
+description: "For each day, how many until it gets warmer? A stack that only grows one direction answers this in a single pass."
+extractedReferences:
+  - href: /docs/dsa/13-stack/01-stack-intro
+  - href: /docs/dsa/13-stack/03-stack-design
+  - href: /docs/dsa/14-queue/01-queue-intro
+---
+
+## The problem
+
+You have a week of temperatures: `[73, 74, 75, 71, 69, 72, 76, 73]`. For each day you want to know: **how many days until a warmer one?** Day 0 is `73`, and the next day `74` is warmer, so the answer is `1`. Day 3 is `71`, and you have to wait until `72` on day 5, so the answer is `2`. If it never gets warmer, the answer is `0`.
+
+This "next greater element" shape is everywhere: the next taller building that blocks your view, the next higher stock price, the span of a price rally. The relationship always reaches *forward* to the first element bigger than the current one.
+
+## A first attempt
+
+The direct approach: for each day, walk forward until you find a warmer day. Two nested loops.
+
+```python
+def days_warmer_brute(temps):
+    n = len(temps)
+    answer = [0] * n
+    for i in range(n):
+        for j in range(i + 1, n):
+            if temps[j] > temps[i]:
+                answer[i] = j - i
+                break
+    return answer
+```
+
+This is correct but O(n²). On a long flat-then-rising sequence, nearly every element scans almost the whole tail. For thousands of data points — or a live feed — that quadratic blow-up is exactly what kills you. Each element is examined over and over.
+
+## The insight
+
+Here is the waste: when you are scanning forward for day 3's answer and you pass day 4, you *relearn* things about day 4 that you could have remembered. Flip the perspective. Instead of each day searching forward for its warmer day, let each new day resolve the *earlier* days that were waiting for it.
+
+Keep a stack of **indices of days still waiting for a warmer day**, and keep it so their temperatures are **decreasing from bottom to top** — a **monotonic stack**. When a new day arrives warmer than the temperature at the top of the stack, that top day just found its answer: pop it and record the distance. Repeat until the new day is no longer warmer than the top, then push the new day. Each index is pushed once and popped once — O(n) total.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Stack of waiting indices
+
+The stack holds indices whose answer is not yet known, kept so their temperatures decrease from bottom to top. An empty stack means nobody is waiting.
+
+</Step>
+
+<Step>
+
+### A warmer day resolves the waiters
+
+For each new index `i`, while the stack is non-empty and `temps[i]` is greater than the temperature at the top index, pop that top index `j` and set `answer[j] = i - j`. The warmer day resolves everyone it beats.
+
+```text
+temps: [73, 74, 75, 71, 69, 72, 76, 73]
+
+i=0: stack empty          push 0        stack(idx)=[0]
+i=1: 74>73 pop0 ans[0]=1  push 1        stack=[1]
+i=2: 75>74 pop1 ans[1]=1  push 2        stack=[2]
+i=3: 71<75                push 3        stack=[2,3]
+i=4: 69<71                push 4        stack=[2,3,4]
+i=5: 72>69 pop4 ans[4]=1
+     72>71 pop3 ans[3]=2  push 5        stack=[2,5]
+i=6: 76>72 pop5 ans[5]=1
+     76>75 pop2 ans[2]=4  push 6        stack=[6]
+i=7: 73<76                push 7        stack=[6,7]
+```
+
+</Step>
+
+<Step>
+
+### Push the current day
+
+Once the new day is no longer warmer than the top (or the stack is empty), push its index. It now waits for its own warmer day.
+
+</Step>
+
+<Step>
+
+### Leftovers stay zero
+
+Any index still on the stack at the end never found a warmer day, so its answer stays `0` — which is how we initialized the array.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def days_until_warmer(temps):
+    n = len(temps)
+    answer = [0] * n
+    stack = []  # indices with decreasing temperatures
+    for i in range(n):
+        while stack and temps[i] > temps[stack[-1]]:
+            j = stack.pop()
+            answer[j] = i - j
+        stack.append(i)
+    return answer
+
+
+print(days_until_warmer([73, 74, 75, 71, 69, 72, 76, 73]))
+# [1, 1, 4, 2, 1, 1, 0, 0]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function daysUntilWarmer(temps: number[]): number[] {
+  const n = temps.length;
+  const answer = new Array<number>(n).fill(0);
+  const stack: number[] = []; // indices, decreasing temperatures
+  for (let i = 0; i < n; i++) {
+    while (stack.length > 0 && temps[i] > temps[stack[stack.length - 1]]) {
+      const j = stack.pop() as number;
+      answer[j] = i - j;
+    }
+    stack.push(i);
+  }
+  return answer;
+}
+
+console.log(daysUntilWarmer([73, 74, 75, 71, 69, 72, 76, 73]));
+// [1, 1, 4, 2, 1, 1, 0, 0]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Deque;
+
+public class MonotonicStack {
+    public static int[] daysUntilWarmer(int[] temps) {
+        int n = temps.length;
+        int[] answer = new int[n]; // defaults to 0
+        Deque<Integer> stack = new ArrayDeque<>(); // indices, decreasing temps
+        for (int i = 0; i < n; i++) {
+            while (!stack.isEmpty() && temps[i] > temps[stack.peek()]) {
+                int j = stack.pop();
+                answer[j] = i - j;
+            }
+            stack.push(i);
+        }
+        return answer;
+    }
+
+    public static void main(String[] args) {
+        int[] temps = {73, 74, 75, 71, 69, 72, 76, 73};
+        System.out.println(Arrays.toString(daysUntilWarmer(temps)));
+        // [1, 1, 4, 2, 1, 1, 0, 0]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+void days_until_warmer(const int *temps, int n, int *answer) {
+    int stack[n]; // indices with decreasing temperatures
+    int top = -1;
+    for (int i = 0; i < n; i++) {
+        answer[i] = 0;
+        while (top >= 0 && temps[i] > temps[stack[top]]) {
+            int j = stack[top--];
+            answer[j] = i - j;
+        }
+        stack[++top] = i;
+    }
+}
+
+int main(void) {
+    int temps[] = {73, 74, 75, 71, 69, 72, 76, 73};
+    int n = sizeof(temps) / sizeof(temps[0]);
+    int answer[n];
+    days_until_warmer(temps, n, answer);
+    for (int i = 0; i < n; i++) printf("%d ", answer[i]);
+    printf("\n"); // 1 1 4 2 1 1 0 0
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <stack>
+
+std::vector<int> daysUntilWarmer(const std::vector<int> &temps) {
+    int n = temps.size();
+    std::vector<int> answer(n, 0);
+    std::stack<int> stack; // indices with decreasing temperatures
+    for (int i = 0; i < n; i++) {
+        while (!stack.empty() && temps[i] > temps[stack.top()]) {
+            int j = stack.top();
+            stack.pop();
+            answer[j] = i - j;
+        }
+        stack.push(i);
+    }
+    return answer;
+}
+
+int main() {
+    std::vector<int> temps = {73, 74, 75, 71, 69, 72, 76, 73};
+    for (int d : daysUntilWarmer(temps)) std::cout << d << " ";
+    std::cout << "\n"; // 1 1 4 2 1 1 0 0
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| -------- | ---- | ----- |
+| Brute force (nested loops) | O(n²) | O(1) extra |
+| Monotonic stack | O(n) | O(n) |
+
+Though there is a nested `while` inside the `for`, each index is pushed exactly once and popped at most once across the whole run — so the total work is linear, not quadratic.
+
+## When to use it
+
+<Callout type="idea" title="Reach for it on 'next/previous greater or smaller' problems">
+A monotonic stack shines whenever each element needs the nearest element on one side that is larger or smaller: next greater element, daily temperatures, stock span, largest rectangle in a histogram, trapping rain water. Choose the direction by what you want: a **decreasing** stack finds next-greater; an **increasing** stack finds next-smaller. Scan right-to-left instead of left-to-right to answer "previous" questions. The pitfall is the comparison operator — use strict `>` vs `>=` deliberately, since it decides how ties are handled.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You want the next SMALLER element instead of warmer. What changes?">
+
+Flip the comparison. Keep the stack **increasing** from bottom to top, and while the new element is *less than* the temperature at the top index, pop and record. Everything else — pushing each index once, reading distances or values — stays identical. The stack's monotonic direction always points opposite to the relationship you are searching for.
+
+</Accordion>
+
+<Accordion title="Why is the total time O(n) despite the nested while loop?">
+
+Look at the total number of pop operations, not the shape of the loops. Every index is pushed exactly once and can be popped at most once, so across the entire run there are at most n pushes and n pops. The inner `while` can do many pops in one iteration, but those are pops that will never happen again — amortized, each element costs O(1), giving O(n) overall.
+
+</Accordion>
+
+<Accordion title="How would you handle a circular array, where the next greater element can wrap around?">
+
+Iterate over `2n` indices, using `i % n` to read the array. Push real indices `i % n` as usual and let the second pass resolve any elements still waiting from the first pass. Guard against pushing an index twice by only pushing during the first `n` iterations, or by checking the stack. This finds the next greater element even when it lies past the end and wraps to the front, still in O(n).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Brute-force "next greater" is O(n²) because each element rescans the tail.
+- A **monotonic stack** of waiting indices lets each new element resolve earlier ones in a single pass.
+- Each index is pushed and popped once, so the whole scan is O(n) time and O(n) space.
+
+<Cards>
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="The LIFO fundamentals this pattern relies on." />
+  <Card title="Designing Stacks" href="/docs/dsa/13-stack/03-stack-design" description="Augmenting a stack with extra data that rides along." />
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="The FIFO counterpart — and the basis of the monotonic deque." />
+</Cards>

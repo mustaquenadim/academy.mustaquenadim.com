@@ -1,0 +1,334 @@
+---
+title: "Greedy Classics"
+description: "The gas station loop, the jump game, job sequencing with deadlines — the greedy problems worth memorizing."
+extractedReferences:
+  - href: /docs/dsa/20-greedy/01-greedy-intro
+  - href: /docs/dsa/20-greedy/02-activity-and-intervals
+  - href: /docs/dsa/21-dynamic-programming/01-what-is-dp
+---
+
+## The problem
+
+A few greedy problems show up again and again — in interviews, in real systems, in your own code when you least expect them. The gas-station loop asks where to start a circular drive so you never run dry. The jump game asks whether you can leap to the end of an array. Job sequencing asks which deadline-bound tasks to run for maximum profit.
+
+They look unrelated, but each hides the same trap: the naive answer is a nested loop that re-checks everything, and each has a one-pass greedy rule that collapses the work to linear. Learn the three and you will start spotting the pattern everywhere.
+
+## A first attempt
+
+Take the gas station loop. You have `gas[i]` fuel at station `i` and it costs `cost[i]` to reach the next one. The brute-force answer tries every station as a starting point and simulates the full loop.
+
+```python
+def can_complete_brute(gas, cost):
+    n = len(gas)
+    for start in range(n):
+        tank, ok = 0, True
+        for step in range(n):
+            i = (start + step) % n
+            tank += gas[i] - cost[i]
+            if tank < 0:
+                ok = False
+                break
+        if ok:
+            return start
+    return -1
+```
+
+That is `O(n^2)`: for each of `n` starts you simulate up to `n` steps. Fine for a quiz, hopeless for a large circular route. The same nested-loop shape haunts the other two classics.
+
+## The insight
+
+Each problem has a single scalar you can carry in one pass that makes re-scanning unnecessary:
+
+- **Gas station:** if total gas `≥` total cost, a solution exists. Track a running tank; whenever it dips below zero, no station up to here can be the start, so jump the start to the next station and reset. One pass.
+- **Jump game:** track the *farthest* index reachable so far. If your current position ever exceeds that reach, you are stuck; otherwise you make it.
+- **Job sequencing:** sort jobs by profit descending, and schedule each in the latest free slot on or before its deadline. High-profit jobs claim their time first.
+
+In every case the greedy scalar summarizes the entire prefix, so you never look back.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Gas station — one running tank
+
+Keep `total` (feasibility check) and `tank` (current run). Add `gas[i] - cost[i]` to both. When `tank < 0`, set the candidate start to `i + 1` and reset `tank` to 0. If `total >= 0` at the end, the candidate start works.
+
+</Step>
+
+<Step>
+
+### Jump game — farthest reach
+
+Walk left to right holding `reach`, the farthest index you can get to. At index `i`, if `i > reach` you cannot proceed. Otherwise update `reach = max(reach, i + nums[i])`. You win if `reach` covers the last index.
+
+</Step>
+
+<Step>
+
+### Job sequencing — latest free slot
+
+Sort jobs by profit descending. For each job, place it in the latest empty slot at or before its deadline (scan downward). Taking the latest slot leaves earlier slots open for tighter-deadline jobs.
+
+</Step>
+
+</Steps>
+
+```
+gas  = [1, 2, 3, 4, 5]
+cost = [3, 4, 5, 1, 2]
+diff = [-2,-2,-2, 3, 3]
+
+tank dips below 0 at i=0,1,2 -> start jumps to 3
+from i=3: 3, then +3=6, ... never negative
+answer: start = 3   (total diff = 0 >= 0, feasible)
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def can_complete_circuit(gas, cost):
+    total = tank = start = 0
+    for i in range(len(gas)):
+        diff = gas[i] - cost[i]
+        total += diff
+        tank += diff
+        if tank < 0:      # nothing up to i can start the loop
+            start = i + 1
+            tank = 0
+    return start if total >= 0 else -1
+
+
+def can_jump(nums):
+    reach = 0
+    for i, n in enumerate(nums):
+        if i > reach:
+            return False
+        reach = max(reach, i + n)
+    return True
+
+
+print(can_complete_circuit([1, 2, 3, 4, 5], [3, 4, 5, 1, 2]))  # 3
+print(can_jump([2, 3, 1, 1, 4]))                                # True
+print(can_jump([3, 2, 1, 0, 4]))                                # False
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function canCompleteCircuit(gas: number[], cost: number[]): number {
+  let total = 0, tank = 0, start = 0;
+  for (let i = 0; i < gas.length; i++) {
+    const diff = gas[i] - cost[i];
+    total += diff;
+    tank += diff;
+    if (tank < 0) {
+      start = i + 1;
+      tank = 0;
+    }
+  }
+  return total >= 0 ? start : -1;
+}
+
+function canJump(nums: number[]): boolean {
+  let reach = 0;
+  for (let i = 0; i < nums.length; i++) {
+    if (i > reach) return false;
+    reach = Math.max(reach, i + nums[i]);
+  }
+  return true;
+}
+
+console.log(canCompleteCircuit([1, 2, 3, 4, 5], [3, 4, 5, 1, 2])); // 3
+console.log(canJump([2, 3, 1, 1, 4]));                             // true
+console.log(canJump([3, 2, 1, 0, 4]));                             // false
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Classics {
+    static int canCompleteCircuit(int[] gas, int[] cost) {
+        int total = 0, tank = 0, start = 0;
+        for (int i = 0; i < gas.length; i++) {
+            int diff = gas[i] - cost[i];
+            total += diff;
+            tank += diff;
+            if (tank < 0) {
+                start = i + 1;
+                tank = 0;
+            }
+        }
+        return total >= 0 ? start : -1;
+    }
+
+    static boolean canJump(int[] nums) {
+        int reach = 0;
+        for (int i = 0; i < nums.length; i++) {
+            if (i > reach) return false;
+            reach = Math.max(reach, i + nums[i]);
+        }
+        return true;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(canCompleteCircuit(
+            new int[]{1, 2, 3, 4, 5}, new int[]{3, 4, 5, 1, 2})); // 3
+        System.out.println(canJump(new int[]{2, 3, 1, 1, 4}));    // true
+        System.out.println(canJump(new int[]{3, 2, 1, 0, 4}));    // false
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+
+int can_complete_circuit(int *gas, int *cost, int n) {
+    int total = 0, tank = 0, start = 0;
+    for (int i = 0; i < n; i++) {
+        int diff = gas[i] - cost[i];
+        total += diff;
+        tank += diff;
+        if (tank < 0) {
+            start = i + 1;
+            tank = 0;
+        }
+    }
+    return total >= 0 ? start : -1;
+}
+
+bool can_jump(int *nums, int n) {
+    int reach = 0;
+    for (int i = 0; i < n; i++) {
+        if (i > reach) return false;
+        int far = i + nums[i];
+        if (far > reach) reach = far;
+    }
+    return true;
+}
+
+int main(void) {
+    int gas[]  = {1, 2, 3, 4, 5};
+    int cost[] = {3, 4, 5, 1, 2};
+    printf("%d\n", can_complete_circuit(gas, cost, 5)); /* 3 */
+
+    int a[] = {2, 3, 1, 1, 4};
+    int b[] = {3, 2, 1, 0, 4};
+    printf("%d\n", can_jump(a, 5)); /* 1 */
+    printf("%d\n", can_jump(b, 5)); /* 0 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+int canCompleteCircuit(std::vector<int> &gas, std::vector<int> &cost) {
+    int total = 0, tank = 0, start = 0;
+    for (size_t i = 0; i < gas.size(); i++) {
+        int diff = gas[i] - cost[i];
+        total += diff;
+        tank += diff;
+        if (tank < 0) {
+            start = i + 1;
+            tank = 0;
+        }
+    }
+    return total >= 0 ? start : -1;
+}
+
+bool canJump(std::vector<int> &nums) {
+    int reach = 0;
+    for (size_t i = 0; i < nums.size(); i++) {
+        if ((int)i > reach) return false;
+        reach = std::max(reach, (int)i + nums[i]);
+    }
+    return true;
+}
+
+int main() {
+    std::vector<int> gas = {1, 2, 3, 4, 5}, cost = {3, 4, 5, 1, 2};
+    std::cout << canCompleteCircuit(gas, cost) << "\n"; // 3
+
+    std::vector<int> a = {2, 3, 1, 1, 4}, b = {3, 2, 1, 0, 4};
+    std::cout << canJump(a) << "\n"; // 1
+    std::cout << canJump(b) << "\n"; // 0
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Problem | Brute force | Greedy time | Space |
+| --- | --- | --- | --- |
+| Gas station | O(n^2) | O(n) | O(1) |
+| Jump game | O(n^2) | O(n) | O(1) |
+| Job sequencing | O(n^2) | O(n log n) | O(n) |
+
+Gas station and jump game are single linear passes; job sequencing is dominated by the profit sort plus a slot scan.
+
+## When to use it
+
+<Callout type="warn" title="Recognize the pattern, then prove it">
+These three are worth memorizing because the greedy rule is not obvious until you have seen it — "farthest reach" and "reset the start when the tank goes negative" are the kind of tricks you either know or reinvent painfully. But do not paste a greedy rule onto a lookalike problem without checking. Jump Game II (minimum jumps) needs a different greedy; the 0/1 knapsack looks greedy but is not — it needs dynamic programming. When the exchange argument does not hold, greedy quietly returns a wrong answer.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="In the gas station problem, why is it safe to jump the start all the way to i+1 when the tank goes negative?">
+
+If the running tank goes negative at station `i`, then no station from the previous candidate start through `i` can be a valid start — each of them would run dry at or before `i` for the same reason. So you skip all of them at once and try `i + 1`. Combined with the `total >= 0` feasibility check, this single pass is guaranteed correct.
+
+</Accordion>
+
+<Accordion title="How does the jump game change if you must return the MINIMUM number of jumps?">
+
+That is Jump Game II. Instead of one `reach`, track the end of the current jump's range and the farthest reachable within it. Each time you finish the current range, increment the jump count and extend the range to the farthest seen. It stays O(n) but the bookkeeping is a level-by-level BFS in disguise.
+
+</Accordion>
+
+<Accordion title="Why does job sequencing schedule each job in the LATEST free slot before its deadline?">
+
+Taking the latest available slot leaves the earlier slots open for jobs with tighter deadlines that have no other option. If you greedily filled the earliest slot instead, you might block a high-profit job that could only run early. Processing jobs in profit-descending order and pushing each as late as possible maximizes total profit.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Each classic replaces an O(n^2) nested simulation with a single greedy scalar carried in one pass.
+- Gas station tracks a running tank, jump game tracks farthest reach, job sequencing fills the latest free slot by profit.
+- Memorize the rules, but always confirm the exchange argument holds — lookalike problems (Jump Game II, 0/1 knapsack) need different tools.
+
+<Cards>
+  <Card title="The Greedy Strategy" href="/docs/dsa/20-greedy/01-greedy-intro" description="The greedy-choice property that makes these one-pass rules valid." />
+  <Card title="Activities & Intervals" href="/docs/dsa/20-greedy/02-activity-and-intervals" description="The canonical sort-then-sweep greedy proof." />
+  <Card title="What is DP?" href="/docs/dsa/21-dynamic-programming/01-what-is-dp" description="For the lookalikes where greedy fails, like 0/1 knapsack." />
+</Cards>

@@ -1,0 +1,361 @@
+---
+title: "Huffman Coding"
+description: "Why should \"e\" take as many bits as \"z\"? Huffman gives common symbols short codes and rare ones long — greedily."
+extractedReferences:
+  - href: /docs/dsa/20-greedy/01-greedy-intro
+  - href: /docs/dsa/18-heap/01-heap-intro
+  - href: /docs/dsa/20-greedy/02-activity-and-intervals
+---
+
+## The problem
+
+You are compressing a text file. In plain ASCII, every character costs the same 8 bits — the letter `e`, which shows up thousands of times, pays exactly as much as `z`, which appears twice. That is money left on the table. The common symbols are subsidizing the rare ones.
+
+The obvious fix is to give frequent characters shorter codes. But codes cannot be assigned carelessly: if `e` is `0` and `x` is `01`, then reading `01` is ambiguous — is it `e` then something, or `x`? You need short codes for common symbols *and* a guarantee that no code is a prefix of another, so the decoder never stalls. Building that assignment optimally is the whole game.
+
+## A first attempt
+
+Fixed-length codes solve the ambiguity trivially — every code is the same length, so there is nothing to confuse. With `k` distinct symbols you need `⌈log2 k⌉` bits each.
+
+```python
+import math
+
+def fixed_length_bits(freq):
+    k = len(freq)
+    width = max(1, math.ceil(math.log2(k)))
+    return sum(freq.values()) * width
+```
+
+Simple and unambiguous, but it ignores frequency entirely. A file that is 90% the letter `e` still pays full width for every single `e`. We are back to `z` and `e` costing the same. We want *variable*-length codes without the ambiguity.
+
+## The insight
+
+Build the code tree from the **bottom up**, and at each step merge the **two least frequent symbols** into a single combined node. Repeat until one tree remains. Give left edges a `0` and right edges a `1`; each leaf's code is the path from the root.
+
+Why merge the two rarest? Because the two symbols that appear least often should sit deepest in the tree — they can afford the longest codes. By always combining the current two smallest frequencies, the rare symbols keep sinking and the common ones stay near the root with short codes. An exchange argument proves this is optimal: no prefix-free code beats it in total bits. This is a greedy algorithm, and the "pick the two smallest" step is exactly what a **min-heap** does well.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Count frequencies
+
+Tally how often each symbol appears. These counts are the weights that drive every merge.
+
+</Step>
+
+<Step>
+
+### Put every symbol in a min-heap
+
+Insert one leaf node per symbol, keyed by frequency. The heap always hands you the smallest weight in `O(log n)`.
+
+</Step>
+
+<Step>
+
+### Merge the two smallest repeatedly
+
+Pop the two lowest-frequency nodes, make a new internal node whose weight is their sum, and push it back. Repeat until a single node — the root — remains.
+
+</Step>
+
+<Step>
+
+### Read codes off the tree
+
+Walk from the root: append `0` going left, `1` going right. Each leaf's accumulated path is its codeword. Frequent symbols, being shallow, get short codes.
+
+</Step>
+
+</Steps>
+
+```
+freq: a=5  b=2  c=1  d=1
+
+merge c(1)+d(1) -> [cd]=2
+merge b(2)+[cd]=2 -> [bcd]=4
+merge a(5)+[bcd]=4 -> root=9
+
+           (9)
+          /   \
+        a(5)  (4)
+             /   \
+           b(2)  (2)
+                /   \
+              c(1)  d(1)
+
+codes: a=0  b=10  c=110  d=111
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import heapq
+
+def huffman_codes(freq):
+    # heap holds [weight, tie_id, node]; node is (symbol, left, right)
+    heap = [[w, i, (sym, None, None)] for i, (sym, w) in enumerate(freq.items())]
+    heapq.heapify(heap)
+    tie = len(heap)
+    while len(heap) > 1:
+        w1, _, n1 = heapq.heappop(heap)
+        w2, _, n2 = heapq.heappop(heap)
+        heapq.heappush(heap, [w1 + w2, tie, (None, n1, n2)])
+        tie += 1
+
+    codes = {}
+    def walk(node, path):
+        sym, left, right = node
+        if sym is not None:
+            codes[sym] = path or "0"  # single-symbol edge case
+            return
+        walk(left, path + "0")
+        walk(right, path + "1")
+
+    walk(heap[0][2], "")
+    return codes
+
+
+print(huffman_codes({"a": 5, "b": 2, "c": 1, "d": 1}))
+# {'a': '0', 'b': '10', 'c': '110', 'd': '111'}
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+type Node = { sym: string | null; left?: Node; right?: Node; w: number };
+
+function huffmanCodes(freq: Record<string, number>): Record<string, string> {
+  // simple array used as a heap via sort (fine for teaching-size inputs)
+  let heap: Node[] = Object.entries(freq).map(([sym, w]) => ({ sym, w }));
+  while (heap.length > 1) {
+    heap.sort((a, b) => a.w - b.w);
+    const n1 = heap.shift()!;
+    const n2 = heap.shift()!;
+    heap.push({ sym: null, left: n1, right: n2, w: n1.w + n2.w });
+  }
+
+  const codes: Record<string, string> = {};
+  const walk = (node: Node, path: string): void => {
+    if (node.sym !== null) {
+      codes[node.sym] = path || "0";
+      return;
+    }
+    walk(node.left!, path + "0");
+    walk(node.right!, path + "1");
+  };
+  walk(heap[0], "");
+  return codes;
+}
+
+console.log(huffmanCodes({ a: 5, b: 2, c: 1, d: 1 }));
+// { a: '0', b: '10', c: '110', d: '111' }
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Huffman {
+    static class Node {
+        Character sym; int w; Node left, right;
+        Node(Character sym, int w) { this.sym = sym; this.w = w; }
+    }
+
+    static void walk(Node n, String path, Map<Character, String> out) {
+        if (n.sym != null) { out.put(n.sym, path.isEmpty() ? "0" : path); return; }
+        walk(n.left, path + "0", out);
+        walk(n.right, path + "1", out);
+    }
+
+    static Map<Character, String> huffmanCodes(Map<Character, Integer> freq) {
+        PriorityQueue<Node> pq = new PriorityQueue<>((a, b) -> a.w - b.w);
+        for (var e : freq.entrySet()) pq.add(new Node(e.getKey(), e.getValue()));
+        while (pq.size() > 1) {
+            Node a = pq.poll(), b = pq.poll();
+            Node parent = new Node(null, a.w + b.w);
+            parent.left = a; parent.right = b;
+            pq.add(parent);
+        }
+        Map<Character, String> codes = new HashMap<>();
+        walk(pq.poll(), "", codes);
+        return codes;
+    }
+
+    public static void main(String[] args) {
+        Map<Character, Integer> freq =
+            Map.of('a', 5, 'b', 2, 'c', 1, 'd', 1);
+        System.out.println(huffmanCodes(freq));
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    char sym; int w;
+    struct Node *left, *right;
+} Node;
+
+Node *make(char sym, int w, Node *l, Node *r) {
+    Node *n = malloc(sizeof(Node));
+    n->sym = sym; n->w = w; n->left = l; n->right = r;
+    return n;
+}
+
+/* find index of smallest-weight node in a simple array pool */
+int min_index(Node **pool, int n) {
+    int m = 0;
+    for (int i = 1; i < n; i++)
+        if (pool[i]->w < pool[m]->w) m = i;
+    return m;
+}
+
+void walk(Node *n, char *path, int depth) {
+    if (!n->left && !n->right) {
+        path[depth] = '\0';
+        printf("%c=%s\n", n->sym, depth ? path : "0");
+        return;
+    }
+    path[depth] = '0'; walk(n->left, path, depth + 1);
+    path[depth] = '1'; walk(n->right, path, depth + 1);
+}
+
+int main(void) {
+    char syms[] = {'a', 'b', 'c', 'd'};
+    int  freq[] = {5, 2, 1, 1};
+    int  n = 4;
+    Node *pool[8];
+    for (int i = 0; i < n; i++) pool[i] = make(syms[i], freq[i], NULL, NULL);
+
+    int size = n;
+    while (size > 1) {
+        int i = min_index(pool, size); Node *a = pool[i]; pool[i] = pool[--size];
+        int j = min_index(pool, size); Node *b = pool[j]; pool[j] = pool[--size];
+        pool[size++] = make('\0', a->w + b->w, a, b);
+    }
+    char path[16];
+    walk(pool[0], path, 0);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <string>
+#include <vector>
+#include <map>
+
+struct Node {
+    char sym; int w;
+    Node *left = nullptr, *right = nullptr;
+    Node(char s, int weight) : sym(s), w(weight) {}
+};
+
+struct Cmp {
+    bool operator()(Node *a, Node *b) const { return a->w > b->w; }
+};
+
+void walk(Node *n, const std::string &path, std::map<char, std::string> &out) {
+    if (!n->left && !n->right) { out[n->sym] = path.empty() ? "0" : path; return; }
+    walk(n->left, path + "0", out);
+    walk(n->right, path + "1", out);
+}
+
+int main() {
+    std::vector<std::pair<char, int>> freq = {{'a', 5}, {'b', 2}, {'c', 1}, {'d', 1}};
+    std::priority_queue<Node *, std::vector<Node *>, Cmp> pq;
+    for (auto &[s, w] : freq) pq.push(new Node(s, w));
+
+    while (pq.size() > 1) {
+        Node *a = pq.top(); pq.pop();
+        Node *b = pq.top(); pq.pop();
+        Node *parent = new Node('\0', a->w + b->w);
+        parent->left = a; parent->right = b;
+        pq.push(parent);
+    }
+    std::map<char, std::string> codes;
+    walk(pq.top(), "", codes);
+    for (auto &[s, code] : codes) std::cout << s << "=" << code << "\n";
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Step | Time | Space |
+| --- | --- | --- |
+| Count frequencies | O(m) | O(k) |
+| Build tree (heap merges) | O(k log k) | O(k) |
+| Emit codes (tree walk) | O(k) | O(k) |
+
+Here `m` is the length of the input text and `k` is the number of distinct symbols. The heap-driven merge dominates the tree construction.
+
+## When to use it
+
+<Callout type="idea" title="Optimal per-symbol, but not the whole story">
+Huffman gives the provably shortest prefix-free code when you encode symbols independently — it is the backbone of DEFLATE (ZIP, gzip, PNG). But it cannot exploit patterns across symbols; arithmetic coding and dictionary methods (LZ77) can beat it on real data by modeling context. The decoder also needs the tree, so tiny inputs may not pay off. Reach for Huffman when you have skewed symbol frequencies and want a simple, optimal, streaming-friendly code.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must the code be prefix-free, and how does the tree guarantee it?">
+
+If one code were a prefix of another, the decoder could not tell where one symbol ends. In a Huffman tree every symbol is a *leaf*, so no symbol's path passes through another symbol's node. That means no codeword is a prefix of another — decoding walks from the root and stops exactly when it hits a leaf.
+
+</Accordion>
+
+<Accordion title="What happens when two nodes have equal frequency?">
+
+Ties can be broken arbitrarily and the total encoded length stays optimal, though the exact codewords may differ. In practice you add a tie-breaker (like an insertion counter) so the output is deterministic across runs — useful when the encoder and decoder must agree.
+
+</Accordion>
+
+<Accordion title="Why a min-heap instead of re-sorting a list each round?">
+
+You repeatedly need the two smallest weights and then insert one new weight. A min-heap does each extract-min and insert in O(log k), giving O(k log k) overall. Re-sorting the whole list every round would cost O(k^2 log k). The heap is exactly the data structure the greedy step calls for.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Huffman builds an optimal prefix-free code by repeatedly merging the two least-frequent nodes into a tree.
+- A min-heap makes the "pick two smallest" step efficient, giving O(k log k) construction.
+- It is optimal for independent per-symbol coding — the foundation of gzip and PNG — but context-modeling methods can compress further.
+
+<Cards>
+  <Card title="The Greedy Strategy" href="/docs/dsa/20-greedy/01-greedy-intro" description="The exchange-argument idea that proves Huffman optimal." />
+  <Card title="Heap Intro" href="/docs/dsa/18-heap/01-heap-intro" description="The priority queue that powers the merge step." />
+  <Card title="Activities & Intervals" href="/docs/dsa/20-greedy/02-activity-and-intervals" description="Another greedy proof built on always taking the best local option." />
+</Cards>

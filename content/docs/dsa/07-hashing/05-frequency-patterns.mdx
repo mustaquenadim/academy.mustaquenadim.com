@@ -1,0 +1,305 @@
+---
+title: "Frequency Patterns"
+description: "Counting how often things appear — and grouping anagrams — is a hash map’s bread and butter."
+extractedReferences:
+  - href: /docs/dsa/07-hashing/04-sets-and-maps
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You're handed a day's worth of server logs — a few million lines — and asked a simple
+question: which error message shows up most often? Right behind it, a second request: group
+together all the requests that hit the *same set* of endpoints, however they're ordered.
+
+Both are counting-and-grouping questions, and they're everywhere: the most frequent word in
+a document, the top-selling product, anagrams bucketed together. Do them clumsily and a
+few-million-line file turns into a coffee break. Do them with a hash map and it's one pass.
+
+## A first attempt
+
+To find the most frequent message without a map, you might, for each distinct message, scan
+the whole log counting how many times it appears:
+
+```python
+def most_common(logs):
+    best, best_count = None, 0
+    for candidate in set(logs):
+        count = sum(1 for line in logs if line == candidate)  # full rescan
+        if count > best_count:
+            best, best_count = candidate, count
+    return best
+```
+
+That inner rescan runs for every distinct message — `O(n²)` in the worst case. On a million
+lines it's a trillion comparisons. The waste is obvious: you sweep the whole log again and
+again instead of tallying as you go.
+
+## The insight
+
+Make **one pass** and let a hash map remember the running count for each key. The key is the
+thing you're counting (a message, a word, a number); the value is how many times you've seen
+it. Each line is a single `O(1)` map update, so the whole tally is `O(n)`.
+
+For *grouping* — like anagrams — the trick is a **canonical key**: transform each item into a
+signature that's identical for everything in the same group (sort the letters of a word, or
+count them), then use that signature as the map key. Items with the same signature collect in
+the same bucket automatically.
+
+<Callout type="idea" title="Count as you go, don't rescan">
+The frequency pattern is one idea reused endlessly: sweep the data once, and for each item do
+a constant-time map update. The map is your memory, so you never look backward. That single
+move collapses a nested-loop `O(n²)` into a linear `O(n)`.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Choose the key
+
+Decide what "the same" means. For raw counting, the item *is* the key. For grouping, derive a
+canonical key so members of a group collide on purpose — e.g. the sorted letters of a word.
+
+</Step>
+
+<Step>
+
+### One pass to tally
+
+Walk the data once. For each item, bump `counts[key] += 1` (or append it to `groups[key]`).
+Every update is `O(1)`, so the pass is `O(n)`.
+
+</Step>
+
+<Step>
+
+### Read the answer off the map
+
+The map now holds the full picture. Take the max-valued entry for "most frequent," the keys
+with count 1 for "unique," or every bucket's list for "grouped."
+
+</Step>
+
+</Steps>
+
+Grouping `["eat", "tea", "ate", "bat"]` by their sorted-letter signature:
+
+```text
+"eat" → sort → "aet"   groups["aet"] = ["eat", "tea", "ate"]
+"tea" → sort → "aet"
+"ate" → sort → "aet"
+"bat" → sort → "abt"   groups["abt"] = ["bat"]
+```
+
+## The code
+
+Two staples: a frequency count that returns the most common item, and anagram grouping by a
+sorted-letter key.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import defaultdict
+
+def most_common(items):
+    counts = defaultdict(int)
+    for item in items:          # one pass, O(n)
+        counts[item] += 1       # O(1) update
+    return max(counts, key=counts.get)
+
+def group_anagrams(words):
+    groups = defaultdict(list)
+    for w in words:
+        key = "".join(sorted(w))  # canonical signature
+        groups[key].append(w)
+    return list(groups.values())
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function mostCommon<T>(items: T[]): T {
+  const counts = new Map<T, number>();
+  for (const item of items) {                 // one pass, O(n)
+    counts.set(item, (counts.get(item) ?? 0) + 1); // O(1) update
+  }
+  let best = items[0], bestCount = 0;
+  for (const [item, c] of counts) {
+    if (c > bestCount) { best = item; bestCount = c; }
+  }
+  return best;
+}
+
+function groupAnagrams(words: string[]): string[][] {
+  const groups = new Map<string, string[]>();
+  for (const w of words) {
+    const key = [...w].sort().join("");         // canonical signature
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(w);
+  }
+  return [...groups.values()];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+<T> T mostCommon(List<T> items) {
+    Map<T, Integer> counts = new HashMap<>();
+    for (T item : items) {                              // one pass, O(n)
+        counts.merge(item, 1, Integer::sum);            // O(1) update
+    }
+    return Collections.max(counts.entrySet(),
+                           Map.Entry.comparingByValue()).getKey();
+}
+
+List<List<String>> groupAnagrams(String[] words) {
+    Map<String, List<String>> groups = new HashMap<>();
+    for (String w : words) {
+        char[] c = w.toCharArray();
+        Arrays.sort(c);
+        String key = new String(c);                     // canonical signature
+        groups.computeIfAbsent(key, k -> new ArrayList<>()).add(w);
+    }
+    return new ArrayList<>(groups.values());
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* Counting fixed symbols (e.g. bytes) needs no hash map — an array is the map. */
+#include <stddef.h>
+
+int most_common_byte(const unsigned char *data, size_t n) {
+    long counts[256] = {0};
+    for (size_t i = 0; i < n; i++) counts[data[i]]++; // one pass, O(n)
+
+    int best = 0;
+    for (int b = 1; b < 256; b++)
+        if (counts[b] > counts[best]) best = b;
+    return best; /* the most frequent byte value */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+
+template <class T>
+T most_common(const std::vector<T> &items) {
+    std::unordered_map<T, int> counts;
+    for (const auto &item : items) counts[item]++; // one pass, O(n)
+
+    return std::max_element(counts.begin(), counts.end(),
+        [](auto &a, auto &b) { return a.second < b.second; })->first;
+}
+
+std::vector<std::vector<std::string>>
+group_anagrams(const std::vector<std::string> &words) {
+    std::unordered_map<std::string, std::vector<std::string>> groups;
+    for (auto w : words) {
+        std::string key = w;
+        std::sort(key.begin(), key.end());        // canonical signature
+        groups[key].push_back(w);
+    }
+    std::vector<std::vector<std::string>> out;
+    for (auto &g : groups) out.push_back(g.second);
+    return out;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Task                       | Time            | Space  | Note                                        |
+| -------------------------- | --------------- | ------ | ------------------------------------------- |
+| Count `n` items            | `O(n)`          | `O(k)` | `k` = number of distinct keys               |
+| Most frequent (from map)   | `O(k)`          | `O(k)` | one scan of the distinct keys               |
+| Group anagrams (`n` words) | `O(n · L log L)`| `O(n)` | `L` = word length; the sort dominates a key |
+
+<Callout type="warn" title="Sorting the key isn't always free">
+Grouping anagrams by sorting each word costs `O(L log L)` per word for the key. When words
+are long or the alphabet is small, build the key by *counting letters* instead — a length-26
+tally rendered to a string — which drops each key to `O(L)`. For plain counting there's no
+sort at all; the whole job stays `O(n)`.
+</Callout>
+
+## When to use it
+
+<Callout type="info" title="Signals that scream 'frequency map'">
+Reach for this whenever a problem says "how many times," "most/least frequent," "top-K,"
+"first non-repeating," "are these two collections the same multiset," or "group by." All of
+them reduce to: build a count (or bucket) map in one pass, then read the answer off it. It's
+one of the highest-yield patterns in interviews and in real log/analytics code alike.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Find the first character in a string that never repeats. Why is two passes optimal?">
+
+First pass: count every character into a map (`O(n)`). Second pass: walk the string in order
+and return the first character whose count is 1 (`O(n)`). Total `O(n)`. You need the counts
+*complete* before you can trust that a character never repeats, which is why a single pass
+can't do it — but two linear passes still beat any nested-loop approach.
+
+</Accordion>
+
+<Accordion title="Check whether two strings are anagrams of each other without sorting.">
+
+Count the letters of the first string into a map, then walk the second string decrementing
+each count; if any count goes negative or a letter is missing, they're not anagrams. Finally
+confirm every count is zero. This is `O(n)` versus the `O(n log n)` of sorting both strings —
+the same "compare multisets via a count map" idea behind anagram grouping.
+
+</Accordion>
+
+<Accordion title="You need the K most frequent elements. How do you avoid fully sorting the counts?">
+
+Build the frequency map in `O(n)`, then instead of sorting all `k` distinct keys
+(`O(k log k)`), push them through a size-K min-heap (`O(k log K)`) or use bucket sort by
+count (`O(n)`). Both skip ordering the elements you don't care about, which is the whole win
+when K is much smaller than the number of distinct keys.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- The frequency pattern is one pass plus a hash map: tally each item with an `O(1)` update,
+  then read the answer off the map — turning `O(n²)` rescans into `O(n)`.
+- **Grouping** uses a canonical key (sorted or counted letters) so members of a group land in
+  the same bucket automatically.
+- Watch the key-building cost: sorting a key is `O(L log L)`; a letter-count key is `O(L)`,
+  and plain counting needs no key transform at all.
+
+<Cards>
+  <Card title="Sets & Maps" href="/docs/dsa/07-hashing/04-sets-and-maps" description="The map that stores each running count." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="Why each count update is O(1)." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why collapsing O(n²) to O(n) matters at scale." />
+</Cards>

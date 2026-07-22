@@ -1,0 +1,321 @@
+---
+title: "Heaps & Priority Queues"
+description: "You constantly need the single most urgent task out of thousands, and it keeps changing — a heap hands it over instantly."
+extractedReferences:
+  - href: /docs/dsa/18-heap/02-heap-operations-and-heapsort
+  - href: /docs/dsa/14-queue/01-queue-intro
+  - href: /docs/dsa/16-binary-tree/01-binary-tree-intro
+---
+
+## The problem
+
+You are running the dispatch board for an emergency room. Patients arrive all day long, each with a severity score. A cut finger can wait; a heart attack cannot. Every time a doctor frees up, you must hand them the single most urgent patient still waiting — and new arrivals keep reshuffling who that is.
+
+So you need a bag that lets you throw things in cheaply and, at any moment, pull out the most urgent one. Not a sorted list of everyone. Just: *give me the top one, right now.*
+
+## A first attempt
+
+The obvious move: keep an array, and each time a doctor asks, scan the whole thing for the max severity.
+
+```python
+def most_urgent(patients):
+    best = patients[0]
+    for p in patients:          # O(n) every single time
+        if p.severity > best.severity:
+            best = p
+    return best
+```
+
+Adding a patient is `O(1)`, but *finding* the most urgent is `O(n)`, and you do that constantly. With thousands of patients and constant churn, the board crawls.
+
+You could instead keep the array fully sorted, so the max is always at the end. But then every insert costs `O(n)` to slide elements into place. You have just moved the pain from reads to writes. Either way, one operation stays linear.
+
+## The insight
+
+You do not need the list *fully* sorted. You only ever need the **one** extreme element. That is a much weaker promise — and weaker promises are cheaper to keep.
+
+Picture a binary tree where every parent is more urgent than its children. You do not know the exact order of siblings or cousins, and you do not care. All you know is the strongest element has bubbled to the very top. That single rule — *parent beats child* — is the **heap property**, and it is enough to find the top in `O(1)` and repair the tree after a change in `O(log n)`.
+
+A **heap** is a complete binary tree obeying that property. A **priority queue** is the idea (give me the highest priority next); a heap is the usual way to build one.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Store the tree in an array
+
+A heap is always a *complete* tree — every level is full except possibly the last, which fills left to right. That shape lets you skip pointers entirely and pack the tree into an array. For a node at index `i` (0-based): its children live at `2i+1` and `2i+2`, and its parent at `(i-1)/2`.
+
+```text
+        9              index:  0  1  2  3  4  5
+       / \             array: [9, 7, 6, 1, 4, 5]
+      7   6
+     / \   \
+    1   4   5
+```
+
+</Step>
+
+<Step>
+
+### Keep the max on top
+
+This is a **max-heap**: every parent is `>=` its children, so index `0` is always the maximum. Flip the comparison and you get a **min-heap**, where index `0` is the minimum. Same machinery, opposite direction.
+
+</Step>
+
+<Step>
+
+### Insert by sifting up
+
+Append the new value at the end of the array (keeping the shape complete), then compare it with its parent and swap upward as long as it is larger. It climbs until it finds a parent that beats it. At most one swap per level: `O(log n)`.
+
+</Step>
+
+<Step>
+
+### Pop the top by sifting down
+
+To remove the max, take index `0`, move the last element into its place, then push that element downward — swapping with its larger child — until the heap property holds again. Also `O(log n)`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+A min-heap of integers, built on a dynamic array. (Most languages ship one; we build it once so the mechanism is not a mystery.)
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import heapq
+
+# Python's heapq is a min-heap over a plain list.
+h = []
+heapq.heappush(h, 5)
+heapq.heappush(h, 1)
+heapq.heappush(h, 3)
+
+print(h[0])              # 1  -> peek the minimum, O(1)
+print(heapq.heappop(h))  # 1  -> remove the minimum, O(log n)
+
+# For a max-heap, push negated values and negate on the way out.
+maxh = []
+for x in (5, 1, 3):
+    heapq.heappush(maxh, -x)
+print(-maxh[0])          # 5
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class MinHeap {
+  private a: number[] = [];
+
+  push(x: number): void {
+    this.a.push(x);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.a[parent] <= this.a[i]) break;
+      [this.a[parent], this.a[i]] = [this.a[i], this.a[parent]];
+      i = parent;
+    }
+  }
+
+  pop(): number | undefined {
+    const n = this.a.length;
+    if (n === 0) return undefined;
+    const top = this.a[0];
+    const last = this.a.pop()!;
+    if (n > 1) {
+      this.a[0] = last;
+      this.siftDown(0);
+    }
+    return top;
+  }
+
+  peek(): number | undefined {
+    return this.a[0];
+  }
+
+  private siftDown(i: number): void {
+    const n = this.a.length;
+    while (true) {
+      let smallest = i;
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      if (l < n && this.a[l] < this.a[smallest]) smallest = l;
+      if (r < n && this.a[r] < this.a[smallest]) smallest = r;
+      if (smallest === i) break;
+      [this.a[i], this.a[smallest]] = [this.a[smallest], this.a[i]];
+      i = smallest;
+    }
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.PriorityQueue;
+
+public class HeapDemo {
+    public static void main(String[] args) {
+        // PriorityQueue is a min-heap by default.
+        PriorityQueue<Integer> minHeap = new PriorityQueue<>();
+        minHeap.offer(5);
+        minHeap.offer(1);
+        minHeap.offer(3);
+
+        System.out.println(minHeap.peek()); // 1  -> O(1)
+        System.out.println(minHeap.poll()); // 1  -> O(log n)
+
+        // For a max-heap, pass a reversed comparator.
+        PriorityQueue<Integer> maxHeap =
+            new PriorityQueue<>((a, b) -> b - a);
+        maxHeap.offer(5);
+        maxHeap.offer(1);
+        maxHeap.offer(3);
+        System.out.println(maxHeap.peek()); // 5
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int heap[128];
+int size = 0;
+
+void push(int x) {
+    heap[size] = x;
+    int i = size++;
+    while (i > 0) {
+        int parent = (i - 1) / 2;
+        if (heap[parent] <= heap[i]) break;
+        int t = heap[parent]; heap[parent] = heap[i]; heap[i] = t;
+        i = parent;
+    }
+}
+
+int pop(void) {              /* assumes size > 0 */
+    int top = heap[0];
+    heap[0] = heap[--size];
+    int i = 0;
+    while (1) {
+        int smallest = i, l = 2 * i + 1, r = 2 * i + 2;
+        if (l < size && heap[l] < heap[smallest]) smallest = l;
+        if (r < size && heap[r] < heap[smallest]) smallest = r;
+        if (smallest == i) break;
+        int t = heap[i]; heap[i] = heap[smallest]; heap[smallest] = t;
+        i = smallest;
+    }
+    return top;
+}
+
+int main(void) {
+    push(5); push(1); push(3);
+    printf("%d\n", heap[0]); /* 1 */
+    printf("%d\n", pop());   /* 1 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+using namespace std;
+
+int main() {
+    // priority_queue is a MAX-heap by default.
+    priority_queue<int> maxHeap;
+    maxHeap.push(5);
+    maxHeap.push(1);
+    maxHeap.push(3);
+    cout << maxHeap.top() << "\n"; // 5  -> O(1)
+    maxHeap.pop();                 // removes 5, O(log n)
+
+    // For a min-heap, use greater<int>.
+    priority_queue<int, vector<int>, greater<int>> minHeap;
+    minHeap.push(5);
+    minHeap.push(1);
+    minHeap.push(3);
+    cout << minHeap.top() << "\n"; // 1
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Peek (top) | O(1) | O(1) |
+| Push (insert) | O(log n) | O(1) |
+| Pop (extract) | O(log n) | O(1) |
+| Build from n items | O(n) | O(1) extra |
+| Search for arbitrary value | O(n) | O(1) |
+
+## When to use it
+
+<Callout type="idea" title="Reach for a heap when...">
+You repeatedly need the min or max of a changing collection, but never the full sorted order. Schedulers, Dijkstra's shortest paths, event simulation, and "top-k" queries all fit. If you need to look up or delete *arbitrary* elements fast, a heap is the wrong tool — that is `O(n)`; use a balanced tree or a hash structure instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Given an array, is index 0 always the smallest element of a min-heap? Is index 1 always the second smallest?">
+
+Index 0 is always the minimum — that is the whole point. But index 1 is *not* guaranteed to be the second smallest. The second smallest is one of the root's two children (index 1 or 2), because it must be larger than only the root. So you know it is at index 1 or 2, but not which. The heap only promises parent-beats-child, nothing about the order across siblings or deeper levels.
+
+</Accordion>
+
+<Accordion title="Why can a heap be packed into an array with no pointers, while a general binary tree cannot?">
+
+Because a heap is a *complete* tree: every level is full except the last, which fills left to right with no gaps. That regularity means a node's children are always at fixed offsets (`2i+1`, `2i+2`). A general binary tree can have holes anywhere, so those index formulas would point at the wrong nodes or empty slots — you would need explicit pointers to record the shape.
+
+</Accordion>
+
+<Accordion title="You have a min-heap and want the maximum element. How fast can you find it?">
+
+`O(n)` in the worst case, but you can narrow the search: the maximum must be a *leaf*, since any internal node has a smaller-or-equal child below it. The leaves occupy the second half of the array (indices `n/2` to `n-1`), so you scan only those — still `O(n)` asymptotically, but half the work. If you frequently need both extremes, keep two heaps or use a min-max heap instead.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A heap keeps the single most extreme element instantly accessible by enforcing only one rule: **parent beats child**.
+- Its complete shape lets it live in a flat array, with children at `2i+1` and `2i+2` — no pointers needed.
+- Peek is `O(1)`; push and pop are `O(log n)`; arbitrary search is `O(n)`, so use it only when you want the top.
+
+<Cards>
+  <Card title="Heap Operations & Heap Sort" href="/docs/dsa/18-heap/02-heap-operations-and-heapsort" description="Build in O(n) and sort in place." />
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="The plain FIFO cousin of the priority queue." />
+  <Card title="Binary Trees" href="/docs/dsa/16-binary-tree/01-binary-tree-intro" description="The structure a heap quietly imitates." />
+</Cards>

@@ -1,0 +1,253 @@
+---
+title: "The Knapsack Pattern"
+description: "A bag with limited space and items worth different amounts — the template behind a whole family of \"choose a subset\" problems."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/04-2d-dp
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/21-dynamic-programming/10-partition-dp
+---
+
+## The problem
+
+You are packing for a flight with a strict 15 kg baggage limit. Each item has a weight and a
+value to you — the camera is heavy but precious, the extra shoes are light but you barely care.
+You cannot take everything. Which subset maximizes the value you carry without going over 15
+kg?
+
+Greedily grabbing the most valuable item, or the lightest, or the best value-per-kilogram, all
+fail on carefully chosen inputs. The choices interact: taking the camera changes what fits
+afterward. You need to weigh every combination — but there are 2ⁿ of them, and that number
+runs away fast.
+
+## A first attempt
+
+Consider items one at a time. For each, either leave it or take it (if it fits), and recurse
+on the rest with the remaining capacity.
+
+```python
+def knap(w, v, i, cap):
+    if i == len(w) or cap == 0:
+        return 0
+    best = knap(w, v, i + 1, cap)                 # skip item i
+    if w[i] <= cap:                                # or take it
+        best = max(best, v[i] + knap(w, v, i + 1, cap - w[i]))
+    return best
+```
+
+Every item forks the recursion in two, so this is **O(2ⁿ)**. With 40 items you are looking at
+a trillion calls. But notice: the recursion is fully described by `(i, cap)` — and many
+different branches reach the *same* `(i, cap)`. Overlapping subproblems again.
+
+## The insight
+
+There are only `n × (capacity + 1)` distinct states. Cache them:
+
+> Let `dp[i][c]` be the best value using items `i..n-1` with capacity `c` left. Each state
+> makes one binary choice — skip or take — so it costs O(1), and the whole table costs
+> O(n × capacity).
+
+This is **pseudo-polynomial**: fast when capacity is a modest number, because the table size
+depends on the capacity's *value*, not just the item count. The same two-choice template — for
+each item, skip or take — powers subset-sum, partition, coin combinations, and more.
+
+## How it works
+
+We will fill the table bottom-up over items and capacities.
+
+<Steps>
+
+<Step>
+
+### Define the state
+
+`dp[i][c]` = maximum value achievable using the first `i` items with total weight at most `c`.
+The answer is `dp[n][capacity]`.
+
+</Step>
+
+<Step>
+
+### The two choices
+
+For item `i` (1-indexed) with weight `w` and value `v`: **skip** it and keep `dp[i-1][c]`, or
+**take** it (only if `w ≤ c`) for `v + dp[i-1][c-w]`. The cell is the max of whichever apply.
+
+</Step>
+
+<Step>
+
+### Base cases
+
+`dp[0][c] = 0` for all `c`: with no items, no value. That top row seeds the rest.
+
+</Step>
+
+<Step>
+
+### Compress to one row
+
+`dp[i]` depends only on `dp[i-1]`. Keep a single array and, crucially, iterate capacity **from
+high to low** when updating in place — that guarantees each item is used at most once.
+
+</Step>
+
+</Steps>
+
+## The code
+
+The tabs show the compact 1D version; the leftmost also notes the 2D shape it comes from.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def knapsack(weights, values, cap):
+    dp = [0] * (cap + 1)          # dp[c] = best value with capacity c
+    for w, v in zip(weights, values):
+        for c in range(cap, w - 1, -1):   # high -> low: use each item once
+            dp[c] = max(dp[c], v + dp[c - w])
+    return dp[cap]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function knapsack(weights: number[], values: number[], cap: number): number {
+  const dp = new Array<number>(cap + 1).fill(0);
+  for (let i = 0; i < weights.length; i++) {
+    const w = weights[i], v = values[i];
+    for (let c = cap; c >= w; c--) {
+      dp[c] = Math.max(dp[c], v + dp[c - w]);
+    }
+  }
+  return dp[cap];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int knapsack(int[] weights, int[] values, int cap) {
+        int[] dp = new int[cap + 1];
+        for (int i = 0; i < weights.length; i++) {
+            int w = weights[i], v = values[i];
+            for (int c = cap; c >= w; c--) {
+                dp[c] = Math.max(dp[c], v + dp[c - w]);
+            }
+        }
+        return dp[cap];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int knapsack(int *weights, int *values, int n, int cap) {
+    int dp[cap + 1];
+    for (int c = 0; c <= cap; c++) dp[c] = 0;
+    for (int i = 0; i < n; i++) {
+        int w = weights[i], v = values[i];
+        for (int c = cap; c >= w; c--) {
+            int take = v + dp[c - w];
+            if (take > dp[c]) dp[c] = take;
+        }
+    }
+    return dp[cap];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int knapsack(vector<int> &weights, vector<int> &values, int cap) {
+    vector<int> dp(cap + 1, 0);
+    for (int i = 0; i < (int)weights.size(); i++) {
+        int w = weights[i], v = values[i];
+        for (int c = cap; c >= w; c--) {
+            dp[c] = max(dp[c], v + dp[c - w]);
+        }
+    }
+    return dp[cap];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute-force subsets | O(2ⁿ) | O(n) stack |
+| 2D DP | O(n × cap) | O(n × cap) |
+| 1D rolling array | O(n × cap) | O(cap) |
+
+This is pseudo-polynomial: linear in the *numeric* capacity. If capacity were, say, 10⁹, the
+table would be far too large, and 0/1 knapsack is in fact NP-hard in general.
+
+## When to use it
+
+<Callout type="warn" title="The loop direction is not optional">
+For 0/1 knapsack (each item used once), sweep capacity **downward** so an item cannot be
+picked twice in the same pass. If items may be reused unlimited times — the *unbounded* variant
+behind coin change — sweep capacity **upward** instead. Flipping the direction silently changes
+which problem you are solving.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Subset Sum asks whether some subset adds up to exactly T. How is it just knapsack in disguise?">
+
+Set each item's value equal to its weight and ask whether you can exactly fill capacity `T`.
+Or keep a boolean table: `dp[c]` = "can we make sum `c`?", starting `dp[0] = true`, and for
+each number `x` update `dp[c] = dp[c] or dp[c-x]` sweeping `c` downward. The answer is
+`dp[T]`. Same two-choice skeleton, boolean instead of max.
+
+</Accordion>
+
+<Accordion title="Why does iterating capacity from high to low prevent using an item more than once?">
+
+When you update `dp[c]` from `dp[c-w]`, you want `dp[c-w]` to still reflect the state *before*
+this item was considered. Going high-to-low, `dp[c-w]` hasn't been touched yet this pass, so it
+excludes the current item. Going low-to-high would let the item's own contribution feed back
+into a larger `c`, effectively taking it multiple times.
+
+</Accordion>
+
+<Accordion title="How would you change the code so each item can be taken unlimited times (unbounded knapsack)?">
+
+Reverse the inner loop to go **upward**: `for c in range(w, cap + 1)`. Now `dp[c-w]` may
+already include the current item, which is exactly what "reuse allowed" means. This is the
+form behind the coin-change "number of ways" and "fewest coins" problems.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Knapsack is the template for **"pick a subset under a limit"**: for each item, skip or take.
+- The state is `(item index, remaining capacity)`; the table is O(n × capacity),
+  pseudo-polynomial.
+- Sweep capacity **downward for 0/1** (each item once), **upward for unbounded** (reuse
+  allowed).
+
+<Cards>
+  <Card title="2D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/04-2d-dp" description="The full table form before you compress it to one row." />
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="Coin change and other rolling-array cousins." />
+  <Card title="Partition DP" href="/docs/dsa/21-dynamic-programming/10-partition-dp" description="Another family built on trying every split." />
+</Cards>

@@ -1,0 +1,298 @@
+---
+title: "Rabin-Karp"
+description: "What if you could compare a whole substring in one step? A rolling hash makes matching feel like arithmetic."
+extractedReferences:
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+  - href: /docs/dsa/24-string-matching/02-kmp
+  - href: /docs/dsa/07-hashing/02-hash-tables
+---
+
+## The problem
+
+You run a plagiarism checker. For every document, you need to know whether any of a thousand short phrases appears inside it. Character-by-character comparison for each phrase is slow, and you keep re-reading the same overlapping windows of text.
+
+What nags at you is this: comparing two length-`m` strings takes `m` character comparisons, but humans don't compare paragraphs letter by letter — they get a *gist*, a fingerprint, and only read closely when two fingerprints match. What if a substring had a number you could compare in a single step?
+
+## A first attempt
+
+You could hash every length-`m` window of the text and compare each hash to the pattern's hash. But naively hashing a window means summing over `m` characters, and there are `n - m + 1` windows — you are back to **O(n · m)**, now with hashing overhead on top. Computing each window's fingerprint from scratch throws away the fact that neighboring windows overlap in all but two characters.
+
+## The insight
+
+Treat a string as a number in some base `b` (say 256 for bytes), taken modulo a large prime to keep it small. Then adjacent windows share almost all their digits. Sliding one step right means: drop the leftmost character's contribution, shift everything up by one place, and add the new rightmost character. That's the **rolling hash** — each slide is O(1) arithmetic, not O(m).
+
+```text
+h_next = ( b * (h - T[i] * b^(m-1)) + T[i+m] ) mod p
+```
+
+Now the whole scan computes `n - m + 1` window hashes in O(n) total. When a window's hash equals the pattern's hash, you *verify* with a direct comparison, because different strings can share a hash (a collision).
+
+```text
+window "abc" -> hash 9418      pattern "bcd" -> hash 9531
+slide: drop 'a', add 'd'  ->  "bcd" -> 9531  == pattern hash -> verify -> match
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Precompute the pattern hash
+
+Hash the pattern once, and hash the text's first window, using the same base and prime.
+
+</Step>
+
+<Step>
+
+### Precompute the high-order multiplier
+
+Compute `b^(m-1) mod p`. You'll use it to strip off the leftmost character when you roll.
+
+</Step>
+
+<Step>
+
+### Roll across the text
+
+For each new window, remove the outgoing character, multiply by the base, add the incoming character, all mod `p`. This is O(1) per step.
+
+</Step>
+
+<Step>
+
+### Verify on a hash hit
+
+When window hash equals pattern hash, compare the actual characters to rule out a collision. Only then report a match.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def rabin_karp(text: str, pattern: str, base: int = 256, mod: int = 1_000_000_007) -> list[int]:
+    n, m = len(text), len(pattern)
+    if m == 0 or m > n:
+        return []
+    high = pow(base, m - 1, mod)
+    p_hash = t_hash = 0
+    for i in range(m):
+        p_hash = (p_hash * base + ord(pattern[i])) % mod
+        t_hash = (t_hash * base + ord(text[i])) % mod
+    hits = []
+    for i in range(n - m + 1):
+        if t_hash == p_hash and text[i:i + m] == pattern:
+            hits.append(i)
+        if i < n - m:
+            t_hash = ((t_hash - ord(text[i]) * high) * base + ord(text[i + m])) % mod
+    return hits
+
+
+print(rabin_karp("abxabcabcaby", "abcaby"))  # [6]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function rabinKarp(text: string, pattern: string, base = 256, mod = 1_000_000_007): number[] {
+  const n = text.length;
+  const m = pattern.length;
+  if (m === 0 || m > n) return [];
+  let high = 1;
+  for (let k = 0; k < m - 1; k++) high = (high * base) % mod;
+  let pHash = 0;
+  let tHash = 0;
+  for (let i = 0; i < m; i++) {
+    pHash = (pHash * base + pattern.charCodeAt(i)) % mod;
+    tHash = (tHash * base + text.charCodeAt(i)) % mod;
+  }
+  const hits: number[] = [];
+  for (let i = 0; i <= n - m; i++) {
+    if (tHash === pHash && text.slice(i, i + m) === pattern) hits.push(i);
+    if (i < n - m) {
+      tHash = ((tHash - text.charCodeAt(i) * high) * base + text.charCodeAt(i + m)) % mod;
+      if (tHash < 0) tHash += mod;
+    }
+  }
+  return hits;
+}
+
+console.log(rabinKarp("abxabcabcaby", "abcaby")); // [6]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class RabinKarp {
+    static final long BASE = 256, MOD = 1_000_000_007L;
+
+    static List<Integer> search(String text, String pattern) {
+        int n = text.length(), m = pattern.length();
+        List<Integer> hits = new ArrayList<>();
+        if (m == 0 || m > n) return hits;
+        long high = 1;
+        for (int k = 0; k < m - 1; k++) high = (high * BASE) % MOD;
+        long pHash = 0, tHash = 0;
+        for (int i = 0; i < m; i++) {
+            pHash = (pHash * BASE + pattern.charAt(i)) % MOD;
+            tHash = (tHash * BASE + text.charAt(i)) % MOD;
+        }
+        for (int i = 0; i <= n - m; i++) {
+            if (tHash == pHash && text.regionMatches(i, pattern, 0, m)) hits.add(i);
+            if (i < n - m) {
+                tHash = ((tHash - text.charAt(i) * high % MOD + MOD) % MOD * BASE
+                        + text.charAt(i + m)) % MOD;
+            }
+        }
+        return hits;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(search("abxabcabcaby", "abcaby")); // [6]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+#define BASE 256UL
+#define MOD 1000000007UL
+
+void rabin_karp(const char *text, const char *pattern) {
+    int n = (int)strlen(text), m = (int)strlen(pattern);
+    if (m == 0 || m > n) return;
+    unsigned long high = 1, p_hash = 0, t_hash = 0;
+    for (int k = 0; k < m - 1; k++) high = (high * BASE) % MOD;
+    for (int i = 0; i < m; i++) {
+        p_hash = (p_hash * BASE + (unsigned char)pattern[i]) % MOD;
+        t_hash = (t_hash * BASE + (unsigned char)text[i]) % MOD;
+    }
+    for (int i = 0; i <= n - m; i++) {
+        if (t_hash == p_hash && strncmp(text + i, pattern, m) == 0) printf("%d ", i);
+        if (i < n - m) {
+            t_hash = ((t_hash + MOD - (unsigned char)text[i] * high % MOD) % MOD * BASE
+                     + (unsigned char)text[i + m]) % MOD;
+        }
+    }
+    printf("\n");
+}
+
+int main(void) {
+    rabin_karp("abxabcabcaby", "abcaby"); /* 6 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+using namespace std;
+
+const unsigned long long BASE = 256, MOD = 1000000007ULL;
+
+vector<int> rabin_karp(const string &text, const string &pattern) {
+    int n = (int)text.size(), m = (int)pattern.size();
+    vector<int> hits;
+    if (m == 0 || m > n) return hits;
+    unsigned long long high = 1, p_hash = 0, t_hash = 0;
+    for (int k = 0; k < m - 1; k++) high = (high * BASE) % MOD;
+    for (int i = 0; i < m; i++) {
+        p_hash = (p_hash * BASE + (unsigned char)pattern[i]) % MOD;
+        t_hash = (t_hash * BASE + (unsigned char)text[i]) % MOD;
+    }
+    for (int i = 0; i <= n - m; i++) {
+        if (t_hash == p_hash && text.compare(i, m, pattern) == 0) hits.push_back(i);
+        if (i < n - m) {
+            t_hash = ((t_hash + MOD - (unsigned char)text[i] * high % MOD) % MOD * BASE
+                     + (unsigned char)text[i + m]) % MOD;
+        }
+    }
+    return hits;
+}
+
+int main() {
+    for (int h : rabin_karp("abxabcabcaby", "abcaby")) cout << h << " "; // 6
+    cout << "\n";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Case | Time | Space |
+| --- | --- | --- |
+| Expected (few collisions) | O(n + m) | O(1) extra |
+| Worst case (many collisions) | O(n · m) | O(1) extra |
+| Building hashes | O(m) | O(1) |
+
+With a good prime and base, hash collisions are rare, so verification almost never fires and the scan is linear. The worst case returns to O(n · m) only when nearly every window collides — for example an adversary who engineered the input against your modulus.
+
+## When to use it
+
+<Callout type="idea" title="Rabin-Karp wins when you have many patterns">
+Its superpower is searching for *many* patterns at once: hash all of them into a set, then roll a single hash over the text and check set membership in O(1) per window. That is the backbone of plagiarism detectors and the Karp-Rabin approach to multi-pattern search. Pick a large random prime to resist collision attacks, and always verify a hash hit with a direct comparison. For a single pattern needing worst-case guarantees, prefer [KMP](/docs/dsa/24-string-matching/02-kmp) instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must you still compare characters after the hashes match?">
+
+Hashing maps many strings onto the same number, so two different windows can share a hash — a collision. Without verification you would report false positives. The direct comparison after a hash hit costs O(m), but it fires so rarely with a good hash that it doesn't affect the expected O(n + m) running time.
+
+</Accordion>
+
+<Accordion title="What does the b^(m-1) term do in the rolling update?">
+
+It isolates the leftmost character's place value. In base `b`, the outgoing character `T[i]` contributes `T[i] · b^(m-1)` to the current hash. Subtracting that removes it cleanly; then multiplying the rest by `b` and adding the new character `T[i+m]` shifts the window one step right — all in O(1).
+
+</Accordion>
+
+<Accordion title="How would you extend this to search for 1000 patterns of the same length at once?">
+
+Hash every pattern into a hash set. Roll one hash across the text, and for each window check whether its hash is in the set; on a hit, verify against the matching pattern(s). This keeps the scan at roughly O(n) plus verification, instead of running a separate search per pattern. See the [hash tables](/docs/dsa/07-hashing/02-hash-tables) lesson for the set mechanics.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Rabin-Karp represents each window as a number and rolls that number in O(1) per slide, so the scan is O(n + m) expected.
+- Hashes can collide, so every hash hit must be verified with a direct character comparison.
+- It is the natural choice for multi-pattern search; use a large random prime to keep collisions and attacks unlikely.
+
+<Cards>
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="The naive baseline and the shared problem." />
+  <Card title="The KMP Algorithm" href="/docs/dsa/24-string-matching/02-kmp" description="Deterministic linear matching without hashing." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The hashing foundations behind the rolling hash." />
+</Cards>

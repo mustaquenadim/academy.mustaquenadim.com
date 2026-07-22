@@ -1,0 +1,10 @@
+{
+  "title": "Binary Search Tree",
+  "icon": "ListTree",
+  "pages": [
+    "01-bst-intro",
+    "02-bst-operations",
+    "03-bst-traversal",
+    "04-bst-construction-and-validation"
+  ]
+}

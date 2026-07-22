@@ -1,0 +1,300 @@
+---
+title: "Building Trees"
+description: "Given the order nodes were visited, can you rebuild the exact tree? Two traversals pin it down uniquely."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/02-traversals
+  - href: /docs/dsa/16-binary-tree/01-binary-tree-intro
+---
+
+## The problem
+
+You serialized a tree by writing down its in-order traversal — a tidy list of values — and shipped it to another service. On the far side someone needs the *tree* back, not just the list. They stare at `[4, 2, 5, 1, 3]` and ask the obvious question: which node was the root?
+
+They can't tell. Many different trees produce that exact same in-order sequence. The traversal flattened the branching structure into a line, and a single line doesn't remember where it forked. You've lost the shape.
+
+## A first attempt
+
+Maybe one traversal plus a rule? "Assume it's a balanced tree and the middle element is the root." That reconstructs *a* tree, but not necessarily the *original* one — the input might have been deliberately lopsided. Guessing balance invents structure that wasn't there.
+
+The real issue: in-order alone tells you the left-to-right order of nodes but never which one sits on top. You know the *horizontal* arrangement and nothing about the *vertical*. One traversal is genuinely ambiguous — no clever rule fixes that.
+
+## The insight
+
+You need a second traversal that reveals **roots**. Pre-order's very first element is the whole tree's root; post-order's very last element is. In-order, meanwhile, tells you, once you know the root, exactly which values fall in its **left** subtree (everything before it) and which fall in its **right** (everything after).
+
+Combine them and reconstruction becomes a clean recursion: take the root from pre-order (front) or post-order (back), locate it in in-order to split the remaining values into left and right groups, and rebuild each group the same way. Two traversals — one for order, one for roots — pin the tree down uniquely.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Read the root from pre-order
+
+Pre-order is `[root, ...left subtree..., ...right subtree...]`, so the first element is always the current root. Consume it, then recurse — a moving index into the pre-order array walks the roots in the exact order you need them.
+
+</Step>
+
+<Step>
+
+### Split in-order at the root
+
+Find the root's position in the in-order array. Everything to its **left** is the left subtree's in-order; everything to its **right** is the right subtree's in-order. The split point also tells you *how many* nodes each side has.
+
+```
+pre:  [1, 2, 4, 5, 3]      root = 1
+in:   [4, 2, 5, 1, 3]
+                ^ root at index 3
+left in-order  = [4, 2, 5]   (3 nodes)
+right in-order = [3]         (1 node)
+```
+
+</Step>
+
+<Step>
+
+### Recurse into each side
+
+Build the left subtree from the next 3 pre-order values `[2, 4, 5]` and left in-order `[4, 2, 5]`; build the right subtree from the remaining `[3]`. Each recursive call repeats the "take a root, split in-order" step until the ranges are empty.
+
+</Step>
+
+<Step>
+
+### Make the split O(1) with a hash map
+
+Scanning in-order to find the root each time is `O(n)` per node — `O(n²)` overall. Precompute a map from value to its in-order index once, and each split becomes an `O(1)` lookup, bringing the whole build down to `O(n)`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+def build_tree(preorder, inorder):
+    idx = {v: i for i, v in enumerate(inorder)}  # value -> in-order index
+    pre = [0]                                    # moving pointer into preorder
+
+    def build(lo, hi):                           # in-order range [lo, hi]
+        if lo > hi:
+            return None
+        root_val = preorder[pre[0]]
+        pre[0] += 1
+        node = Node(root_val)
+        mid = idx[root_val]
+        node.left = build(lo, mid - 1)           # left before root
+        node.right = build(mid + 1, hi)          # right after root
+        return node
+
+    return build(0, len(inorder) - 1)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class TreeNode {
+  value: number;
+  left: TreeNode | null = null;
+  right: TreeNode | null = null;
+  constructor(value: number) { this.value = value; }
+}
+
+function buildTree(preorder: number[], inorder: number[]): TreeNode | null {
+  const idx = new Map<number, number>();
+  inorder.forEach((v, i) => idx.set(v, i));      // value -> in-order index
+  let pre = 0;                                    // moving pointer into preorder
+
+  function build(lo: number, hi: number): TreeNode | null {
+    if (lo > hi) return null;
+    const rootVal = preorder[pre++];
+    const node = new TreeNode(rootVal);
+    const mid = idx.get(rootVal)!;
+    node.left = build(lo, mid - 1);              // left before root
+    node.right = build(mid + 1, hi);             // right after root
+    return node;
+  }
+
+  return build(0, inorder.length - 1);
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Builder {
+    static Map<Integer, Integer> idx;
+    static int pre;
+
+    static TreeNode buildTree(int[] preorder, int[] inorder) {
+        idx = new HashMap<>();
+        for (int i = 0; i < inorder.length; i++) idx.put(inorder[i], i);
+        pre = 0;
+        return build(preorder, 0, inorder.length - 1);
+    }
+
+    static TreeNode build(int[] preorder, int lo, int hi) {
+        if (lo > hi) return null;
+        int rootVal = preorder[pre++];
+        TreeNode node = new TreeNode(rootVal);
+        int mid = idx.get(rootVal);
+        node.left = build(preorder, lo, mid - 1);   // left before root
+        node.right = build(preorder, mid + 1, hi);  // right after root
+        return node;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+static int *pre_arr;
+static int pre_idx;
+static int *in_arr;
+
+/* linear scan for root position within in-order range */
+static int findIndex(int lo, int hi, int val) {
+    for (int i = lo; i <= hi; i++)
+        if (in_arr[i] == val) return i;
+    return -1;
+}
+
+static Node *build(int lo, int hi) {
+    if (lo > hi) return NULL;
+    int rootVal = pre_arr[pre_idx++];
+    Node *node = malloc(sizeof(Node));
+    node->value = rootVal;
+    node->left = node->right = NULL;
+    int mid = findIndex(lo, hi, rootVal);
+    node->left = build(lo, mid - 1);        /* left before root */
+    node->right = build(mid + 1, hi);       /* right after root */
+    return node;
+}
+
+Node *buildTree(int *preorder, int *inorder, int n) {
+    pre_arr = preorder;
+    in_arr = inorder;
+    pre_idx = 0;
+    return build(0, n - 1);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <unordered_map>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+class Builder {
+    unordered_map<int, int> idx;   // value -> in-order index
+    int pre = 0;
+    vector<int> preorder;
+
+    Node *build(int lo, int hi) {
+        if (lo > hi) return nullptr;
+        int rootVal = preorder[pre++];
+        Node *node = new Node(rootVal);
+        int mid = idx[rootVal];
+        node->left = build(lo, mid - 1);    // left before root
+        node->right = build(mid + 1, hi);   // right after root
+        return node;
+    }
+
+public:
+    Node *buildTree(vector<int> &pre_in, vector<int> &inorder) {
+        preorder = pre_in;
+        for (int i = 0; i < (int)inorder.size(); i++) idx[inorder[i]] = i;
+        pre = 0;
+        return build(0, inorder.size() - 1);
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Scan in-order for each root | O(n²) | O(h) recursion |
+| Hash map of in-order indices | O(n) | O(n) map + O(h) recursion |
+
+The hash map trades `O(n)` extra memory for constant-time root location, collapsing the quadratic scan into a single linear build.
+
+## When to use it
+
+<Callout type="idea" title="You need in-order plus one root-revealing traversal">
+Unique reconstruction needs **in-order** paired with either **pre-order** or **post-order** — in-order supplies left/right splits, the other supplies roots. Pre-order and post-order *together* are not enough for a general binary tree (they can't distinguish a left-only from a right-only child). Two big caveats: the values must be **distinct** (duplicates make the in-order split ambiguous), and if the tree is a BST you don't even need in-order — sorting the single given traversal reproduces it. For arbitrary serialization, prefer a level-order or pre-order dump *with explicit null markers*, which encodes the shape directly in one pass.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why can't pre-order and post-order together uniquely rebuild a binary tree?">
+
+Pre-order fixes the root at the front and post-order fixes it at the back, but neither tells you where the left subtree ends and the right begins when a node has only *one* child. Consider a root with a single left child versus the same root with a single right child: both give pre-order `[root, child]` and post-order `[child, root]`, so the two distinct trees are indistinguishable. In-order breaks the tie because the child's position relative to the root reveals which side it's on. (Pre+post *is* enough for a *full* binary tree, where every node has 0 or 2 children.)
+
+</Accordion>
+
+<Accordion title="How does the hash map turn the O(n²) build into O(n)?">
+
+The cost of the naive version comes from re-scanning the in-order array to locate each root, which is `O(n)` work repeated at all `n` nodes. By precomputing a map from each value to its in-order index once up front (`O(n)`), every "where is this root in in-order?" question becomes an `O(1)` lookup. The recursion still visits each node once, so total time is `O(n)`, at the cost of `O(n)` memory for the map — a standard time-for-space trade.
+
+</Accordion>
+
+<Accordion title="How would you serialize a tree so it can be rebuilt from a single traversal?">
+
+Include the null children explicitly. Do a pre-order (or level-order) walk and emit a sentinel like `#` for every missing child, so the output records the exact shape, not just the values — for example `1 2 # # 3 # #`. Deserialization reads the stream in the same order, creating a node for a real value and stopping a branch at each `#`. Because the nulls pin down where each subtree ends, one traversal now suffices, and it also handles duplicate values that two-traversal reconstruction cannot.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A single traversal flattens the tree's shape, so it can't be inverted uniquely.
+- In-order pairs with pre-order or post-order: one gives the root, the other splits left from right.
+- A value-to-index hash map makes the in-order split `O(1)`, turning an `O(n²)` build into `O(n)`.
+
+<Cards>
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="The pre-, in-, and post-orders you invert here." />
+  <Card title="Binary Trees" href="/docs/dsa/16-binary-tree/01-binary-tree-intro" description="The node structure you're reassembling." />
+</Cards>

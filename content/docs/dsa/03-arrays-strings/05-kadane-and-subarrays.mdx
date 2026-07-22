@@ -1,0 +1,260 @@
+---
+title: "Kadane’s Algorithm"
+description: "Which stretch of days made the most profit? Checking every stretch is O(n²), but one running total finds it in a single pass."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+  - href: /docs/dsa/10-prefix-sum/01-prefix-sum-intro
+  - href: /docs/dsa/09-sliding-window/01-sliding-window-intro
+---
+
+## The problem
+
+You run a small shop and you've logged each day's profit and loss for the year:
+`[-2, 1, -3, 4, -1, 2, 1, -5, 4]`. Some days you made money, some you lost it. Your
+accountant asks a sharp question: *"What was your best continuous streak — the run of
+consecutive days with the highest total profit?"*
+
+You want the single **contiguous** stretch whose numbers add up to the most. Not the biggest
+day, not the sum of all good days — one unbroken window. With a year it's easy to eyeball.
+With a decade of daily data, or a sensor logging every second, you need an algorithm.
+
+## A first attempt
+
+Try every possible stretch. Pick a start day, pick an end day, add up everything between,
+keep the biggest total you see:
+
+```python
+def max_subarray_brute(nums):
+    best = nums[0]
+    for i in range(len(nums)):
+        total = 0
+        for j in range(i, len(nums)):
+            total += nums[j]      # extend the window ending at j
+            best = max(best, total)
+    return best
+```
+
+There are about `n²/2` stretches (see
+[Array Traversal Tricks](/docs/dsa/03-arrays-strings/04-array-traversal-tricks)), and this
+visits each — `O(n²)`. Fine for a year. For a million data points, that's 500 billion
+additions. Too slow.
+
+## The insight
+
+Walk left to right and ask a single, local question at each day: *"Is the best streak
+**ending right here** better if I extend yesterday's streak, or if I start fresh today?"*
+
+If yesterday's running total was positive, it can only help — carry it forward and add
+today. If it was negative, it's dead weight — drop it and start a new streak at today. Track
+that running total, and remember the largest value it ever reaches. That's **Kadane's
+algorithm**: one pass, `O(n)`.
+
+```text
+current = max(today, current + today)   # extend, or start fresh
+best    = max(best, current)            # remember the champion
+```
+
+## How it works
+
+Run it on `[-2, 1, -3, 4, -1, 2, 1, -5, 4]`.
+
+<Steps>
+
+<Step>
+
+### Seed with the first element
+
+`current = best = -2`. The best streak ending at day 0 is just day 0.
+
+</Step>
+
+<Step>
+
+### At each new day, extend or restart
+
+Set `current = max(today, current + today)`. If the streak so far is negative, `today` alone
+wins and you start over; otherwise you extend.
+
+</Step>
+
+<Step>
+
+### Keep the running champion
+
+After updating `current`, set `best = max(best, current)`. `best` holds the answer for
+everything seen so far.
+
+</Step>
+
+<Step>
+
+### Read off the answer
+
+After the last day, `best` is the maximum subarray sum — here **6**, from the stretch
+`[4, -1, 2, 1]`.
+
+</Step>
+
+</Steps>
+
+```text
+day:        -2   1  -3   4  -1   2   1  -5   4
+current:    -2   1  -2   4   3   5   6   1   5
+best:       -2   1   1   4   4   5   6   6   6   -> answer 6
+```
+
+Notice day 2: `current` was `1`, adding `-3` gives `-2`, but starting fresh at `-3` is
+worse, so `current = -2`. Then day 3 sees that `-2` is negative dead weight and restarts at
+`4`. That restart is the whole idea.
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_subarray(nums):
+    best = current = nums[0]
+    for x in nums[1:]:
+        current = max(x, current + x)   # extend or start fresh
+        best = max(best, current)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxSubarray(nums: number[]): number {
+  let best = nums[0];
+  let current = nums[0];
+  for (let i = 1; i < nums.length; i++) {
+    current = Math.max(nums[i], current + nums[i]);
+    best = Math.max(best, current);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int maxSubarray(int[] nums) {
+    int best = nums[0], current = nums[0];
+    for (int i = 1; i < nums.length; i++) {
+        current = Math.max(nums[i], current + nums[i]);
+        best = Math.max(best, current);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int max_subarray(int *nums, int n) {
+    int best = nums[0], current = nums[0];
+    for (int i = 1; i < n; i++) {
+        int extend = current + nums[i];
+        current = nums[i] > extend ? nums[i] : extend;
+        best = best > current ? best : current;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int maxSubarray(vector<int>& nums) {
+    int best = nums[0], current = nums[0];
+    for (size_t i = 1; i < nums.size(); i++) {
+        current = max((int)nums[i], current + nums[i]);
+        best = max(best, current);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach            | Time    | Space  | Note                                  |
+| ------------------- | ------- | ------ | ------------------------------------- |
+| Brute force         | `O(n²)` | `O(1)` | tries every start/end pair            |
+| Kadane's algorithm  | `O(n)`  | `O(1)` | one pass, two running variables       |
+
+From quadratic to linear by asking one local question per element instead of re-summing
+every window.
+
+## When to use it
+
+<Callout type="warn" title="Seed carefully when values can be negative">
+Start `best` and `current` at `nums[0]`, not at `0`. If you initialize `best = 0` and every
+number is negative (like `[-3, -1, -2]`), you'll wrongly return `0` for an empty stretch. The
+correct answer is the least-negative single element, `-1`.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is starting `best = 0` a bug when the array can be all negative?">
+
+`best = 0` silently assumes the empty subarray (sum `0`) is allowed. If every element is
+negative, Kadane's `current` never climbs above `0`, so you'd return `0` — a stretch that
+doesn't exist. Seeding both variables with `nums[0]` forces the answer to be a real,
+non-empty subarray, giving the correct least-negative result.
+
+</Accordion>
+
+<Accordion title="How would you also report WHICH days form the best streak, not just the total?">
+
+Track two extra indices. When `current` restarts (you pick `today` over `current + today`),
+set a tentative `start = i`. Whenever `best` improves, record `resultStart = start` and
+`resultEnd = i`. At the end those two indices bound the winning subarray. Still one pass,
+still `O(n)`.
+
+</Accordion>
+
+<Accordion title="Kadane finds the maximum SUM. If the array has only positive numbers, how does this relate to a sliding window?">
+
+With all positives, extending a streak never hurts, so Kadane just sums the whole array. The
+interesting variants — "longest window with sum ≤ k", "shortest window with sum ≥ target" —
+are where a [sliding window](/docs/dsa/09-sliding-window/01-sliding-window-intro) or a
+[prefix sum](/docs/dsa/10-prefix-sum/01-prefix-sum-intro) takes over. Kadane is the
+maximum-sum specialist; those are its cousins for other subarray questions.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Kadane's algorithm finds the maximum-sum contiguous subarray in `O(n)` time and `O(1)`
+  space, replacing the `O(n²)` check-every-stretch approach.
+- The core move is local: at each element, extend the running total if it helps or restart
+  from the current element if the running total has gone negative.
+- Seed `best` and `current` with `nums[0]` so arrays of all-negative numbers return a real
+  element instead of a phantom zero.
+
+<Cards>
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="Why there are O(n²) subarrays to begin with." />
+  <Card title="Prefix Sum" href="/docs/dsa/10-prefix-sum/01-prefix-sum-intro" description="Range sums in O(1) for other subarray questions." />
+  <Card title="Sliding Window" href="/docs/dsa/09-sliding-window/01-sliding-window-intro" description="The go-to for length- or constraint-based windows." />
+</Cards>

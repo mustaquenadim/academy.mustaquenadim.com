@@ -1,0 +1,285 @@
+---
+title: "DP on Strings"
+description: "How different are two words? How do you turn one into another? String DP measures and transforms text optimally."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/04-2d-dp
+  - href: /docs/dsa/21-dynamic-programming/06-grid-dp
+  - href: /docs/dsa/21-dynamic-programming/09-lis
+---
+
+## The problem
+
+Your spell checker sees `"recieve"` and suggests `"receive"`. How did it decide those two
+words are close? Your `git diff` colors a few changed characters and leaves the rest alone.
+How does it know the *smallest* set of edits between two versions?
+
+Both answers come from one question: what is the minimum number of single-character insertions,
+deletions, or substitutions to turn one string into another? That count is the **edit distance**
+(Levenshtein distance), and it is the archetype of string DP.
+
+## A first attempt
+
+Compare the two strings from the end. If the last characters match, they cost nothing and you
+recurse on the shorter prefixes. If they differ, you try all three edits and take the cheapest.
+
+```python
+def edit(a, b):
+    if not a:
+        return len(b)             # insert all of b
+    if not b:
+        return len(a)             # delete all of a
+    if a[-1] == b[-1]:
+        return edit(a[:-1], b[:-1])
+    return 1 + min(
+        edit(a[:-1], b),          # delete from a
+        edit(a, b[:-1]),          # insert into a
+        edit(a[:-1], b[:-1]),     # substitute
+    )
+```
+
+Three recursive calls per mismatch make this **O(3^(m+n))**. The pair of prefix lengths
+`(i, j)` recurs over and over — the same overlapping-subproblem story, begging for a table.
+
+## The insight
+
+The state is a pair of prefix lengths, so it is a 2D DP over a grid of characters:
+
+> `dp[i][j]` = edit distance between the first `i` characters of `a` and the first `j` of `b`.
+> A matching pair costs 0 and moves diagonally; a mismatch costs 1 plus the cheapest of the
+> three neighboring states.
+
+```
+        ""  r   e   c   e   i   v   e
+    ""   0  1   2   3   4   5   6   7
+    r    1  0   1   2   3   4   5   6
+    e    2  1   0   1   2   3   4   5
+    c    3  2   1   0   1   2   3   4
+    ...
+```
+
+The top row and left column are the "edit from/to an empty string" costs — just insert or
+delete everything. Every other cell reads its up, left, and diagonal neighbors.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Define the state
+
+`dp[i][j]` = fewest edits to transform `a[0..i-1]` into `b[0..j-1]`. The answer is `dp[m][n]`.
+
+</Step>
+
+<Step>
+
+### Base row and column
+
+`dp[i][0] = i` (delete every character of `a`) and `dp[0][j] = j` (insert every character of
+`b`). Turning something into nothing, or nothing into something, costs one edit per character.
+
+</Step>
+
+<Step>
+
+### Recurrence on the last characters
+
+If `a[i-1] == b[j-1]`, no edit is needed: `dp[i][j] = dp[i-1][j-1]`. Otherwise take
+`1 + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])` — delete, insert, or substitute.
+
+</Step>
+
+<Step>
+
+### Fill and read the corner
+
+Sweep `i` then `j`. Each cell depends only on cells already computed. The bottom-right corner
+holds the edit distance.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def edit_distance(a, b):
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1]
+            else:
+                dp[i][j] = 1 + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+    return dp[m][n]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function editDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1];
+      else dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int editDistance(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 0; i <= m; i++) dp[i][0] = i;
+        for (int j = 0; j <= n; j++) dp[0][j] = j;
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                if (a.charAt(i - 1) == b.charAt(j - 1))
+                    dp[i][j] = dp[i - 1][j - 1];
+                else
+                    dp[i][j] = 1 + Math.min(dp[i - 1][j],
+                                   Math.min(dp[i][j - 1], dp[i - 1][j - 1]));
+            }
+        }
+        return dp[m][n];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int min3(int a, int b, int c) {
+    int m = a < b ? a : b;
+    return m < c ? m : c;
+}
+
+int edit_distance(const char *a, const char *b, int m, int n) {
+    int dp[m + 1][n + 1];
+    for (int i = 0; i <= m; i++) dp[i][0] = i;
+    for (int j = 0; j <= n; j++) dp[0][j] = j;
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a[i - 1] == b[j - 1])
+                dp[i][j] = dp[i - 1][j - 1];
+            else
+                dp[i][j] = 1 + min3(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int editDistance(const string &a, const string &b) {
+    int m = a.size(), n = b.size();
+    vector<vector<int>> dp(m + 1, vector<int>(n + 1, 0));
+    for (int i = 0; i <= m; i++) dp[i][0] = i;
+    for (int j = 0; j <= n; j++) dp[0][j] = j;
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a[i - 1] == b[j - 1])
+                dp[i][j] = dp[i - 1][j - 1];
+            else
+                dp[i][j] = 1 + min({dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]});
+        }
+    }
+    return dp[m][n];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | O(3^(m+n)) | O(m + n) stack |
+| 2D DP table | O(m × n) | O(m × n) |
+| Two rolling rows | O(m × n) | O(n) |
+
+Each cell needs only the previous row and the current cell to its left, so two rows (or one
+plus a saved diagonal) bring space down to O(n).
+
+## When to use it
+
+<Callout type="idea" title="One family, many faces">
+Edit distance, longest common subsequence, longest common substring, and string interleaving
+are all the same 2D DP over prefix pairs — only the recurrence changes. Recognize "compare two
+strings, subproblem = pair of prefixes" and you can derive each in a minute. Palindrome
+problems are the special case where the second string is the first, reversed.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How does edit distance change if a substitution costs 2 instead of 1 (only insert/delete allowed cheaply)?">
+
+Change the mismatch branch to `min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + 2)`. When
+substitution costs 2, it is never cheaper than one delete plus one insert, so the optimal
+solution stops substituting — and the distance becomes `m + n − 2·LCS(a, b)`.
+
+</Accordion>
+
+<Accordion title="How is the longest palindromic subsequence just LCS in disguise?">
+
+Compute `LCS(s, reverse(s))`. A subsequence common to a string and its reverse reads the same
+forward and backward, which is exactly a palindromic subsequence. The longest such common
+subsequence is the longest palindromic subsequence, in O(n²) time.
+
+</Accordion>
+
+<Accordion title="Why do the base row and column count up from 0 rather than staying 0?">
+
+Because `dp[i][0]` is the cost of turning an `i`-character string into the empty string: you
+must delete all `i` characters, so the cost is `i`, not 0. Likewise `dp[0][j] = j` inserts `j`
+characters. Only `dp[0][0]` is 0 — empty to empty needs no edits.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- String DP models a subproblem as a **pair of prefixes**, filling a 2D grid of characters.
+- Edit distance takes the **diagonal on a match**, else **1 + min(insert, delete, substitute)**.
+- LCS, palindromes, and interleaving are the same skeleton with a tweaked recurrence; two rows
+  give O(n) space.
+
+<Cards>
+  <Card title="2D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/04-2d-dp" description="The general two-index tables these build on." />
+  <Card title="DP on Grids" href="/docs/dsa/21-dynamic-programming/06-grid-dp" description="The same neighbor-combining, made visual." />
+  <Card title="Longest Increasing Subsequence" href="/docs/dsa/21-dynamic-programming/09-lis" description="A subsequence DP with an O(n log n) surprise." />
+</Cards>

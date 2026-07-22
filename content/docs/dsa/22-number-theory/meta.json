@@ -1,0 +1,10 @@
+{
+  "title": "Number Theory",
+  "icon": "Calculator",
+  "pages": [
+    "01-number-theory-intro",
+    "02-sieve-of-eratosthenes",
+    "03-modular-arithmetic",
+    "04-combinatorics"
+  ]
+}

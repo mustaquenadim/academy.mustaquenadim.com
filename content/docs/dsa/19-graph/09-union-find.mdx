@@ -1,0 +1,345 @@
+---
+title: "Union-Find"
+description: "Are these two people in the same group? Union-Find answers connectivity almost instantly, even as groups merge."
+extractedReferences:
+  - href: /docs/dsa/19-graph/08-minimum-spanning-tree
+  - href: /docs/dsa/19-graph/04-cycle-detection
+  - href: /docs/dsa/19-graph/01-graph-representations
+---
+
+## The problem
+
+You're running a social network. Friend requests pour in: "connect Alice and Bob," "connect
+Bob and Carol." Interleaved with them are queries: "are Alice and Dave in the same friend
+cluster?" You need to answer both — **merge two groups** and **test if two people share a
+group** — millions of times, fast.
+
+The connections form a [graph](/docs/dsa/19-graph/01-graph-representations), and "same
+cluster?" means "same connected component?" You could run a fresh traversal per query, but
+the graph keeps changing under you. You need a structure that maintains group membership
+*incrementally* as edges arrive, and answers membership almost instantly.
+
+## A first attempt
+
+Give every person a group ID. To test membership, compare IDs — `O(1)`, lovely. But *merging*
+is the pain: to union two groups you must relabel every member of one group to the other's
+ID, which is `O(n)` per union. A sequence of `n` merges degrades to `O(n²)`.
+
+The waste is that relabeling touches every member just to record one merge. What if a group
+didn't need a flat label at all — what if members just pointed toward a single representative?
+
+## The insight
+
+Model each group as a **tree** where every node points to a *parent*, and the root is the
+group's representative. Then:
+
+- **Find(x)** — follow parents up to the root. Two elements are in the same group iff they
+  share a root.
+- **Union(x, y)** — find both roots and point one root at the other. A single pointer change
+  merges entire groups.
+
+Two optimizations make this nearly `O(1)`. **Path compression:** during `find`, re-point
+every node you pass straight to the root, flattening the tree. **Union by rank/size:** always
+attach the *smaller* tree under the larger, keeping trees shallow. Together they give an
+amortized cost of **α(n)** — the inverse Ackermann function, effectively constant (≤ 4 for
+any conceivable `n`).
+
+<Callout type="idea" title="Why the tree beats the flat label">
+The flat-label version made *union* cheap-to-write but `O(n)` to run. The tree makes union a
+single pointer swing and, with compression, makes future finds pay down the cost of past
+merges. You stop relabeling members and instead relabel *roots*.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Every element is its own group
+
+Initialize `parent[i] = i` and `rank[i] = 0`. Each element is a one-node tree, its own root.
+
+</Step>
+
+<Step>
+
+### Find follows parents to the root
+
+To locate `x`'s representative, walk `parent[x]`, `parent[parent[x]]`, … until a node is its
+own parent. That node is the root.
+
+</Step>
+
+<Step>
+
+### Compress the path
+
+On the way back (or as you go), set each visited node's parent directly to the root. Next
+time, those nodes reach the root in one hop.
+
+</Step>
+
+<Step>
+
+### Union by rank
+
+To merge, find both roots. If they differ, attach the shorter tree under the taller (compare
+`rank`); if ranks tie, pick either and bump its rank by 1. This bounds tree height.
+
+</Step>
+
+</Steps>
+
+Merging builds shallow trees; a later `find` compresses the path:
+
+```text
+union(1,2) union(3,4) union(2,4):
+
+   before compression        find(1) with compression
+        4                          4
+       / \                       / | \
+      2   3                     2  3  1
+      |
+      1
+(find(1) walks 1->2->4, then re-points 1 and 2 straight to root 4)
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class UnionFind:
+    def __init__(self, n):
+        self.parent = list(range(n))
+        self.rank = [0] * n
+
+    def find(self, x):
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]  # path compression
+            x = self.parent[x]
+        return x
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False                 # already connected
+        if self.rank[ra] < self.rank[rb]:
+            ra, rb = rb, ra
+        self.parent[rb] = ra
+        if self.rank[ra] == self.rank[rb]:
+            self.rank[ra] += 1
+        return True
+
+    def connected(self, a, b):
+        return self.find(a) == self.find(b)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class UnionFind {
+  parent: number[];
+  rank: number[];
+  constructor(n: number) {
+    this.parent = Array.from({ length: n }, (_, i) => i);
+    this.rank = new Array(n).fill(0);
+  }
+  find(x: number): number {
+    while (this.parent[x] !== x) {
+      this.parent[x] = this.parent[this.parent[x]]; // path compression
+      x = this.parent[x];
+    }
+    return x;
+  }
+  union(a: number, b: number): boolean {
+    let ra = this.find(a), rb = this.find(b);
+    if (ra === rb) return false;
+    if (this.rank[ra] < this.rank[rb]) [ra, rb] = [rb, ra];
+    this.parent[rb] = ra;
+    if (this.rank[ra] === this.rank[rb]) this.rank[ra]++;
+    return true;
+  }
+  connected(a: number, b: number): boolean {
+    return this.find(a) === this.find(b);
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class UnionFind {
+    int[] parent, rank;
+
+    UnionFind(int n) {
+        parent = new int[n];
+        rank = new int[n];
+        for (int i = 0; i < n; i++) parent[i] = i;
+    }
+
+    int find(int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]]; // path compression
+            x = parent[x];
+        }
+        return x;
+    }
+
+    boolean union(int a, int b) {
+        int ra = find(a), rb = find(b);
+        if (ra == rb) return false;
+        if (rank[ra] < rank[rb]) { int t = ra; ra = rb; rb = t; }
+        parent[rb] = ra;
+        if (rank[ra] == rank[rb]) rank[ra]++;
+        return true;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int parent[100000], rnk[100000];
+
+void uf_init(int n) {
+    for (int i = 0; i < n; i++) { parent[i] = i; rnk[i] = 0; }
+}
+
+int uf_find(int x) {
+    while (parent[x] != x) {
+        parent[x] = parent[parent[x]]; /* path compression */
+        x = parent[x];
+    }
+    return x;
+}
+
+int uf_union(int a, int b) {
+    int ra = uf_find(a), rb = uf_find(b);
+    if (ra == rb) return 0;
+    if (rnk[ra] < rnk[rb]) { int t = ra; ra = rb; rb = t; }
+    parent[rb] = ra;
+    if (rnk[ra] == rnk[rb]) rnk[ra]++;
+    return 1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <numeric>
+
+struct UnionFind {
+    std::vector<int> parent, rank;
+    UnionFind(int n) : parent(n), rank(n, 0) {
+        std::iota(parent.begin(), parent.end(), 0);
+    }
+    int find(int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]]; // path compression
+            x = parent[x];
+        }
+        return x;
+    }
+    bool unite(int a, int b) {
+        int ra = find(a), rb = find(b);
+        if (ra == rb) return false;
+        if (rank[ra] < rank[rb]) std::swap(ra, rb);
+        parent[rb] = ra;
+        if (rank[ra] == rank[rb]) rank[ra]++;
+        return true;
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Both optimizations, or neither is fast">
+Path compression *without* union-by-rank, or vice versa, still risks tall trees under
+adversarial input. Use **both** for the near-constant α(n) guarantee. Also note `union`
+returns `false` when the two are already connected — that single bit is what makes cycle
+detection and Kruskal's fall out for free.
+</Callout>
+
+## Complexity
+
+| Operation | Cost           | Note                                              |
+| --------- | -------------- | ------------------------------------------------- |
+| Find      | `O(α(n))`      | amortized, with path compression + union by rank  |
+| Union     | `O(α(n))`      | dominated by the two finds                         |
+| Space     | `O(n)`         | parent and rank arrays                             |
+
+`α(n)` is the inverse Ackermann function — at most 4 for any `n` you could store on Earth, so
+each operation is effectively constant time.
+
+## When to use it
+
+<Callout type="info" title="The connectivity Swiss army knife">
+Union-Find is the go-to for **dynamic connectivity**: is X connected to Y as edges stream in?
+It powers [Kruskal's MST](/docs/dsa/19-graph/08-minimum-spanning-tree), detects
+[cycles in undirected graphs](/docs/dsa/19-graph/04-cycle-detection) (an edge whose endpoints
+already share a root closes a loop), counts connected components, and solves grid/percolation
+and account-merging problems. It does **not** support efficient *un*-union (splitting groups).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How does Union-Find detect a cycle in an undirected graph in one pass?">
+
+Process edges one at a time. For edge `(u, v)`, call `union(u, v)`. If it returns `false`,
+`u` and `v` were *already* in the same component — so this edge connects two already-connected
+vertices, closing a **cycle**. If every union succeeds, the graph is acyclic (a forest). This
+is `O(m · α(n))` overall and is exactly how Kruskal's avoids adding cycle-forming edges.
+
+</Accordion>
+
+<Accordion title="Why does path compression flatten the tree, and what does it buy the next find?">
+
+During `find`, every node on the path from `x` to the root is re-pointed closer to (or
+directly at) the root. So the tree gets shorter each time it's queried. The next `find` on any
+of those nodes reaches the root in far fewer hops — often one. The cost of building deep trees
+is paid down by the very queries that traverse them, which is why the amortized cost collapses
+to α(n).
+
+</Accordion>
+
+<Accordion title="You need to count how many separate groups remain after a batch of unions. How?">
+
+Start a counter at `n` (every element its own group). Each time `union` actually merges two
+distinct roots (returns `true`), decrement the counter by 1. Unions that return `false`
+(already connected) don't change the count. After processing all edges, the counter is the
+number of connected components — no extra traversal needed.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Union-Find maintains **disjoint sets** as a forest: `find` returns a group's root, `union`
+  links two roots.
+- **Path compression** + **union by rank** make both operations amortized `O(α(n))` —
+  effectively constant.
+- It's the engine behind dynamic connectivity, Kruskal's MST, and undirected cycle detection.
+
+<Cards>
+  <Card title="Minimum Spanning Trees" href="/docs/dsa/19-graph/08-minimum-spanning-tree" description="Kruskal's uses Union-Find to skip cycles." />
+  <Card title="Cycle Detection" href="/docs/dsa/19-graph/04-cycle-detection" description="An already-connected edge closes a loop." />
+  <Card title="Representing Graphs" href="/docs/dsa/19-graph/01-graph-representations" description="Components are the graph's connected pieces." />
+</Cards>

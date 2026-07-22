@@ -1,0 +1,139 @@
+---
+title: "Transactions"
+description: "Move money from one account to another and a crash halfway through must not vanish the cash — transactions make \"all or nothing\" real."
+extractedReferences:
+  - href: /docs/system-design/part-2-databases/05-consistency-and-cap
+  - href: /docs/system-design/part-2-databases/03-replication
+  - href: /docs/system-design/part-3-architecture/06-idempotency
+---
+
+## The problem
+
+You transfer $100 from Alice to Bob. In code that is two steps: subtract 100 from Alice, add 100 to Bob. Now imagine the server crashes — or the power blinks — in the gap between those two lines. Alice is out $100 and Bob never got it. The money simply evaporated.
+
+It gets worse under concurrency. Two withdrawals hit Alice's $150 balance at the same moment, both read "150," both approve, and she withdraws $200 she never had. Nothing in the individual operations is wrong. The danger lives in the *seams* between them — the moments where a crash or another request can interleave.
+
+## A first attempt
+
+The naive guard is "check before you write": read the balance, verify it is enough, then subtract. But the check and the write are two separate steps, so another request can slip in between them — you have just moved the seam, not closed it.
+
+You might reach for a lock around the whole operation. Now correctness depends on your application never crashing while holding that lock, never forgetting to release it, and coordinating locks across every code path that touches the balance. That is a huge amount of fragile bookkeeping to reinvent for something the database can guarantee for you — if you wrap the steps in a *transaction*.
+
+## The insight
+
+Group the steps into one **transaction** and let the database enforce **ACID**: the group either fully happens or fully does not, and concurrent transactions do not corrupt each other.
+
+- **Atomicity:** all steps commit, or none do. A crash mid-way rolls back cleanly.
+- **Consistency:** the transaction moves the database from one valid state to another (constraints hold).
+- **Isolation:** concurrent transactions behave as if run one at a time — no peeking at half-finished work.
+- **Durability:** once committed, it survives crashes, because it was written to a durable log first.
+
+```sql
+BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 'alice';
+  UPDATE accounts SET balance = balance + 100 WHERE id = 'bob';
+COMMIT;   -- both, or (on crash) neither
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Write intentions to a log first
+
+Before touching the real data, the database appends the change to a write-ahead log (WAL). If it crashes, recovery replays committed transactions and discards uncommitted ones — this is how atomicity and durability are enforced.
+
+</Step>
+
+<Step>
+
+### Isolate concurrent transactions
+
+Using locks or multi-version snapshots (MVCC), each transaction sees a stable view and cannot read another's uncommitted changes. This is what stops the two-withdrawal race.
+
+</Step>
+
+<Step>
+
+### Commit atomically
+
+`COMMIT` flips the transaction to durable in one indivisible act. Before that point, none of its changes are visible; after it, all of them are.
+
+</Step>
+
+<Step>
+
+### Choose an isolation level
+
+Stronger isolation prevents more anomalies but allows less concurrency. You pick the weakest level that is still correct for the operation.
+
+</Step>
+
+</Steps>
+
+Isolation levels trade safety against throughput. From weakest to strongest, and what each still allows:
+
+| Isolation level  | Dirty read | Non-repeatable read | Phantom read |
+| ---------------- | ---------- | ------------------- | ------------ |
+| Read Uncommitted | possible   | possible            | possible     |
+| Read Committed   | prevented  | possible            | possible     |
+| Repeatable Read  | prevented  | prevented           | possible     |
+| Serializable     | prevented  | prevented           | prevented    |
+
+## Concrete numbers
+
+Isolation is not free. On a contended row, `Serializable` can cut throughput by 2–5x versus `Read Committed`, because transactions must wait or abort and retry when they conflict. Most systems default to `Read Committed` (Postgres) or `Repeatable Read` (MySQL) and reserve `Serializable` for the few operations that truly need it.
+
+The distributed case is far more expensive. A **two-phase commit (2PC)** across 3 nodes needs two network round trips *plus* durable writes at each participant — tens of milliseconds across a datacenter, hundreds across regions — and it *blocks*: if the coordinator dies mid-commit, participants hold locks until it recovers. That single blocking property is why large systems avoid distributed transactions and favor idempotent, eventually-consistent workflows (like the saga pattern) instead.
+
+## When to use it
+
+<Callout type="warn" title="The trade-off">
+Stronger guarantees cost concurrency. Higher isolation prevents more anomalies but serializes more work, and distributed transactions add network latency and blocking on top. Use the weakest isolation that is still correct, and keep transactions short — a long transaction holds locks and starves everyone waiting behind it.
+</Callout>
+
+<Callout type="idea" title="Prefer idempotency over distributed transactions">
+Across services, a two-phase commit is often the wrong tool — it blocks on coordinator failure. Instead, make each step idempotent and retryable and stitch them with a saga (with compensating actions to undo). You trade strict atomicity for availability, which is usually the right call across a network.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Two requests read Alice's $150 balance at the same instant and each approves a $100 withdrawal. Which ACID property stops the resulting overdraft, and how?">
+
+Isolation. With proper isolation the two transactions cannot both act on the same stale read — one takes a lock (or, under MVCC serializable checks, is aborted and retried) so the second sees the updated $50 balance and is rejected. Without isolation both read "150" and both commit, overdrawing the account. This class of bug is a lost update, and isolation level is exactly the dial that governs it.
+
+</Accordion>
+
+<Accordion title="Your report runs the same SELECT twice inside one transaction and gets different totals because another transaction committed in between. Name the anomaly and the level that fixes it.">
+
+That is a non-repeatable read. `Read Committed` allows it, because each statement sees the latest committed data. Moving to `Repeatable Read` gives the transaction a stable snapshot so both SELECTs return the same result. If new rows (not just changed ones) could also appear, that is a phantom read, which needs `Serializable`.
+
+</Accordion>
+
+<Accordion title="Why do large distributed systems often avoid two-phase commit even though it gives true atomicity across services?">
+
+Because 2PC is a blocking protocol: if the coordinator crashes after participants have voted to commit, they must hold their locks and wait until it recovers — an availability hit that can cascade. It also adds multiple network round trips per commit. Under CAP pressure most systems prefer to stay available, so they replace distributed transactions with idempotent, retryable steps and sagas that use compensating actions to undo partial work, accepting eventual consistency instead of strict atomicity.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A transaction makes a group of operations all-or-nothing and crash-safe via ACID.
+- Isolation levels trade anomaly prevention against concurrency — use the weakest that stays correct.
+- Distributed transactions (2PC) give atomicity but block and cost round trips; sagas plus idempotency are the common alternative.
+
+<Cards>
+  <Card title="Consistency & the CAP Theorem" href="/docs/system-design/part-2-databases/05-consistency-and-cap" description="Why distributed atomicity fights availability." />
+  <Card title="Replication" href="/docs/system-design/part-2-databases/03-replication" description="Durability and how commits survive a node failure." />
+  <Card title="Idempotency" href="/docs/system-design/part-3-architecture/06-idempotency" description="Making retryable steps safe — the saga alternative to 2PC." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+When a design touches money, inventory, or bookings, say "this needs a transaction" and name the ACID property at risk. For the multi-service case, resist reaching for two-phase commit — explain that it blocks, and propose idempotent steps with a saga instead. Showing you match isolation level to the operation, not the whole database, is what stands out.
+</Callout>

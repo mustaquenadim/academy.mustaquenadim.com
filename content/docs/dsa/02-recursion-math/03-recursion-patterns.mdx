@@ -1,0 +1,265 @@
+---
+title: "Recursion Patterns"
+description: "Print 1 to n, compute a factorial, find a GCD, raise to a power — the same recursive skeleton solves them all."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/01-recursion
+  - href: /docs/dsa/02-recursion-math/02-analysis-of-recursion
+  - href: /docs/dsa/02-recursion-math/06-classic-recursion
+---
+
+## The problem
+
+Four unrelated-looking tasks land on your desk in one afternoon: print the numbers `1` to `n`, compute `n!`, find the greatest common divisor of two numbers, and raise a base to a power fast. You start writing four different loops, each with its own bookkeeping.
+
+Halfway through the third loop you get a nagging feeling that you are typing the same shape over and over. And you are. Underneath, all four are the *same* recursive move dressed in different clothes. Learn the move once and you stop reinventing it.
+
+## A first attempt
+
+Solve each one ad hoc and you get four loops that share nothing:
+
+```python
+def power_slow(base, exp):
+    result = 1
+    for _ in range(exp):        # multiply exp times
+        result *= base
+    return result
+```
+
+That power loop is **O(exp)** — for `2^1000` it does a thousand multiplications. Worse, you have now written four separate control structures, each with a counter to initialize, advance, and test. There is no shared vocabulary, so every new "compute over the integers" task starts from scratch. The repetition is a hint that a single pattern is hiding.
+
+## The insight
+
+Almost every one of these is a **linear recursion**: reduce the input by one step, recurse, and combine. And two of them — power and GCD — do something even better: they shrink the input *by half* or *toward zero fast*, which turns linear work into **logarithmic** work.
+
+Three reusable skeletons cover the set:
+
+- **Do-then-recurse** (or recurse-then-do): print `n` and recurse, or recurse and then print. Order controls ascending vs descending.
+- **Reduce-and-combine**: `factorial(n) = n * factorial(n - 1)`.
+- **Halve-the-problem**: fast exponentiation squares a half-sized result; Euclid's GCD replaces `(a, b)` with `(b, a mod b)`.
+
+Once you see them as skeletons, you fill in the blanks instead of reinventing the loop.
+
+## How it works
+
+Take fast exponentiation, the most rewarding of the four.
+
+<Steps>
+
+<Step>
+
+### Base case first
+
+`base^0 = 1`. That anchors the recursion and stops it from running past zero.
+
+</Step>
+
+<Step>
+
+### Halve the exponent
+
+Compute `half = power(base, exp / 2)` once. This is the key move — you solve a problem of *half* the size, not one smaller.
+
+</Step>
+
+<Step>
+
+### Square and adjust
+
+If `exp` is even, the answer is `half * half`. If it is odd, you dropped a factor when you integer-divided, so multiply it back: `half * half * base`.
+
+```text
+power(2, 10)
+= power(2, 5)^2
+= (2 * power(2, 2)^2)^2
+= (2 * (power(2, 1))^2 ... )   -> log2(10) ≈ 4 levels, not 10
+```
+
+</Step>
+
+<Step>
+
+### See why GCD is the same idea
+
+Euclid's algorithm keeps replacing the larger number with the remainder: `gcd(a, b) = gcd(b, a mod b)`, stopping when `b` hits `0`. The numbers shrink fast, so it also finishes in logarithmic steps.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def power(base, exp):          # O(log exp)
+    if exp == 0:
+        return 1
+    half = power(base, exp // 2)
+    if exp % 2 == 0:
+        return half * half
+    return half * half * base
+
+
+def gcd(a, b):                 # Euclid, O(log min(a, b))
+    if b == 0:
+        return a
+    return gcd(b, a % b)
+
+
+print(power(2, 10))  # 1024
+print(gcd(48, 36))   # 12
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function power(base: number, exp: number): number {
+  if (exp === 0) return 1;
+  const half = power(base, Math.floor(exp / 2));
+  if (exp % 2 === 0) return half * half;
+  return half * half * base;
+}
+
+function gcd(a: number, b: number): number {
+  if (b === 0) return a;
+  return gcd(b, a % b);
+}
+
+console.log(power(2, 10)); // 1024
+console.log(gcd(48, 36)); // 12
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static long power(long base, int exp) {   // O(log exp)
+    if (exp == 0) return 1;
+    long half = power(base, exp / 2);
+    if (exp % 2 == 0) return half * half;
+    return half * half * base;
+}
+
+static int gcd(int a, int b) {            // O(log min(a, b))
+    if (b == 0) return a;
+    return gcd(b, a % b);
+}
+
+// power(2, 10) -> 1024,  gcd(48, 36) -> 12
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+long power(long base, int exp) {          /* O(log exp) */
+    if (exp == 0) return 1;
+    long half = power(base, exp / 2);
+    if (exp % 2 == 0) return half * half;
+    return half * half * base;
+}
+
+int gcd(int a, int b) {                   /* O(log min(a, b)) */
+    if (b == 0) return a;
+    return gcd(b, a % b);
+}
+
+/* power(2, 10) -> 1024,  gcd(48, 36) -> 12 */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+long long power(long long base, int exp) {  // O(log exp)
+    if (exp == 0) return 1;
+    long long half = power(base, exp / 2);
+    if (exp % 2 == 0) return half * half;
+    return half * half * base;
+}
+
+int gcd(int a, int b) {                     // O(log min(a, b))
+    if (b == 0) return a;
+    return gcd(b, a % b);
+}
+
+// power(2, 10) -> 1024,  gcd(48, 36) -> 12
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Pattern            | Example        | Time         | Space    |
+| ------------------ | -------------- | ------------ | -------- |
+| Do-then-recurse    | print 1..n     | O(n)         | O(n)     |
+| Reduce-and-combine | factorial      | O(n)         | O(n)     |
+| Halve-the-problem  | fast power     | O(log exp)   | O(log exp) |
+| Euclid's GCD       | gcd(a, b)      | O(log min(a,b)) | O(log min(a,b)) |
+
+The lesson of the table: shrinking the input *by a step* costs linear time, but shrinking it *by half* costs logarithmic time. Same skeleton, wildly different speed.
+
+## When to use it
+
+<Callout type="idea" title="Match the skeleton to the shrink">
+If a problem gets one element smaller per call, reach for the reduce-and-combine skeleton — clean, but linear. If you can cut the problem in half each call (exponentiation, GCD, binary search), the halving skeleton buys you a logarithmic speedup practically for free. Recognizing which shrink applies is more valuable than memorizing any single function.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Print 1 to n ascending, then descending — what changes?">
+
+Only the *order* of the work relative to the recursive call. Do the work before recursing to count down, after recursing to count up.
+
+```python
+def up(n):
+    if n == 0:
+        return
+    up(n - 1)     # recurse first
+    print(n)      # then print -> 1, 2, ..., n
+
+def down(n):
+    if n == 0:
+        return
+    print(n)      # print first
+    down(n - 1)   # then recurse -> n, n-1, ..., 1
+```
+
+</Accordion>
+
+<Accordion title="Why is fast power O(log exp) and not O(exp)?">
+
+Because each call *halves* the exponent instead of decreasing it by one. Starting from `exp`, you can only halve about `log₂(exp)` times before reaching `0`, so there are `log₂(exp)` levels of recursion — around 10 multiplications for `exp = 1000` instead of 1000.
+
+</Accordion>
+
+<Accordion title="What makes Euclid's GCD terminate so quickly?">
+
+Every step replaces `(a, b)` with `(b, a mod b)`, and a remainder is always smaller than the divisor. In fact `a mod b` is less than `a / 2` whenever `b ≤ a`, so the numbers shrink at least geometrically — giving **O(log min(a, b))** steps before `b` reaches `0`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A handful of recursive skeletons — do-then-recurse, reduce-and-combine, halve-the-problem — cover most integer recursion.
+- Order of work versus recursion controls direction; the *rate of shrink* controls complexity.
+- Halving the input turns linear work into logarithmic work.
+
+<Cards>
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The base-case-plus-recursive-case foundation these patterns build on." />
+  <Card title="Analyzing Recursion" href="/docs/dsa/02-recursion-math/02-analysis-of-recursion" description="Why halving gives log time and reducing gives linear time." />
+  <Card title="Classic Recursion Puzzles" href="/docs/dsa/02-recursion-math/06-classic-recursion" description="Tower of Hanoi and Josephus push these skeletons further." />
+</Cards>

@@ -1,0 +1,231 @@
+---
+title: "The Two-Pointer Technique"
+description: "Checking every pair takes forever — but two pointers walking a sorted array collapse many problems from O(n²) to O(n)."
+extractedReferences:
+  - href: /docs/dsa/08-two-pointer/02-opposite-ends
+  - href: /docs/dsa/09-sliding-window/01-sliding-window-intro
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+---
+
+## The problem
+
+You have a sorted list of a few million sensor readings, and duplicates keep sneaking in — the same value logged twice, three times, ten times in a row. Before you ship the data downstream, you need it compacted: each value kept once, in place, no extra array, because memory is tight on this device.
+
+It sounds trivial. Then you write the obvious version, run it on the full file, and watch it crawl. Something about "the obvious version" is quietly doing a lot more work than the task actually requires.
+
+## A first attempt
+
+The instinct is to build a fresh list of the things you've already seen, and for each new value, scan that list to check whether it is a duplicate.
+
+```python
+def remove_duplicates_naive(nums):
+    seen = []
+    for x in nums:
+        if x not in seen:   # this scan is the trap
+            seen.append(x)
+    return seen
+```
+
+That `x not in seen` walks the whole `seen` list every single time. For an array of length `n` with mostly-unique values, you do roughly `n` scans of a list that grows to size `n` — that is **O(n²)** time, plus **O(n)** extra memory you were told you don't have. On a million rows it goes from "instant" to "make a coffee."
+
+## The insight
+
+The array is **already sorted**. That changes everything. If duplicates exist, they must sit *next to each other*. So you never need a "seen" list at all — you only need to compare each element to the one you last kept.
+
+Now use **two pointers moving in the same direction**: a `read` pointer that scans forward through every element, and a `write` pointer that marks where the next unique value belongs. `write` lags behind `read`, only advancing when `read` finds something new. One pass, no extra memory.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Anchor the first element
+
+The element at index `0` is always kept — there is nothing before it to duplicate. Start `write` at `1`: that is the slot where the next distinct value will go.
+
+</Step>
+
+<Step>
+
+### Scan with the read pointer
+
+Move `read` from `1` to the end. At each step, compare `nums[read]` to the last value you kept, which lives at `nums[write - 1]`.
+
+</Step>
+
+<Step>
+
+### Copy only on a new value
+
+If `nums[read]` equals the last kept value, it is a duplicate — skip it, `read` keeps moving. If it differs, write it into `nums[write]` and bump `write` forward.
+
+</Step>
+
+<Step>
+
+### The answer is where write stopped
+
+When `read` runs off the end, the first `write` slots hold every distinct value in order. Return `write` as the new length.
+
+```text
+nums = [1, 1, 2, 3, 3]
+        w
+        r →
+step:  keep 1 | dup 1 | new 2 | new 3 | dup 3
+result: [1, 2, 3, _, _]   length = 3
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def remove_duplicates(nums):
+    if not nums:
+        return 0
+    write = 1
+    for read in range(1, len(nums)):
+        if nums[read] != nums[write - 1]:
+            nums[write] = nums[read]
+            write += 1
+    return write
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function removeDuplicates(nums: number[]): number {
+  if (nums.length === 0) return 0;
+  let write = 1;
+  for (let read = 1; read < nums.length; read++) {
+    if (nums[read] !== nums[write - 1]) {
+      nums[write] = nums[read];
+      write++;
+    }
+  }
+  return write;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    public int removeDuplicates(int[] nums) {
+        if (nums.length == 0) return 0;
+        int write = 1;
+        for (int read = 1; read < nums.length; read++) {
+            if (nums[read] != nums[write - 1]) {
+                nums[write] = nums[read];
+                write++;
+            }
+        }
+        return write;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int removeDuplicates(int* nums, int numsSize) {
+    if (numsSize == 0) return 0;
+    int write = 1;
+    for (int read = 1; read < numsSize; read++) {
+        if (nums[read] != nums[write - 1]) {
+            nums[write] = nums[read];
+            write++;
+        }
+    }
+    return write;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+int removeDuplicates(vector<int>& nums) {
+    if (nums.empty()) return 0;
+    int write = 1;
+    for (int read = 1; read < (int)nums.size(); read++) {
+        if (nums[read] != nums[write - 1]) {
+            nums[write] = nums[read];
+            write++;
+        }
+    }
+    return write;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive `seen` list | O(n²) | O(n) |
+| Two pointers (same direction) | O(n) | O(1) |
+
+The `read` pointer touches each element once and `write` never overtakes it, so the whole pass is linear with no extra allocation.
+
+## When to use it
+
+<Callout type="idea" title="Reach for two pointers when…">
+The data is **sorted** (or can be), and the answer depends on comparing or compacting elements as you sweep. A single index isn't enough because you need to track two positions at once — a place you're reading and a place you're writing, or two ends closing in. If you catch yourself writing a nested loop over the same array, ask whether one of the loops can become a second pointer.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does this approach require the array to be sorted?">
+
+Because it only ever compares against the *last kept* value. Duplicates are detected only when they are adjacent. In an unsorted array, `[1, 2, 1]`, the second `1` sits away from the first and would slip through. On unsorted data you'd fall back to a hash set — O(n) time but O(n) space.
+
+</Accordion>
+
+<Accordion title="How would you keep at most two copies of each value instead of one?">
+
+Compare `nums[read]` against `nums[write - 2]` instead of `nums[write - 1]`, and start `write` at `2`. A value is only rejected once two copies already sit in the kept region, so runs of three or more get trimmed down to exactly two.
+
+</Accordion>
+
+<Accordion title="What if you had to move all zeroes to the end while keeping order?">
+
+Same same-direction pattern. Let `write` mark the next slot for a non-zero value; scan `read` across the array copying every non-zero into `nums[write]` and advancing `write`. After the pass, fill positions `write..end` with zeroes. One pass, O(1) extra space.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Two pointers moving in the **same direction** (a slow `write`, a fast `read`) compact or filter an array in one linear pass with no extra memory.
+- The trick works because **sorted order** puts equal elements next to each other, so a local comparison replaces a global search.
+- Whenever a naive solution scans "everything seen so far," check if a second pointer can carry that state instead — O(n²) often collapses to O(n).
+
+<Cards>
+  <Card title="Pointers from Both Ends" href="/docs/dsa/08-two-pointer/02-opposite-ends" description="The other flavor: two pointers closing in from the edges." />
+  <Card title="Sliding Window" href="/docs/dsa/09-sliding-window/01-sliding-window-intro" description="Two pointers that bound a moving range." />
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="The data structure two pointers walk across." />
+</Cards>

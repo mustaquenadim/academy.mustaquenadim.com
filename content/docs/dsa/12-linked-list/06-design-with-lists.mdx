@@ -1,0 +1,442 @@
+---
+title: "Designing with Lists"
+description: "An LRU cache — evict the least recently used item instantly — is a doubly linked list and a hash map working together."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/02-doubly-and-circular
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/12-linked-list/07-hard-lists
+---
+
+## The problem
+
+Your service caches the results of expensive database calls in memory. Memory is finite, so
+the cache holds at most, say, 10,000 entries. When it fills and a new key arrives, you must
+throw one out — and the smart choice is the item nobody has touched in the longest time, the
+*least recently used*. Cheap to compute, and it tends to keep the hot data.
+
+The trap: every `get` and `put` runs on the request's hot path, thousands per second. If
+finding the least-recently-used item, or marking one as freshly used, costs O(n), your cache
+becomes the bottleneck it was meant to remove. You need *both* operations in O(1).
+
+## A first attempt
+
+Track recency with a list of keys, most-recent at the front:
+
+```python
+order = []                       # a plain list
+def touch(key):
+    order.remove(key)            # O(n) scan to find it
+    order.insert(0, key)         # O(n) shift to the front
+```
+
+`order.remove(key)` scans to locate the key — **O(n)** — and re-inserting at the front shifts
+elements — another **O(n)**. Do that on every access and the cache is linear per operation.
+The two things you need are "jump straight to a specific item" and "move an item to the front
+without shifting" — and no single array-based structure gives you both.
+
+## The insight
+
+Split the two jobs across two structures that each do one in O(1):
+
+- A **hash map** from key to node gives instant lookup — "jump straight to a specific item."
+- A **doubly linked list** orders nodes by recency; because each node is doubly linked, you
+  can unlink it and move it to the front in O(1) — "move without shifting."
+
+The map finds the node; the list reorders it. Most-recent lives at the head, least-recent at
+the tail, so eviction is just "drop the tail." Two simple structures, glued, beat one clever
+one.
+
+```text
+map: key ─▶ node
+list (recency):  head [MRU] ⇄ … ⇄ [LRU] tail
+get/put → move node to head;  evict → remove tail
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Two structures, one invariant
+
+Keep a `dict` (key → node) and a doubly linked list. Invariant: the list is ordered
+most-recently-used at the head, least at the tail, and every live key has exactly one node.
+
+</Step>
+
+<Step>
+
+### Use sentinel head and tail
+
+Add permanent dummy `head` and `tail` nodes. Every real node always has non-null neighbors,
+so add-to-front and unlink never special-case the ends — far fewer pointer bugs.
+
+</Step>
+
+<Step>
+
+### get: look up, then promote
+
+Find the node via the map in O(1). If absent, return a miss. If present, unlink it and
+re-insert right after `head` (marking it most-recent), then return its value.
+
+</Step>
+
+<Step>
+
+### put: insert or update, then maybe evict
+
+If the key exists, update its value and promote it. Otherwise create a node, add it after
+`head`, and store it in the map. If size now exceeds capacity, remove the node before `tail`
+(the LRU) and delete its key from the map. All O(1).
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, key=0, value=0):
+        self.key, self.value = key, value
+        self.prev = self.next = None
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.cap = capacity
+        self.map = {}
+        self.head, self.tail = Node(), Node()   # sentinels
+        self.head.next, self.tail.prev = self.tail, self.head
+
+    def _remove(self, node):
+        node.prev.next, node.next.prev = node.next, node.prev
+
+    def _add_front(self, node):
+        node.prev, node.next = self.head, self.head.next
+        self.head.next.prev = node
+        self.head.next = node
+
+    def get(self, key):                          # O(1)
+        if key not in self.map:
+            return -1
+        node = self.map[key]
+        self._remove(node)
+        self._add_front(node)
+        return node.value
+
+    def put(self, key, value):                   # O(1)
+        if key in self.map:
+            self._remove(self.map[key])
+        node = Node(key, value)
+        self.map[key] = node
+        self._add_front(node)
+        if len(self.map) > self.cap:
+            lru = self.tail.prev
+            self._remove(lru)
+            del self.map[lru.key]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Node {
+  key: number; value: number;
+  prev: Node | null = null;
+  next: Node | null = null;
+  constructor(key = 0, value = 0) { this.key = key; this.value = value; }
+}
+
+class LRUCache {
+  private cap: number;
+  private map = new Map<number, Node>();
+  private head = new Node();
+  private tail = new Node();
+
+  constructor(capacity: number) {
+    this.cap = capacity;
+    this.head.next = this.tail;
+    this.tail.prev = this.head;
+  }
+
+  private remove(node: Node): void {
+    node.prev!.next = node.next;
+    node.next!.prev = node.prev;
+  }
+
+  private addFront(node: Node): void {
+    node.prev = this.head;
+    node.next = this.head.next;
+    this.head.next!.prev = node;
+    this.head.next = node;
+  }
+
+  get(key: number): number {                     // O(1)
+    const node = this.map.get(key);
+    if (!node) return -1;
+    this.remove(node);
+    this.addFront(node);
+    return node.value;
+  }
+
+  put(key: number, value: number): void {        // O(1)
+    if (this.map.has(key)) this.remove(this.map.get(key)!);
+    const node = new Node(key, value);
+    this.map.set(key, node);
+    this.addFront(node);
+    if (this.map.size > this.cap) {
+      const lru = this.tail.prev!;
+      this.remove(lru);
+      this.map.delete(lru.key);
+    }
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.HashMap;
+
+class LRUCache {
+    class Node {
+        int key, value;
+        Node prev, next;
+        Node(int key, int value) { this.key = key; this.value = value; }
+    }
+
+    private final int cap;
+    private final HashMap<Integer, Node> map = new HashMap<>();
+    private final Node head = new Node(0, 0), tail = new Node(0, 0);
+
+    LRUCache(int capacity) {
+        cap = capacity;
+        head.next = tail;
+        tail.prev = head;
+    }
+
+    private void remove(Node n) {
+        n.prev.next = n.next;
+        n.next.prev = n.prev;
+    }
+
+    private void addFront(Node n) {
+        n.prev = head;
+        n.next = head.next;
+        head.next.prev = n;
+        head.next = n;
+    }
+
+    int get(int key) {                           // O(1)
+        Node n = map.get(key);
+        if (n == null) return -1;
+        remove(n);
+        addFront(n);
+        return n.value;
+    }
+
+    void put(int key, int value) {               // O(1)
+        if (map.containsKey(key)) remove(map.get(key));
+        Node n = new Node(key, value);
+        map.put(key, n);
+        addFront(n);
+        if (map.size() > cap) {
+            Node lru = tail.prev;
+            remove(lru);
+            map.remove(lru.key);
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+/* Pair a doubly linked node with a key->node hash (uthash-style, omitted for brevity). */
+
+typedef struct Node {
+    int key, value;
+    struct Node *prev, *next;
+} Node;
+
+typedef struct {
+    int cap, size;
+    Node *head, *tail;      /* sentinels */
+    /* Node **table;  a hash map from key to Node* lives here */
+} LRUCache;
+
+static void remove_node(Node *n) {
+    n->prev->next = n->next;
+    n->next->prev = n->prev;
+}
+
+static void add_front(LRUCache *c, Node *n) {
+    n->prev = c->head;
+    n->next = c->head->next;
+    c->head->next->prev = n;
+    c->head->next = n;
+}
+
+/* get: hash-lookup the node (O(1)), then promote it to the front. */
+int lru_get(LRUCache *c, int key, Node *found /* from hash lookup */) {
+    if (!found) return -1;
+    remove_node(found);
+    add_front(c, found);
+    return found->value;
+}
+
+/* put: insert/update, promote, and evict tail->prev when over capacity. */
+void lru_put(LRUCache *c, int key, int value) {
+    Node *n = malloc(sizeof(Node));
+    n->key = key; n->value = value;
+    add_front(c, n);
+    c->size++;
+    /* store n in the hash map keyed by key ... */
+    if (c->size > c->cap) {
+        Node *lru = c->tail->prev;
+        remove_node(lru);
+        /* erase lru->key from the hash map ... */
+        free(lru);
+        c->size--;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <unordered_map>
+
+class LRUCache {
+    struct Node {
+        int key, value;
+        Node *prev = nullptr, *next = nullptr;
+        Node(int k = 0, int v = 0) : key(k), value(v) {}
+    };
+
+    int cap;
+    std::unordered_map<int, Node*> map;
+    Node *head = new Node(), *tail = new Node();   // sentinels
+
+    void remove(Node *n) {
+        n->prev->next = n->next;
+        n->next->prev = n->prev;
+    }
+    void addFront(Node *n) {
+        n->prev = head;
+        n->next = head->next;
+        head->next->prev = n;
+        head->next = n;
+    }
+
+public:
+    explicit LRUCache(int capacity) : cap(capacity) {
+        head->next = tail;
+        tail->prev = head;
+    }
+
+    int get(int key) {                           // O(1)
+        auto it = map.find(key);
+        if (it == map.end()) return -1;
+        remove(it->second);
+        addFront(it->second);
+        return it->second->value;
+    }
+
+    void put(int key, int value) {               // O(1)
+        auto it = map.find(key);
+        if (it != map.end()) remove(it->second);
+        Node *n = new Node(key, value);
+        map[key] = n;
+        addFront(n);
+        if ((int)map.size() > cap) {
+            Node *lru = tail->prev;
+            remove(lru);
+            map.erase(lru->key);
+            delete lru;
+        }
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Naive (list scan) | List + hash map |
+| --------- | ----------------- | --------------- |
+| `get`     | O(n)              | O(1)            |
+| `put`     | O(n)              | O(1)            |
+| Evict LRU | O(n)              | O(1)            |
+| Space     | O(capacity)       | O(capacity)     |
+
+## When to use it
+
+<Callout type="idea" title="Compose simple structures for O(1) power">
+The LRU pattern — hash map for lookup, doubly linked list for ordering — recurs everywhere:
+in-memory caches, page-replacement in operating systems, and CPU cache modeling. The lesson
+generalizes: when one structure can't give you every operation in O(1), pair two that each own
+one job and keep them in sync. Sentinel head/tail nodes are almost mandatory here — they erase
+the null-checking edge cases that make LRU bugs so common.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why store the key inside the node, when the map already maps key to node?">
+
+Because eviction goes the other direction. When you drop the LRU node (`tail.prev`), you must
+also delete its entry from the map — but you only have the node, and the map is keyed by key.
+Storing `key` in the node lets you look up `lru.key` and remove it. Without it, you would have
+no way to find which map entry to erase.
+
+</Accordion>
+
+<Accordion title="How would you turn this into an LFU (least frequently used) cache?">
+
+LFU evicts by access count, not recency. Keep a count per node and group nodes by frequency —
+typically a hash map from frequency to its own doubly linked list, plus a `minFreq` tracker.
+On access, move the node from its frequency bucket to the next one up; evict from the
+`minFreq` bucket's tail. It is more moving parts, but the same compose-two-structures idea.
+
+</Accordion>
+
+<Accordion title="Could you implement LRU with Python's OrderedDict or Java's LinkedHashMap instead?">
+
+Yes — both are literally a hash map plus a doubly linked list under the hood, which is why
+they exist. `OrderedDict.move_to_end` and `LinkedHashMap(accessOrder=true)` give you the same
+O(1) promotion and ordered eviction. Building it by hand, as here, is the interview exercise
+and shows you understand what those library types are doing internally.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- An LRU cache pairs a hash map (O(1) lookup) with a doubly linked list (O(1) reorder/evict).
+- Most-recent sits at the head, least-recent at the tail, so eviction is "drop the tail."
+- Store the key in each node so evicting the tail can also erase its map entry.
+
+<Cards>
+  <Card title="Doubly & Circular Lists" href="/docs/dsa/12-linked-list/02-doubly-and-circular" description="The O(1) unlink-and-splice that makes promotion instant." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The O(1) key lookup half of the design." />
+  <Card title="Advanced List Problems" href="/docs/dsa/12-linked-list/07-hard-lists" description="More pointer-heavy structures built from lists." />
+</Cards>

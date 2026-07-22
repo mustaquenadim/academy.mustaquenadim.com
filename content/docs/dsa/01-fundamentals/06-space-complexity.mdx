@@ -1,0 +1,311 @@
+---
+title: "Space Complexity"
+description: "Your program is fast but keeps crashing with \"out of memory\" — time isn’t the only cost that grows."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/05-time-complexity
+  - href: /docs/dsa/01-fundamentals/04-big-o
+  - href: /docs/dsa/01-fundamentals/01-what-is-dsa
+---
+
+## The problem
+
+You wrote a lightning-fast function to process an upload. On test files it flies. Then a
+user uploads a 4 GB log and the process dies: `MemoryError`, `OutOfMemoryError`, the OOM
+killer. The code was never slow — it was *greedy*.
+
+Speed isn't the only resource that grows with input. Every array you allocate, every copy
+you make, every level of recursion eats memory, and memory runs out long before patience
+does. **Space complexity** is the same growth question as time — but asked about bytes
+instead of seconds.
+
+## A first attempt
+
+Say you need the running totals of a list — each position holds the sum so far. The natural
+approach builds a brand-new list to hold them all.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def running_totals(data):
+    result = []                 # a new list, grows to size n
+    s = 0
+    for x in data:
+        s += x
+        result.append(x)        # store every prefix sum
+    return result               # O(n) extra space
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function runningTotals(data: number[]): number[] {
+  const result: number[] = [];  // a new array, grows to size n
+  let s = 0;
+  for (const x of data) {
+    s += x;
+    result.push(s);             // store every prefix sum
+  }
+  return result;                // O(n) extra space
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int[] runningTotals(int[] data) {
+    int[] result = new int[data.length];  // allocates n ints
+    int s = 0;
+    for (int i = 0; i < data.length; i++) {
+        s += data[i];
+        result[i] = s;                    // store every prefix sum
+    }
+    return result;                        // O(n) extra space
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int *running_totals(const int *data, int n) {
+    int *result = malloc(n * sizeof(int)); /* allocates n ints */
+    int s = 0;
+    for (int i = 0; i < n; i++) {
+        s += data[i];
+        result[i] = s;                     /* store every prefix sum */
+    }
+    return result;                         /* O(n) extra space */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+std::vector<int> runningTotals(const std::vector<int>& data) {
+    std::vector<int> result;               // a new vector, grows to n
+    result.reserve(data.size());
+    int s = 0;
+    for (int x : data) {
+        s += x;
+        result.push_back(s);               // store every prefix sum
+    }
+    return result;                         // O(n) extra space
+}
+```
+
+</Tab>
+
+</Tabs>
+
+That `result` list holds `n` numbers, so the extra memory grows linearly: `O(n)`. If the
+caller only ever needs the *final* total, you just allocated a million-element array to
+throw it all away — the source of many an out-of-memory crash.
+
+## The insight
+
+Ask the same question you ask about time, but about memory: **how much extra space does
+the work need as `n` grows?** And crucially — do you need to *keep* everything at once, or
+can you process and discard as you go?
+
+If the caller only needs one number at the end, you don't need the whole array. Carry a
+single running variable and let each value fall away after it's used. That drops the extra
+space from `O(n)` to `O(1)` — constant, regardless of input size.
+
+<Callout type="idea" title="Count only the EXTRA space">
+Space complexity measures the *auxiliary* memory an algorithm allocates — not the input
+itself, which the caller already paid for. The question is always: on top of the input, how
+much more do you grow?
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Separate input from auxiliary space
+
+The input array is a given. Space complexity counts only what *you* allocate on top of it:
+new arrays, hash maps, stacks, recursion frames.
+
+</Step>
+
+<Step>
+
+### Size each allocation in terms of `n`
+
+A fixed set of scalar variables is `O(1)`. A new list the size of the input is `O(n)`. A
+2D table is `O(n²)`.
+
+</Step>
+
+<Step>
+
+### Add the recursion stack
+
+Every pending recursive call keeps a frame on the stack. Recursion `d` levels deep costs
+`O(d)` space — often invisible until it overflows.
+
+</Step>
+
+<Step>
+
+### Ask if you can stream instead of store
+
+If each value can be consumed and discarded, you rarely need to hold them all. Replacing an
+array with a single accumulator turns `O(n)` into `O(1)`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+The greedy version keeps every value; the lean version keeps one. Same answer when only
+the final total is needed.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def total(data):
+    s = 0                       # one variable, reused
+    for x in data:
+        s += x
+    return s                    # O(1) extra space
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function total(data: number[]): number {
+  let s = 0;                    // one variable, reused
+  for (const x of data) s += x;
+  return s;                     // O(1) extra space
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int total(int[] data) {
+    int s = 0;                  // one variable, reused
+    for (int x : data) s += x;
+    return s;                   // O(1) extra space
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int total(const int *data, int n) {
+    int s = 0;                  /* one variable, reused */
+    for (int i = 0; i < n; i++) s += data[i];
+    return s;                   /* O(1) extra space */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int total(const std::vector<int>& data) {
+    int s = 0;                  // one variable, reused
+    for (int x : data) s += x;
+    return s;                   // O(1) extra space
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Extra space by pattern:
+
+| Pattern                         | Extra space |
+| ------------------------------- | ----------- |
+| A few scalar variables          | `O(1)`      |
+| A new array/map sized to input  | `O(n)`      |
+| A 2D grid or table              | `O(n²)`     |
+| Recursion `d` levels deep       | `O(d)`      |
+
+Same rung-by-rung ladder as time — memory just climbs it in bytes.
+
+## When to use it
+
+<Callout type="warning" title="The time–space trade-off">
+You can often buy speed with memory or memory with speed, but rarely both. A hash set turns
+an `O(n²)` search into `O(n)` time — by spending `O(n)` space. Caching, memoization, and
+precomputed tables are all this same bargain. Know which resource is scarce *before* you
+choose: on a tiny embedded device, space wins; on a fast server with data to spare, time
+usually does.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A function takes an array of n items and returns their sum in a single variable. What's its space complexity?">
+
+`O(1)`. The input array isn't counted — the caller already allocated it. The function adds
+only one accumulator variable, whose size doesn't grow with `n`. Constant auxiliary space,
+even though it *reads* `n` elements.
+
+</Accordion>
+
+<Accordion title="Recursion that recurses n levels deep with no extra arrays — is that O(1) space?">
+
+No, it's `O(n)`. Each unfinished recursive call keeps a stack frame alive until it returns,
+so `n` levels of depth means `n` frames held at once. This hidden stack cost is why deep
+recursion throws `StackOverflow`, and why an iterative rewrite can be `O(1)` space where
+the recursion was `O(n)`.
+
+</Accordion>
+
+<Accordion title="How can a hash-set solution be 'better' if it uses more memory than a nested-loop one?">
+
+Because it trades space for time. The nested loop is `O(1)` space but `O(n²)` time; the
+hash set is `O(n)` space but `O(n)` time. When `n` is large, the time saving is enormous
+and memory is usually cheap and available. 'Better' depends on which resource is scarce —
+that judgment is the whole point of the time–space trade-off.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Space complexity measures **extra memory as `n` grows** — count only auxiliary
+  allocations, never the input the caller already owns.
+- Watch for hidden costs: a new array is `O(n)`, a 2D table `O(n²)`, and recursion `d`
+  deep silently costs `O(d)` stack frames.
+- Time and space usually trade off — spend the resource you have to save the one you don't.
+
+<Cards>
+  <Card title="Analyzing Time Complexity" href="/docs/dsa/01-fundamentals/05-time-complexity" description="The same recipe, applied to seconds instead of bytes." />
+  <Card title="Big-O, Theta & Omega" href="/docs/dsa/01-fundamentals/04-big-o" description="The notation shared by both time and space." />
+  <Card title="What Is DSA?" href="/docs/dsa/01-fundamentals/01-what-is-dsa" description="Where the time–space trade-off first showed up." />
+</Cards>

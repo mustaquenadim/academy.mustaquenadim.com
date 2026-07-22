@@ -1,0 +1,285 @@
+---
+title: "Partition DP"
+description: "Matrix-chain multiplication and palindrome partitioning ask: where do I split? Try every cut and keep the best."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/04-2d-dp
+  - href: /docs/dsa/21-dynamic-programming/05-subset-knapsack
+  - href: /docs/dsa/21-dynamic-programming/07-string-dp
+---
+
+## The problem
+
+You need to multiply a chain of matrices: `A(10×30) · B(30×5) · C(5×60)`. Matrix multiplication
+is associative, so the *result* is the same however you parenthesize — but the *cost* is not.
+Doing `(AB)C` takes `10·30·5 + 10·5·60 = 4500` scalar multiplications; `A(BC)` takes
+`30·5·60 + 10·30·60 = 27000`. Same answer, six times the work.
+
+With three matrices you can try both groupings by hand. With twenty, the number of
+parenthesizations is astronomical. The question underneath is always the same: **where do you
+place the split?** And the same question drives palindrome partitioning, burst balloons, and
+optimal binary search trees.
+
+## A first attempt
+
+Try every possible outermost split. For the range of matrices `i..j`, pick a split point `k`,
+recursively solve `i..k` and `k+1..j`, and add the cost of combining the two halves.
+
+```python
+def matrix_chain(dims, i, j):
+    if i == j:
+        return 0
+    best = float('inf')
+    for k in range(i, j):
+        cost = (matrix_chain(dims, i, k)
+                + matrix_chain(dims, k + 1, j)
+                + dims[i - 1] * dims[k] * dims[j])
+        best = min(best, cost)
+    return best
+```
+
+Every range spawns a split at each interior point, and those subranges overlap massively — the
+recursion is exponential. But a subproblem is fully described by its endpoints `(i, j)`, and
+there are only about n² of those.
+
+## The insight
+
+The state is an **interval**, and you decide where to cut it:
+
+> `dp[i][j]` = the best cost to fully process the range `i..j`. Compute it by trying **every
+> split point `k`** inside the range, combining the already-solved left and right pieces.
+
+The defining feature of partition DP is the order of evaluation. A range depends on *shorter*
+ranges, so you must fill the table by **increasing interval length**, not by row or column.
+
+```
+solve length-1 ranges first (base cases)
+then length-2, length-3, ... up to the full range
+each dp[i][j] = min over k of ( dp[i][k] + dp[k+1][j] + join cost )
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Define the interval state
+
+`dp[i][j]` = the optimal cost (or count) for the subarray from `i` to `j` inclusive. The final
+answer is `dp[0][n-1]` (or `dp[1][n]` for matrix chain, depending on indexing).
+
+</Step>
+
+<Step>
+
+### Base case: trivial intervals
+
+A single element needs no work: `dp[i][i] = 0`. For matrix chain a single matrix costs nothing;
+for palindrome partitioning a single character needs no cut.
+
+</Step>
+
+<Step>
+
+### Try every split
+
+For range `i..j`, loop `k` from `i` to `j-1`. Each `k` divides the range into `i..k` and
+`k+1..j`, both already solved. Combine them with the problem's join cost and keep the best.
+
+</Step>
+
+<Step>
+
+### Iterate by increasing length
+
+Loop over interval length from 2 up to `n`, and for each length slide the window across all
+valid `(i, j)`. This guarantees every sub-interval you read is already filled.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Matrix-chain multiplication. `dims` has length `n+1`; matrix `m` is `dims[m-1] × dims[m]`.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def matrix_chain(dims):
+    n = len(dims) - 1                       # number of matrices
+    dp = [[0] * (n + 1) for _ in range(n + 1)]
+    for length in range(2, n + 1):          # interval length
+        for i in range(1, n - length + 2):
+            j = i + length - 1
+            dp[i][j] = float('inf')
+            for k in range(i, j):           # split point
+                cost = dp[i][k] + dp[k + 1][j] + dims[i - 1] * dims[k] * dims[j]
+                dp[i][j] = min(dp[i][j], cost)
+    return dp[1][n]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function matrixChain(dims: number[]): number {
+  const n = dims.length - 1;
+  const dp = Array.from({ length: n + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let length = 2; length <= n; length++) {
+    for (let i = 1; i + length - 1 <= n; i++) {
+      const j = i + length - 1;
+      dp[i][j] = Infinity;
+      for (let k = i; k < j; k++) {
+        const cost = dp[i][k] + dp[k + 1][j] + dims[i - 1] * dims[k] * dims[j];
+        dp[i][j] = Math.min(dp[i][j], cost);
+      }
+    }
+  }
+  return dp[1][n];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int matrixChain(int[] dims) {
+        int n = dims.length - 1;
+        int[][] dp = new int[n + 1][n + 1];
+        for (int length = 2; length <= n; length++) {
+            for (int i = 1; i + length - 1 <= n; i++) {
+                int j = i + length - 1;
+                dp[i][j] = Integer.MAX_VALUE;
+                for (int k = i; k < j; k++) {
+                    int cost = dp[i][k] + dp[k + 1][j] + dims[i - 1] * dims[k] * dims[j];
+                    dp[i][j] = Math.min(dp[i][j], cost);
+                }
+            }
+        }
+        return dp[1][n];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <limits.h>
+
+int matrix_chain(int *dims, int len) {
+    int n = len - 1;
+    int dp[n + 1][n + 1];
+    for (int i = 0; i <= n; i++)
+        for (int j = 0; j <= n; j++) dp[i][j] = 0;
+    for (int length = 2; length <= n; length++) {
+        for (int i = 1; i + length - 1 <= n; i++) {
+            int j = i + length - 1;
+            dp[i][j] = INT_MAX;
+            for (int k = i; k < j; k++) {
+                int cost = dp[i][k] + dp[k + 1][j] + dims[i - 1] * dims[k] * dims[j];
+                if (cost < dp[i][j]) dp[i][j] = cost;
+            }
+        }
+    }
+    return dp[1][n];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int matrixChain(vector<int> &dims) {
+    int n = dims.size() - 1;
+    vector<vector<int>> dp(n + 1, vector<int>(n + 1, 0));
+    for (int length = 2; length <= n; length++) {
+        for (int i = 1; i + length - 1 <= n; i++) {
+            int j = i + length - 1;
+            dp[i][j] = INT_MAX;
+            for (int k = i; k < j; k++) {
+                int cost = dp[i][k] + dp[k + 1][j] + dims[i - 1] * dims[k] * dims[j];
+                dp[i][j] = min(dp[i][j], cost);
+            }
+        }
+    }
+    return dp[1][n];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | Exponential | O(n) stack |
+| Interval DP | O(n³) | O(n²) |
+
+There are O(n²) intervals, and each tries up to O(n) split points, so the total is **O(n³)**.
+Space is the O(n²) table of intervals.
+
+## When to use it
+
+<Callout type="idea" title="The tell: 'where do I split?'">
+Reach for partition DP when the answer over a range is built by choosing a split point and
+combining two sub-ranges — matrix chain, palindrome partitioning, burst balloons, optimal BST,
+boolean parenthesization. The non-negotiable detail is filling the table by **increasing
+interval length** so every sub-range is ready before you use it.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="In palindrome partitioning (minimum cuts), what is the state and the recurrence?">
+
+Let `dp[i]` be the minimum cuts needed for the prefix `s[0..i]`. For each `j ≤ i`, if
+`s[j..i]` is a palindrome, then `dp[i] = min(dp[i], dp[j-1] + 1)` (with `dp[i] = 0` when the
+whole prefix is already a palindrome). Precompute a boolean `isPal[j][i]` table — itself an
+interval DP — so each palindrome check is O(1), giving O(n²) overall.
+
+</Accordion>
+
+<Accordion title="Why must partition DP iterate by interval length rather than by rows and columns?">
+
+Because `dp[i][j]` reads shorter ranges `dp[i][k]` and `dp[k+1][j]`, which are strictly inside
+`[i, j]`. Ordinary row-by-row iteration would try to read a longer or not-yet-computed range.
+Growing the interval length ensures every sub-range referenced is already finalized.
+
+</Accordion>
+
+<Accordion title="Burst Balloons feels backwards — you pick the LAST balloon to burst in a range. Why?">
+
+If you pick the first balloon to burst, the range fragments and its neighbors change
+unpredictably, so subproblems stop being clean intervals. Choosing the *last* balloon `k` to
+burst in `(i, j)` means when it pops, `i` and `j` are its only surviving neighbors, giving a
+fixed gain `nums[i]·nums[k]·nums[j]` plus the two independent sub-intervals — a proper partition
+DP.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Partition DP solves problems by asking **where to cut a range** and combining the two halves.
+- The state is an **interval** `dp[i][j]`; you try every split point `k` inside it.
+- Fill the table by **increasing interval length**; the classic cost is **O(n³)** over O(n²)
+  intervals.
+
+<Cards>
+  <Card title="2D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/04-2d-dp" description="The two-index tables interval DP extends." />
+  <Card title="The Knapsack Pattern" href="/docs/dsa/21-dynamic-programming/05-subset-knapsack" description="Another 'choose at each step' template." />
+  <Card title="DP on Strings" href="/docs/dsa/21-dynamic-programming/07-string-dp" description="Where palindrome partitioning lives." />
+</Cards>

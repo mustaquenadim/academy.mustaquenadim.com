@@ -1,0 +1,331 @@
+---
+title: "The KMP Algorithm"
+description: "When a match fails partway, KMP already knows how far to skip — because it studied the pattern first."
+extractedReferences:
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+  - href: /docs/dsa/24-string-matching/04-z-algorithm
+  - href: /docs/dsa/24-string-matching/03-rabin-karp
+---
+
+## The problem
+
+You are searching for `ABABAC` inside a long log file. The naive scan lines the pattern up, matches `ABABA`, then hits a mismatch on the last character. It shrugs, slides one step to the right, and starts comparing from scratch — re-reading characters it already knew.
+
+But look at what it just matched: `ABABA`. That string ends with `ABA`, which is *also* how the pattern begins. The scan threw away a perfectly good partial match. It had the answer in its hands and dropped it. KMP refuses to drop it.
+
+## A first attempt
+
+The naive fix is to keep sliding by one and re-comparing, which is the O(n · m) baseline from the [intro lesson](/docs/dsa/24-string-matching/01-string-matching-intro). On a repetitive pattern like `ABABAC` against `ABABABABAC…`, you re-match the `ABABA` prefix again and again at nearly every position.
+
+The waste is structural: after a mismatch, the naive scan resets the pattern pointer all the way back to `0`, ignoring that some of the pattern's front may already be aligned. We want to reset it to the *right* place instead of to zero.
+
+## The insight
+
+Suppose you matched `P[0..j-1]` and then `P[j]` mismatched. The characters `P[0..j-1]` are now sitting over the text. If some proper prefix of `P[0..j-1]` equals its suffix, that prefix is *already aligned* with the text — you can shift the pattern so the prefix takes the suffix's place and keep the pointer there.
+
+The longest such "prefix that is also a suffix" for every prefix length is the **failure function** (also called the LPS array — Longest Proper Prefix which is also Suffix). Precompute it once from the pattern, and on any mismatch you jump `j` back to `lps[j-1]` instead of `0`. The text pointer never moves backward, so the scan is linear.
+
+```text
+P = A B A B A C
+i:  0 1 2 3 4 5
+lps 0 0 1 2 3 0     <- lps[4]=3 because "ABA" is both prefix and suffix of "ABABA"
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build the failure function
+
+Scan the pattern once. Keep `len`, the length of the current longest prefix-suffix. When `P[i] == P[len]`, extend it: `lps[i] = ++len`. On a mismatch, fall back with `len = lps[len-1]` (or set `lps[i] = 0` if `len` is already 0).
+
+</Step>
+
+<Step>
+
+### Scan the text with two pointers
+
+Walk `i` over the text and `j` over the pattern. While characters match, advance both.
+
+</Step>
+
+<Step>
+
+### On a mismatch, jump — don't reset
+
+If `P[j]` mismatches and `j > 0`, set `j = lps[j-1]`, reusing the aligned prefix. If `j == 0`, just advance `i`. The text pointer `i` only ever moves forward.
+
+</Step>
+
+<Step>
+
+### Record a full match
+
+When `j` reaches `m`, report a hit at `i - m`, then set `j = lps[j-1]` to keep searching for overlapping matches.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def build_lps(p: str) -> list[int]:
+    lps = [0] * len(p)
+    length = 0
+    for i in range(1, len(p)):
+        while length > 0 and p[i] != p[length]:
+            length = lps[length - 1]
+        if p[i] == p[length]:
+            length += 1
+        lps[i] = length
+    return lps
+
+
+def kmp_search(text: str, pattern: str) -> list[int]:
+    if not pattern:
+        return list(range(len(text) + 1))
+    lps = build_lps(pattern)
+    hits, j = [], 0
+    for i, ch in enumerate(text):
+        while j > 0 and ch != pattern[j]:
+            j = lps[j - 1]
+        if ch == pattern[j]:
+            j += 1
+        if j == len(pattern):
+            hits.append(i - j + 1)
+            j = lps[j - 1]
+    return hits
+
+
+print(kmp_search("ababcababcaby", "ababcaby"))  # [5]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function buildLps(p: string): number[] {
+  const lps = new Array(p.length).fill(0);
+  let length = 0;
+  for (let i = 1; i < p.length; i++) {
+    while (length > 0 && p[i] !== p[length]) length = lps[length - 1];
+    if (p[i] === p[length]) length++;
+    lps[i] = length;
+  }
+  return lps;
+}
+
+function kmpSearch(text: string, pattern: string): number[] {
+  if (pattern.length === 0)
+    return Array.from({ length: text.length + 1 }, (_, k) => k);
+  const lps = buildLps(pattern);
+  const hits: number[] = [];
+  let j = 0;
+  for (let i = 0; i < text.length; i++) {
+    while (j > 0 && text[i] !== pattern[j]) j = lps[j - 1];
+    if (text[i] === pattern[j]) j++;
+    if (j === pattern.length) {
+      hits.push(i - j + 1);
+      j = lps[j - 1];
+    }
+  }
+  return hits;
+}
+
+console.log(kmpSearch("ababcababcaby", "ababcaby")); // [5]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class Kmp {
+    static int[] buildLps(String p) {
+        int[] lps = new int[p.length()];
+        int len = 0;
+        for (int i = 1; i < p.length(); i++) {
+            while (len > 0 && p.charAt(i) != p.charAt(len)) len = lps[len - 1];
+            if (p.charAt(i) == p.charAt(len)) len++;
+            lps[i] = len;
+        }
+        return lps;
+    }
+
+    static List<Integer> search(String text, String pattern) {
+        List<Integer> hits = new ArrayList<>();
+        int m = pattern.length();
+        if (m == 0) return hits;
+        int[] lps = buildLps(pattern);
+        int j = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            while (j > 0 && c != pattern.charAt(j)) j = lps[j - 1];
+            if (c == pattern.charAt(j)) j++;
+            if (j == m) {
+                hits.add(i - j + 1);
+                j = lps[j - 1];
+            }
+        }
+        return hits;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(search("ababcababcaby", "ababcaby")); // [5]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void build_lps(const char *p, int m, int *lps) {
+    int len = 0;
+    lps[0] = 0;
+    for (int i = 1; i < m; i++) {
+        while (len > 0 && p[i] != p[len]) len = lps[len - 1];
+        if (p[i] == p[len]) len++;
+        lps[i] = len;
+    }
+}
+
+void kmp_search(const char *text, const char *pattern) {
+    int n = (int)strlen(text), m = (int)strlen(pattern);
+    if (m == 0) return;
+    int *lps = malloc(m * sizeof(int));
+    build_lps(pattern, m, lps);
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        while (j > 0 && text[i] != pattern[j]) j = lps[j - 1];
+        if (text[i] == pattern[j]) j++;
+        if (j == m) {
+            printf("%d ", i - j + 1);
+            j = lps[j - 1];
+        }
+    }
+    printf("\n");
+    free(lps);
+}
+
+int main(void) {
+    kmp_search("ababcababcaby", "ababcaby"); /* 5 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+using namespace std;
+
+vector<int> build_lps(const string &p) {
+    vector<int> lps(p.size(), 0);
+    int len = 0;
+    for (size_t i = 1; i < p.size(); i++) {
+        while (len > 0 && p[i] != p[len]) len = lps[len - 1];
+        if (p[i] == p[len]) len++;
+        lps[i] = len;
+    }
+    return lps;
+}
+
+vector<int> kmp_search(const string &text, const string &pattern) {
+    vector<int> hits;
+    int m = (int)pattern.size();
+    if (m == 0) return hits;
+    vector<int> lps = build_lps(pattern);
+    int j = 0;
+    for (int i = 0; i < (int)text.size(); i++) {
+        while (j > 0 && text[i] != pattern[j]) j = lps[j - 1];
+        if (text[i] == pattern[j]) j++;
+        if (j == m) {
+            hits.push_back(i - j + 1);
+            j = lps[j - 1];
+        }
+    }
+    return hits;
+}
+
+int main() {
+    for (int h : kmp_search("ababcababcaby", "ababcaby")) cout << h << " "; // 5
+    cout << "\n";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Phase | Time | Space |
+| --- | --- | --- |
+| Build failure function | O(m) | O(m) |
+| Scan text | O(n) | O(1) extra |
+| Total | O(n + m) | O(m) |
+
+The text pointer `i` never moves backward, and each `j = lps[j-1]` fallback only ever decreases `j`, which was raised by at most one per step — so the total work is linear, no matter how repetitive the input.
+
+## When to use it
+
+<Callout type="warn" title="KMP shines on adversarial input, not on average text">
+On ordinary English text the naive scan is already near-linear, so KMP's win is modest there. Its real value is the *guarantee*: worst-case O(n + m) with no hashing and no false positives, even on pathological inputs like `AAAA…` patterns. Choose KMP when you need a deterministic linear bound and a single pattern. For many patterns at once, reach for Aho-Corasick (which generalizes the same failure-link idea).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="For pattern ABABAC, what is the LPS array?">
+
+`[0, 0, 1, 2, 3, 0]`. Read it prefix by prefix: `A`→0, `AB`→0, `ABA`→1 (`A`), `ABAB`→2 (`AB`), `ABABA`→3 (`ABA`), `ABABAC`→0 (the `C` breaks every prefix-suffix). So a mismatch after matching `ABABA` jumps `j` to 3, not 0.
+
+</Accordion>
+
+<Accordion title="Why does the text pointer never move backward, and why does that guarantee O(n)?">
+
+In the main loop `i` only ever increments; the fallback `j = lps[j-1]` touches only the pattern pointer. Since `j` rises by at most 1 per character and each fallback strictly lowers it, the number of fallbacks across the whole scan is bounded by the number of increments, which is `n`. Total comparisons are therefore `O(n)`.
+
+</Accordion>
+
+<Accordion title="After finding a full match, why set j = lps[j-1] instead of j = 0?">
+
+Resetting to `lps[j-1]` keeps the longest prefix of the pattern that is still aligned, so overlapping occurrences are not missed. Searching `AA` in `AAAA` this way correctly reports matches at indices 0, 1, and 2 rather than only the non-overlapping ones.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- KMP precomputes a failure function (LPS array) so a mismatch jumps the pattern pointer to the longest aligned prefix instead of resetting to zero.
+- The text pointer never backs up, giving a guaranteed O(n + m) time and O(m) space.
+- It is the deterministic, hash-free choice for a single pattern with worst-case guarantees.
+
+<Cards>
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="The naive baseline KMP improves on." />
+  <Card title="The Z-Algorithm" href="/docs/dsa/24-string-matching/04-z-algorithm" description="A close cousin that reads matches from a prefix array." />
+  <Card title="Rabin-Karp" href="/docs/dsa/24-string-matching/03-rabin-karp" description="A hashing approach to the same problem." />
+</Cards>

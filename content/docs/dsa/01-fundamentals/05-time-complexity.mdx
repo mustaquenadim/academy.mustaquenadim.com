@@ -1,0 +1,339 @@
+---
+title: "Analyzing Time Complexity"
+description: "Given a chunk of code with loops inside loops, how do you actually work out its Big-O? There’s a recipe."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/04-big-o
+  - href: /docs/dsa/01-fundamentals/03-asymptotic-analysis
+  - href: /docs/dsa/01-fundamentals/06-space-complexity
+---
+
+## The problem
+
+You're in a code review and someone asks, "What's the time complexity of this function?"
+You stare at a nest of loops, a helper call, and an early `return`. You *feel* like it's
+slow, but you can't say `O(what?)` with confidence.
+
+Guessing isn't good enough — the wrong answer ships the `O(n²)` function that melts in
+production. The good news: reading complexity off code isn't intuition or talent. It's a
+short, mechanical recipe. Once you know it, you can look at almost any function and name
+its Big-O in seconds.
+
+## A first attempt
+
+The tempting shortcut is "count the loops." One loop, `O(n)`. Two loops, `O(n²)`. Done.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def process(data):
+    for x in data:              # loop 1
+        prepare(x)
+    for x in data:              # loop 2
+        finish(x)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function process(data: number[]) {
+  for (const x of data) prepare(x); // loop 1
+  for (const x of data) finish(x);  // loop 2
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void process(int[] data) {
+    for (int x : data) prepare(x);  // loop 1
+    for (int x : data) finish(x);   // loop 2
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void process(const int *data, int n) {
+    for (int i = 0; i < n; i++) prepare(data[i]);  /* loop 1 */
+    for (int i = 0; i < n; i++) finish(data[i]);   /* loop 2 */
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+void process(const std::vector<int>& data) {
+    for (int x : data) prepare(x);  // loop 1
+    for (int x : data) finish(x);   // loop 2
+}
+```
+
+</Tab>
+
+</Tabs>
+
+"Two loops, so `O(n²)`" — and that's wrong. These loops sit *side by side*, not nested.
+It's `n + n = 2n`, which is `O(n)`. Counting loops without asking *how they combine*
+misleads you. We need the actual rules.
+
+## The insight
+
+Complexity composes from a handful of rules, and only one distinction really matters:
+**sequential code adds; nested code multiplies.** Everything else is bookkeeping.
+
+- Statements one after another → **add** their costs, then keep the biggest.
+- A loop → multiply its body's cost by the number of iterations.
+- Nesting → multiply the inner cost by the outer count.
+
+Apply these bottom-up and any tangle of code reduces to a single Big-O.
+
+<Callout type="idea" title="Add vs. multiply">
+Side by side, you **add** (`n + n = O(n)`). One inside the other, you **multiply**
+(`n × n = O(n²)`). Getting this one distinction right settles most complexity questions.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Cost the simple statements
+
+Assignments, arithmetic, array indexing, and comparisons are each `O(1)` — constant work
+that doesn't depend on `n`.
+
+</Step>
+
+<Step>
+
+### Multiply each loop by its iteration count
+
+A loop that runs `n` times with an `O(1)` body is `O(n)`. If the body is `O(n)`, the loop
+is `O(n²)`. Multiply outer iterations by inner cost.
+
+</Step>
+
+<Step>
+
+### Add sequential blocks, keep the max
+
+For code segments that run one after another, sum their costs — then drop everything but
+the dominant term. `O(n) + O(n²)` is `O(n²)`.
+
+</Step>
+
+<Step>
+
+### Handle halving as log n
+
+A loop that divides its range by a constant each step (`n → n/2 → n/4 → …`) runs `O(log n)`
+times, not `O(n)`.
+
+</Step>
+
+<Step>
+
+### Drop constants and lower-order terms
+
+Finish with the asymptotic cleanup: `4n² + 3n + 9` becomes `O(n²)`. That's your answer.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Four patterns, four answers — annotated so you can trace the recipe.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+# A) sequential -> ADD -> O(n)
+for x in data: step()           # n
+for x in data: step()           # n  => 2n => O(n)
+
+# B) nested -> MULTIPLY -> O(n^2)
+for x in data:                  # n
+    for y in data:              # n
+        step()                  # n * n => O(n^2)
+
+# C) halving -> O(log n)
+i = n
+while i > 1:                    # log2(n) iterations
+    step()
+    i //= 2
+
+# D) loop with halving inside -> O(n log n)
+for x in data:                  # n
+    i = n
+    while i > 1:                # log n
+        step()
+        i //= 2                 # n * log n => O(n log n)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// A) sequential -> ADD -> O(n)
+for (const x of data) step();               // n
+for (const x of data) step();               // n  => O(n)
+
+// B) nested -> MULTIPLY -> O(n^2)
+for (const x of data)
+  for (const y of data) step();             // O(n^2)
+
+// C) halving -> O(log n)
+for (let i = n; i > 1; i = Math.floor(i / 2)) step();
+
+// D) loop with halving inside -> O(n log n)
+for (const x of data)
+  for (let i = n; i > 1; i = Math.floor(i / 2)) step();
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+// A) sequential -> ADD -> O(n)
+for (int x : data) step();                  // n
+for (int x : data) step();                  // n  => O(n)
+
+// B) nested -> MULTIPLY -> O(n^2)
+for (int x : data)
+    for (int y : data) step();              // O(n^2)
+
+// C) halving -> O(log n)
+for (int i = n; i > 1; i /= 2) step();
+
+// D) loop with halving inside -> O(n log n)
+for (int x : data)
+    for (int i = n; i > 1; i /= 2) step();
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* A) sequential -> ADD -> O(n) */
+for (int i = 0; i < n; i++) step();          /* n */
+for (int i = 0; i < n; i++) step();          /* n  => O(n) */
+
+/* B) nested -> MULTIPLY -> O(n^2) */
+for (int i = 0; i < n; i++)
+    for (int j = 0; j < n; j++) step();      /* O(n^2) */
+
+/* C) halving -> O(log n) */
+for (int i = n; i > 1; i /= 2) step();
+
+/* D) loop with halving inside -> O(n log n) */
+for (int i = 0; i < n; i++)
+    for (int k = n; k > 1; k /= 2) step();
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+// A) sequential -> ADD -> O(n)
+for (int i = 0; i < n; i++) step();          // n
+for (int i = 0; i < n; i++) step();          // n  => O(n)
+
+// B) nested -> MULTIPLY -> O(n^2)
+for (int i = 0; i < n; i++)
+    for (int j = 0; j < n; j++) step();      // O(n^2)
+
+// C) halving -> O(log n)
+for (int i = n; i > 1; i /= 2) step();
+
+// D) loop with halving inside -> O(n log n)
+for (int i = 0; i < n; i++)
+    for (int k = n; k > 1; k /= 2) step();
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Each pattern above, named:
+
+| Pattern                  | Structure          | Time         |
+| ------------------------ | ------------------ | ------------ |
+| A — two loops, side by side | add           | `O(n)`       |
+| B — loop inside a loop   | multiply           | `O(n²)`      |
+| C — halve the range      | logarithmic        | `O(log n)`   |
+| D — loop × halving       | multiply           | `O(n log n)` |
+
+## When to use it
+
+<Callout type="warning" title="Watch the hidden costs">
+The recipe only works if you price each statement honestly. A one-line `if x in my_list`
+looks `O(1)` but is `O(n)` for a list; a `.sort()` inside a loop is `O(n log n)` *per
+iteration*. Library calls and language built-ins carry their own complexity — always fold
+it in, or your analysis will be optimistically wrong.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A loop runs n times; inside it, another loop runs from the current index i to n. What's the total?">
+
+`O(n²)`. The inner loop runs `n, n-1, …, 1` times as `i` advances — that sums to
+`n(n+1)/2`, which is `½n² + ½n`. Drop the constant and the lower term: `O(n²)`. A
+triangular nested loop is still quadratic, even though it does *half* the work of a full
+`n × n` square.
+
+</Accordion>
+
+<Accordion title="You call a helper that sorts a copy of the array inside a loop that runs n times. Total complexity?">
+
+`O(n² log n)`. The loop contributes `n`; each iteration sorts, which is `O(n log n)`.
+Multiply: `n × n log n = n² log n`. This is the classic trap — a cheap-looking helper call
+carries its own complexity, and nesting multiplies it in.
+
+</Accordion>
+
+<Accordion title="Two nested loops, but the inner one runs a fixed 100 times regardless of n. What's the complexity?">
+
+`O(n)`. The outer loop is `n`; the inner is `100`, a constant that doesn't grow with `n`.
+`n × 100 = 100n`, and we drop the constant to get `O(n)`. A loop only adds a factor of `n`
+when its count actually *depends on* `n`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Reading complexity is a recipe, not intuition: cost simple statements as `O(1)`,
+  **multiply** loops by their body, **add** sequential blocks, then drop constants and
+  lower-order terms.
+- The core distinction: side-by-side code **adds**, nested code **multiplies**.
+- Price library calls and built-ins honestly — hidden `O(n)` and `O(n log n)` costs are the
+  usual source of wrong answers.
+
+<Cards>
+  <Card title="Big-O, Theta & Omega" href="/docs/dsa/01-fundamentals/04-big-o" description="The notation you're solving for here." />
+  <Card title="Asymptotic Analysis" href="/docs/dsa/01-fundamentals/03-asymptotic-analysis" description="Why we drop constants and lower-order terms." />
+  <Card title="Space Complexity" href="/docs/dsa/01-fundamentals/06-space-complexity" description="Apply the same recipe to memory instead of time." />
+</Cards>

@@ -1,0 +1,323 @@
+---
+title: "Order of Growth"
+description: "It’s not how long your code takes on ten items that matters, but how that time changes when ten becomes ten million."
+extractedReferences:
+  - href: /docs/dsa/01-fundamentals/01-what-is-dsa
+  - href: /docs/dsa/01-fundamentals/03-asymptotic-analysis
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You benchmark two functions on a list of 10 items. One takes 3 microseconds, the other
+takes 5. You pick the 3-microsecond one — obviously faster, right?
+
+Then production hits it with 10 million items. The "faster" one now takes 40 seconds; the
+"slower" one still finishes in a blink. The stopwatch on small input lied to you. What you
+actually needed to know wasn't *how long* — it was *how the time changes as the input
+grows*. That rate of change is called the **order of growth**.
+
+## A first attempt
+
+The instinct is to time it. Run the code, read the clock, compare the numbers.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import time
+
+start = time.perf_counter()
+run(data)                       # whatever we're measuring
+print(time.perf_counter() - start, "seconds")
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const start = performance.now();
+run(data);                      // whatever we're measuring
+console.log(performance.now() - start, "ms");
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+long start = System.nanoTime();
+run(data);                      // whatever we're measuring
+System.out.println((System.nanoTime() - start) + " ns");
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <time.h>
+#include <stdio.h>
+
+clock_t start = clock();
+run(data);                      /* whatever we're measuring */
+printf("%f s\n", (double)(clock() - start) / CLOCKS_PER_SEC);
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <chrono>
+#include <iostream>
+
+auto start = std::chrono::high_resolution_clock::now();
+run(data);                      // whatever we're measuring
+auto end = std::chrono::high_resolution_clock::now();
+std::cout << std::chrono::duration<double>(end - start).count() << " s\n";
+```
+
+</Tab>
+
+</Tabs>
+
+The number you get is real, but it's a photograph of one input on one machine. It can't
+tell you what happens at 100× the size, and it changes if you switch laptops, languages,
+or run it while a video is playing. A single timing is a data point, not a trend.
+
+## The insight
+
+Stop asking "how many seconds?" and start asking "**when the input doubles, what happens
+to the work?**" That answer barely depends on your hardware — it's a property of the
+algorithm itself.
+
+Count the *basic steps* the code takes as a function of input size `n`. The way that count
+grows is the order of growth. A function that does `n` steps grows linearly; one that does
+`n²` grows quadratically; one that does `log n` barely grows at all.
+
+<Callout type="idea" title="The doubling test">
+The fastest way to feel an order of growth: double `n` and see what happens to the step
+count. Same → `O(1)`. Doubles → `O(n)`. Quadruples → `O(n²)`. Grows by one → `O(log n)`.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick the input size `n`
+
+`n` is whatever grows: the number of users, the length of the array, the pixels in an
+image. Everything is measured relative to it.
+
+</Step>
+
+<Step>
+
+### Count basic steps as a function of `n`
+
+A single pass over the data is `n` steps. A pass inside a pass is `n × n`. Halving each
+time is `log n`. Write the count as a formula.
+
+</Step>
+
+<Step>
+
+### Focus on the dominant term
+
+`n² + 5n + 100` grows like `n²` — for large `n`, the rest is noise. The biggest term
+dictates the curve.
+
+</Step>
+
+<Step>
+
+### Read off the growth class
+
+That dominant term *is* the order of growth. It's what survives when `n` gets huge, and
+it's what determines whether your code scales.
+
+</Step>
+
+</Steps>
+
+Here's how the same three curves diverge — this picture is the whole reason we care:
+
+```
+work
+  |                                        O(n^2)
+  |                                     *
+  |                                  *
+  |                              *
+  |                         *              O(n)
+  |                    *              -----
+  |               *           -------
+  |          *        --------
+  |     * ----------                       O(log n)
+  |  *--        . . . . . . . . . . . . . . .
+  +--------------------------------------------  n
+```
+
+At small `n` they're tangled together — that's why a stopwatch on 10 items tells you
+nothing. At large `n` they fan apart violently.
+
+## The code
+
+Three loops, three orders of growth. Read them as "how many times does the body run?"
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+# O(n): one pass
+for x in data:
+    step()                      # runs n times
+
+# O(n^2): a pass inside a pass
+for x in data:
+    for y in data:
+        step()                  # runs n * n times
+
+# O(log n): halve the range each time
+i = n
+while i > 1:
+    step()                      # runs about log2(n) times
+    i //= 2
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// O(n): one pass
+for (const x of data) step();               // runs n times
+
+// O(n^2): a pass inside a pass
+for (const x of data)
+  for (const y of data) step();             // runs n * n times
+
+// O(log n): halve the range each time
+for (let i = n; i > 1; i = Math.floor(i / 2)) step(); // ~log2(n) times
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+// O(n): one pass
+for (int x : data) step();                  // runs n times
+
+// O(n^2): a pass inside a pass
+for (int x : data)
+    for (int y : data) step();              // runs n * n times
+
+// O(log n): halve the range each time
+for (int i = n; i > 1; i /= 2) step();      // ~log2(n) times
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* O(n): one pass */
+for (int i = 0; i < n; i++) step();          /* runs n times */
+
+/* O(n^2): a pass inside a pass */
+for (int i = 0; i < n; i++)
+    for (int j = 0; j < n; j++) step();      /* runs n * n times */
+
+/* O(log n): halve the range each time */
+for (int i = n; i > 1; i /= 2) step();       /* ~log2(n) times */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+// O(n): one pass
+for (int i = 0; i < n; i++) step();          // runs n times
+
+// O(n^2): a pass inside a pass
+for (int i = 0; i < n; i++)
+    for (int j = 0; j < n; j++) step();      // runs n * n times
+
+// O(log n): halve the range each time
+for (int i = n; i > 1; i /= 2) step();       // ~log2(n) times
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+How the step count explodes as `n` grows:
+
+| Order        | n = 10 | n = 1,000 | n = 1,000,000     |
+| ------------ | ------ | --------- | ----------------- |
+| `O(log n)`   | ~3     | ~10       | ~20               |
+| `O(n)`       | 10     | 1,000     | 1,000,000         |
+| `O(n log n)` | ~33    | ~10,000   | ~20,000,000       |
+| `O(n²)`      | 100    | 1,000,000 | 1,000,000,000,000 |
+
+`O(log n)` barely moves. `O(n²)` reaches a *trillion* — the gap between "scales fine" and
+"falls over".
+
+## When to use it
+
+<Callout type="warning" title="Small inputs hide everything">
+Order of growth describes the *trend* at large `n`, not small-input reality. Constants and
+setup costs can make an `O(n²)` routine beat an `O(n log n)` one for `n = 20`. Use order of
+growth to predict scale; use a profiler to tune the hot path you actually have.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A loop runs n times, and right after it a second loop runs n times. What's the order of growth?">
+
+`O(n)`. Sequential loops **add**: `n + n = 2n`, and we ignore the constant 2 because it
+doesn't change the shape. Loops only multiply when one is nested *inside* the other.
+
+</Accordion>
+
+<Accordion title="Doubling n makes your function take exactly one extra step. Which order of growth is that?">
+
+`O(log n)`. Adding a fixed amount of work each time you *double* the input is the signature
+of a logarithm — you can only double from 1 to `n` about `log₂ n` times. This is why
+halving-based algorithms like binary search feel almost free.
+
+</Accordion>
+
+<Accordion title="Why do we drop the '+ 5n + 100' from n² + 5n + 100?">
+
+Because order of growth cares about behavior as `n → ∞`. At `n = 1,000,000`, the `n²` term
+is a trillion while `5n` is five million and `100` is a rounding error. The dominant term
+swamps everything else, so it alone defines the growth class.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Order of growth measures **how work changes as `n` grows**, not how many seconds it takes
+  on one input — that's what makes it hardware-independent.
+- Count basic steps as a function of `n`, then keep only the dominant term.
+- The ladder from gentle to brutal: `O(log n)`, `O(n)`, `O(n log n)`, `O(n²)`, `O(2ⁿ)`.
+
+<Cards>
+  <Card title="What Is DSA?" href="/docs/dsa/01-fundamentals/01-what-is-dsa" description="Why the structure you pick decides how work grows." />
+  <Card title="Asymptotic Analysis" href="/docs/dsa/01-fundamentals/03-asymptotic-analysis" description="The formal machinery behind 'dominant term'." />
+  <Card title="Big-O, Theta & Omega" href="/docs/dsa/01-fundamentals/04-big-o" description="Naming the growth classes precisely." />
+</Cards>

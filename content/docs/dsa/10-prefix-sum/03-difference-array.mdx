@@ -1,0 +1,314 @@
+---
+title: "The Difference Array"
+description: "Adding a value to a whole range, thousands of times, then reading the result — the difference array does it in one pass."
+extractedReferences:
+  - href: /docs/dsa/10-prefix-sum/01-prefix-sum-intro
+  - href: /docs/dsa/10-prefix-sum/02-range-queries
+---
+
+## The problem
+
+You run a hotel booking system. A row of rooms, or really a row of days, and reservations keep
+arriving: "book rooms 3 through 40," "add one guest to days 100 through 250," over and over.
+Each reservation bumps a whole contiguous range by some amount. The requests pour in all day.
+
+Only at the end — after thousands of these updates — does anyone ask the real question: "what
+is the final occupancy of each room?" You do not need intermediate answers. You need one clean
+read of the whole array after every update has landed.
+
+## A first attempt
+
+Just apply each update directly: for every reservation, loop over its range and add.
+
+```python
+def apply_updates(n, updates):
+    arr = [0] * n
+    for l, r, val in updates:
+        for i in range(l, r + 1):
+            arr[i] += val
+    return arr
+```
+
+Correct, but each update touches its entire range. A single reservation can span the whole
+array, so `u` updates cost **O(n·u)**. With a million-day calendar and a hundred thousand
+updates, that is a hundred billion operations for a report you only read once. The work is
+wasted: you repaint the same cells again and again before anyone looks.
+
+## The insight
+
+Do not record the values — record the **changes**. Adding `val` to the range `[l, r]` really
+means two events: "at `l`, the level jumps up by `val`" and "just after `r`, it drops back down
+by `val`." Store only those two edits.
+
+Keep a `diff` array. For each update, do `diff[l] += val` and `diff[r + 1] -= val`. That is O(1)
+per update, no matter how wide the range. Then, once, take the **prefix sum of `diff`** — the
+running total reconstructs the real array. The difference array is exactly the inverse of a
+prefix sum: prefixing turns differences back into values.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Record each range update as two marks
+
+For update `(l, r, val)`, write `diff[l] += val` and `diff[r + 1] -= val`. The first mark starts
+the raise; the second cancels it right after the range ends. Size `diff` as `n + 1` so
+`r + 1 == n` has a home.
+
+```
+update (1, 3, +5) on length 5:
+
+index   0    1    2    3    4   (5)
+diff    0   +5    0    0   -5
+              ^start        ^stop
+```
+
+</Step>
+
+<Step>
+
+### Apply every update in O(1)
+
+Loop through all updates, each just two array writes. Nothing scales with range width, so
+`u` updates cost O(u) total.
+
+</Step>
+
+<Step>
+
+### Prefix-sum once to rebuild the array
+
+Take the running total of `diff`. Each cell inherits the previous cell plus its own mark —
+the raises and drops accumulate into the final per-index values.
+
+```
+diff     0   +5    0    0   -5
+prefix   0    5    5    5    0   -> final array [0, 5, 5, 5, 0]
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def apply_updates(n, updates):
+    diff = [0] * (n + 1)
+    for l, r, val in updates:
+        diff[l] += val
+        diff[r + 1] -= val
+    # prefix sum turns differences back into values
+    arr = [0] * n
+    running = 0
+    for i in range(n):
+        running += diff[i]
+        arr[i] = running
+    return arr
+
+print(apply_updates(5, [(1, 3, 5), (0, 1, 2)]))  # [2, 7, 5, 5, 0]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function applyUpdates(n: number, updates: [number, number, number][]): number[] {
+  const diff = new Array<number>(n + 1).fill(0);
+  for (const [l, r, val] of updates) {
+    diff[l] += val;
+    diff[r + 1] -= val;
+  }
+  // prefix sum turns differences back into values
+  const arr = new Array<number>(n).fill(0);
+  let running = 0;
+  for (let i = 0; i < n; i++) {
+    running += diff[i];
+    arr[i] = running;
+  }
+  return arr;
+}
+
+console.log(applyUpdates(5, [[1, 3, 5], [0, 1, 2]])); // [2, 7, 5, 5, 0]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.Arrays;
+
+public class DifferenceArray {
+    static int[] applyUpdates(int n, int[][] updates) {
+        int[] diff = new int[n + 1];
+        for (int[] u : updates) {
+            diff[u[0]] += u[2];
+            diff[u[1] + 1] -= u[2];
+        }
+        // prefix sum turns differences back into values
+        int[] arr = new int[n];
+        int running = 0;
+        for (int i = 0; i < n; i++) {
+            running += diff[i];
+            arr[i] = running;
+        }
+        return arr;
+    }
+
+    public static void main(String[] args) {
+        int[][] updates = {{1, 3, 5}, {0, 1, 2}};
+        System.out.println(Arrays.toString(applyUpdates(5, updates)));
+        // [2, 7, 5, 5, 0]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int *apply_updates(int n, int updates[][3], int u) {
+    int *diff = calloc(n + 1, sizeof(int));
+    for (int k = 0; k < u; k++) {
+        diff[updates[k][0]] += updates[k][2];
+        diff[updates[k][1] + 1] -= updates[k][2];
+    }
+    /* prefix sum turns differences back into values */
+    int *arr = malloc(n * sizeof(int));
+    int running = 0;
+    for (int i = 0; i < n; i++) {
+        running += diff[i];
+        arr[i] = running;
+    }
+    free(diff);
+    return arr;
+}
+
+int main(void) {
+    int updates[2][3] = {{1, 3, 5}, {0, 1, 2}};
+    int *arr = apply_updates(5, updates, 2);
+    for (int i = 0; i < 5; i++) printf("%d ", arr[i]); /* 2 7 5 5 0 */
+    printf("\n");
+    free(arr);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <array>
+using namespace std;
+
+vector<int> applyUpdates(int n, const vector<array<int, 3>>& updates) {
+    vector<int> diff(n + 1, 0);
+    for (const auto& u : updates) {
+        diff[u[0]] += u[2];
+        diff[u[1] + 1] -= u[2];
+    }
+    // prefix sum turns differences back into values
+    vector<int> arr(n, 0);
+    int running = 0;
+    for (int i = 0; i < n; i++) {
+        running += diff[i];
+        arr[i] = running;
+    }
+    return arr;
+}
+
+int main() {
+    vector<array<int, 3>> updates = {{1, 3, 5}, {0, 1, 2}};
+    for (int x : applyUpdates(5, updates)) cout << x << " "; // 2 7 5 5 0
+    cout << endl;
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| One range update | O(1) | O(1) |
+| `u` updates | O(u) | O(n) |
+| Final rebuild (prefix sum) | O(n) | O(n) |
+| Total | O(n + u) | O(n) |
+
+The naive method was O(n·u). The difference array collapses it to O(n + u) — a huge win when
+updates are many and wide.
+
+## When to use it
+
+<Callout type="idea" title="Batch the writes, read once">
+The difference array is the mirror image of the prefix sum: prefixing answers many range
+*reads*, differencing absorbs many range *writes*. Use it when a flood of range updates arrives
+first and you only need the array afterward — bookings, interval counting, and "range increment"
+problems.
+</Callout>
+
+It does not fit if you must read a value *between* updates, since the real array is not
+materialized until the final prefix pass. If reads and writes interleave, use a Fenwick or
+segment tree with range-update support. Remember the `n + 1` slot — writing `diff[r + 1]` when
+`r` is the last index needs that extra cell.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does diff need index r + 1, and what breaks without it?">
+
+`diff[r + 1] -= val` is the "stop" mark that ends the range's influence. Without it, the raise
+at `l` would keep accumulating through the prefix sum forever, so every index after `r` would be
+wrong. The `n + 1` sized array guarantees `r + 1` is always a valid slot, even when `r` is the
+last index.
+
+</Accordion>
+
+<Accordion title="You are given flight bookings (start, end, seats). How many seats per flight?">
+
+Treat flights as an array of length n and each booking as a range update: `diff[start] += seats`
+and `diff[end + 1] -= seats`. After all bookings, prefix-sum `diff` to get per-flight totals.
+This is exactly LeetCode's "Corporate Flight Bookings," solved in O(n + bookings).
+
+</Accordion>
+
+<Accordion title="Can you use a difference array to apply range multiplications instead of additions?">
+
+Not directly — the technique relies on additions cancelling via subtraction at the endpoints.
+Multiplication does not decompose into two independent endpoint marks the same way. You would
+need a multiplicative variant (prefix products with modular inverses) or a segment tree with
+lazy multiply.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Store range updates as two endpoint marks: `+val` at `l`, `-val` at `r + 1`.
+- Each update is O(1); one final prefix sum rebuilds the whole array in O(n).
+- It is the inverse of the prefix sum — batch writes now, read once at the end.
+
+<Cards>
+  <Card title="The Prefix Sum" href="/docs/dsa/10-prefix-sum/01-prefix-sum-intro" description="The read-side counterpart to this write-side trick." />
+  <Card title="Range Queries" href="/docs/dsa/10-prefix-sum/02-range-queries" description="Equilibrium points and 2D region sums." />
+</Cards>

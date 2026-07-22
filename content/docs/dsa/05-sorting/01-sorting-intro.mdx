@@ -1,0 +1,259 @@
+---
+title: "Why Sorting Matters"
+description: "Sorting feels like busywork until you notice it unlocks binary search, deduplication, and half the algorithms you’ll ever write."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/02-elementary-sorts
+  - href: /docs/dsa/05-sorting/03-merge-sort
+  - href: /docs/dsa/04-searching/03-binary-search
+---
+
+## The problem
+
+You've got a list of 50,000 customer emails and you need two things from it: a way to check
+"is this email already in the list?" fast, and a way to strip out the duplicates someone's
+messy import created. You wire up the obvious version. It works on your test data of ten
+rows. On the real file, the page spins for eight seconds and your laptop fan spins up.
+
+The frustrating part is that nothing about the task is hard. Checking membership and
+removing duplicates are *easy* ideas. They only feel slow because the data is a shapeless
+jumble. Give it some structure first and both problems nearly solve themselves. That
+structure is **sorted order**, and it's the quiet prerequisite behind a huge fraction of the
+algorithms you'll ever write.
+
+## A first attempt
+
+On unsorted data, every question means scanning. To dedup, you compare each element against
+every element you've already kept:
+
+```python
+def dedup_naive(nums):
+    result = []
+    for x in nums:
+        if x not in result:   # this membership check is itself a full scan
+            result.append(x)
+    return result
+```
+
+Every `x not in result` walks the whole `result` list. That's a loop inside a loop:
+`O(n²)`. For 50,000 items that's 2.5 *billion* comparisons. And searching the raw list for
+one email is `O(n)` every single time — do it for every incoming email and you're back to
+`O(n²)` again. The data's lack of order is taxing you on every single operation.
+
+## The insight
+
+Pay the ordering cost **once**, up front, and every later operation gets cheap. Sorting
+takes `O(n log n)` — more than a single scan, but you do it a single time. After that:
+
+- **Duplicates sit next to each other**, so one pass removes them.
+- **Membership becomes [binary search](/docs/dsa/04-searching/03-binary-search)** — `O(log n)` per lookup instead of `O(n)`.
+- **The min and max** are just the first and last elements.
+- **"Are any two values close?"** only needs to compare neighbours.
+
+Sorting isn't the answer to a problem. It's the *setup* that makes a dozen other problems
+trivial. That's why it earns its own module.
+
+## How it works
+
+Here's the pattern almost every sorting-based solution follows.
+
+<Steps>
+
+<Step>
+
+### Sort the data once
+
+Spend `O(n log n)` to put everything in order. This is your one investment.
+
+</Step>
+
+<Step>
+
+### Exploit adjacency
+
+In sorted data, related values are *neighbours*. Equal values touch. Close values are near.
+So most questions collapse to a single left-to-right pass comparing each element to the one
+before it.
+
+</Step>
+
+<Step>
+
+### Or exploit the order for search
+
+If instead of a pass you need repeated lookups, binary search each one in `O(log n)`,
+because sorted order lets you throw away half the array per comparison.
+
+</Step>
+
+</Steps>
+
+Watch how the shapeless list turns into something you can just walk:
+
+```text
+raw:     [ 5  1  5  3  1  2  3 ]      duplicates scattered, no structure
+sorted:  [ 1  1  2  3  3  5  5 ]      dupes now adjacent →  keep first of each run
+unique:  [ 1  2  3  5 ]              one clean pass, O(n)
+```
+
+## The code
+
+Sort first, then a single pass removes duplicates. Every language ships a fast
+`O(n log n)` sort, so lean on it.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def unique_sorted(nums):
+    nums.sort()                      # O(n log n)
+    result = []
+    for x in nums:                   # O(n) single pass
+        if not result or result[-1] != x:
+            result.append(x)
+    return result
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function uniqueSorted(nums: number[]): number[] {
+  nums.sort((a, b) => a - b); // numeric sort, O(n log n)
+  const result: number[] = [];
+  for (const x of nums) {
+    if (result.length === 0 || result[result.length - 1] !== x) {
+      result.push(x);
+    }
+  }
+  return result;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.Arrays;
+
+int[] uniqueSorted(int[] nums) {
+    Arrays.sort(nums);               // O(n log n)
+    int k = 0;
+    for (int x : nums) {             // O(n) single pass
+        if (k == 0 || nums[k - 1] != x) nums[k++] = x;
+    }
+    return Arrays.copyOf(nums, k);
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int cmp(const void *a, const void *b) {
+    int x = *(const int *)a, y = *(const int *)b;
+    return (x > y) - (x < y);        // safe, no overflow
+}
+
+// sorts in place, compacts unique values to the front, returns new length
+int unique_sorted(int *nums, int n) {
+    qsort(nums, n, sizeof(int), cmp);   // O(n log n)
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        if (k == 0 || nums[k - 1] != nums[i]) nums[k++] = nums[i];
+    }
+    return k;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+vector<int> uniqueSorted(vector<int> nums) {
+    sort(nums.begin(), nums.end());     // O(n log n)
+    nums.erase(unique(nums.begin(), nums.end()), nums.end());
+    return nums;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost         | Why                                             |
+| ------ | ------------ | ----------------------------------------------- |
+| Time   | `O(n log n)` | dominated by the one sort; the pass is `O(n)`   |
+| Space  | `O(n)`       | for the output; in-place variants reach `O(1)`  |
+
+Compare that to the naive `O(n²)` dedup: at 50,000 items you go from ~2.5 billion
+operations down to under a million. Same idea, sorted first.
+
+## When to use it
+
+<Callout type="idea" title="Sorting is preprocessing, not a goal">
+Reach for a sort whenever a problem gets easier once related items are neighbours: finding
+duplicates, closest pairs, grouping, or setting up repeated binary searches. The rule of
+thumb: sort if you'll query the data many times, or if the answer depends on *relative
+order* rather than original position. If you only need one lookup, a single `O(n)` scan may
+beat paying `O(n log n)` to sort.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You need to check membership just once. Should you still sort first?">
+
+No. Sorting costs `O(n log n)`; a single linear scan for one lookup is `O(n)`, which is
+cheaper. Sorting pays off when the setup cost is *amortized* over many later operations —
+many searches, a dedup pass, or repeated range queries. One-shot work rarely justifies it.
+
+</Accordion>
+
+<Accordion title="Given two arrays, how would you find the values they share?">
+
+Sort both (`O(n log n)`), then walk them with two pointers advancing whichever value is
+smaller. When the values match, it's a shared element. Total `O(n log n)`, far better than
+comparing every pair at `O(n²)`. This "sort then sweep" shape appears everywhere in this
+module.
+
+</Accordion>
+
+<Accordion title="Why is O(n log n) considered the speed limit for general sorting?">
+
+Any sort that decides order purely by *comparing* elements must distinguish all `n!`
+possible orderings, and each comparison only splits the possibilities in two. That forces at
+least `log₂(n!) ≈ n log n` comparisons. You can beat it only by *not* comparing — counting
+or radix sorts exploit the values themselves, which is exactly the trick behind
+[cycle sort](/docs/dsa/05-sorting/05-cycle-sort).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Sorting is a one-time `O(n log n)` investment that makes dedup, search, min/max, and
+  grouping cheap or trivial.
+- After sorting, related values are adjacent — so most problems reduce to a single pass or a
+  binary search.
+- Sort when you'll reuse the ordered data; skip it for one-off lookups where a scan wins.
+
+<Cards>
+  <Card title="The Simple (Slow) Sorts" href="/docs/dsa/05-sorting/02-elementary-sorts" description="How the sorts you'd invent yourself actually work — and why they crawl." />
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="The O(n log n) sort that makes the whole idea affordable." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="The O(log n) payoff that sorted data unlocks." />
+</Cards>

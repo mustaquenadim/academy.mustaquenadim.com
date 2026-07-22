@@ -1,0 +1,164 @@
+---
+title: "Design a Video Platform"
+description: "Uploading, encoding, storing, and streaming video to millions pulls together nearly every idea in this book."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/06-cdns
+  - href: /docs/system-design/part-3-architecture/03-message-queues
+  - href: /docs/system-design/part-5-case-studies/01-design-a-url-shortener
+---
+
+## The problem
+
+A creator uploads a 4 K, 2 GB, ten-minute video from a laptop on hotel Wi-Fi. Minutes later, someone on a subway with one bar of signal taps play on their phone — and it starts almost instantly, at a resolution that quietly adjusts as their signal fades. Between those two moments, that single file has to be received, transformed into a dozen versions, stored durably, and pushed to servers near every viewer on Earth.
+
+The naive version — "store the uploaded file, and when someone watches, stream that file to them" — fails on every axis. The upload dies halfway on flaky Wi-Fi. The 4 K file is unwatchable on a phone with weak signal. And streaming one stored copy from one datacenter to a global audience is both slow and ruinously expensive. A video platform is really four systems stitched together: **upload, encode, store, deliver.**
+
+## Requirements
+
+**Functional**
+
+- Upload a video (resumable, large files).
+- Transcode into multiple resolutions/bitrates.
+- Stream on demand with smooth playback that adapts to bandwidth.
+- Metadata: titles, thumbnails, view counts.
+
+**Non-functional**
+
+- Playback starts fast (< 2 s) and rarely buffers.
+- Durable storage — an upload must never be lost.
+- Scales to millions of concurrent viewers globally and petabytes of storage.
+
+## A scale estimate
+
+- **500 hours** of video uploaded per minute (YouTube-scale) → a firehose of ingestion and encoding work.
+- Each source video is transcoded into ~6 renditions (240p → 4 K) × multiple codecs → encoding is CPU-heavy and slow (often longer than the video's runtime).
+- Storage: raw + all renditions → **petabytes**, growing constantly.
+- Viewing dwarfs uploading; delivery bandwidth is the dominant cost, which is why the CDN exists.
+
+## The insight
+
+Uploading and watching are wildly different workloads that must be **decoupled**. The upload path is write-heavy, bursty, and slow (encoding). The watch path is read-heavy, latency-sensitive, and global. Between them sits an **asynchronous pipeline**: the user's upload finishes quickly, then a background system chews through encoding on its own schedule, and the watch path serves the finished renditions from the edge. Nothing on the fast paths waits for the slow work.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Upload resumably
+
+The client uploads directly to object storage (S3-style) in chunks via pre-signed URLs, so a dropped connection resumes from the last chunk instead of restarting 2 GB. The app server just hands out URLs and records metadata — it never proxies the bytes.
+
+</Step>
+
+<Step>
+
+### Kick off encoding asynchronously
+
+When the upload completes, drop a job onto a [message queue](/docs/system-design/part-3-architecture/03-message-queues). The user's request returns "processing…" immediately. A fleet of encoding workers pulls jobs off the queue.
+
+</Step>
+
+<Step>
+
+### Transcode and segment
+
+Workers split the video into small segments (2–10 s each) and encode each segment into every rendition — 240p, 480p, 720p, 1080p, 4 K — plus generate thumbnails. Segmenting lets workers process one video in parallel across many machines, and it's what makes adaptive streaming possible.
+
+</Step>
+
+<Step>
+
+### Store and distribute to the edge
+
+Write all segments and a manifest to object storage, then push the hot ones to a [CDN](/docs/system-design/part-1-networking/06-cdns). Mark the video ready and update its metadata.
+
+</Step>
+
+<Step>
+
+### Stream with adaptive bitrate
+
+The player fetches a manifest listing every rendition, then requests segments one at a time from the nearest CDN edge. Each segment fetch, it measures bandwidth and picks the next segment's quality — dropping to 480p when the subway signal fades, climbing back to 1080p when it recovers. This is **HLS/DASH adaptive bitrate streaming**.
+
+</Step>
+
+</Steps>
+
+```
+ upload ─chunks─▶ object storage ──┐
+   (pre-signed)                    │ on complete
+                                   ▼
+                            [ encode queue ]
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼               ▼
+                 worker         worker          worker   (segment × rendition)
+                    └──────────────┼──────────────┘
+                                   ▼
+                    object storage (segments + manifest)
+                                   │ push hot content
+                                   ▼
+   viewer ◀── nearest CDN edge ◀── CDN  ◀────────┘
+     ▲  measures bandwidth, requests next segment at best quality
+     └──────────────────────────────────────────┘
+```
+
+## Key decisions and trade-offs
+
+<Callout type="idea" title="Segmenting is the keystone">
+Cutting the video into short segments buys you three things at once: parallel encoding (many workers on one video), adaptive streaming (switch quality per segment), and cheap CDN caching (small, immutable files). One decision unlocks the entire watch experience.
+</Callout>
+
+<Callout type="warn" title="Storage explodes — and most of it is cold">
+Six renditions plus the raw master multiply storage several-fold, and the vast majority of videos are watched rarely after their first week. Keep hot content on fast storage and at the edge; move cold content to cheap archival tiers. Don't pay SSD prices to store a video nobody's watched in a year.
+</Callout>
+
+Metadata (titles, view counts, the `videoId → manifest URL` mapping) is a separate, small, read-heavy service — much like the [URL shortener's](/docs/system-design/part-5-case-studies/01-design-a-url-shortener) key-value lookup — and is cached hard.
+
+## Bottlenecks and how to scale
+
+- **Encoding throughput:** the queue absorbs upload bursts; scale workers horizontally to drain it. Prioritize lower resolutions first so a video becomes watchable before the 4 K rendition finishes.
+- **Delivery bandwidth:** the CDN is non-negotiable — serving petabytes from the edge is what keeps playback fast and origin traffic (and cost) low. Cache hit rate at the edge is the metric to watch.
+- **Popular-video spikes:** a viral video is a hot object; the CDN naturally absorbs it because segments are immutable and cacheable, so the origin barely notices.
+- **Upload reliability:** resumable chunked uploads plus durable object storage (replicated across zones) mean a flaky network or a failed node never loses an upload.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why encode into multiple resolutions up front instead of resizing on demand when someone watches?">
+
+Encoding is CPU-expensive and slow — often longer than the video itself. Doing it on demand would make the first viewer of each quality wait minutes, and you'd re-encode the same segment for every viewer, burning enormous compute. Encoding once, up front, into all renditions means playback is just a file fetch from the CDN — cheap and instant. You trade extra storage (which is comparatively cheap and tierable) for fast, repeatable reads. It's the same read-optimization instinct as precomputing a feed.
+
+</Accordion>
+
+<Accordion title="How does the player start fast on a weak connection and avoid buffering as the signal changes?">
+
+The player uses adaptive bitrate streaming. It first fetches a manifest listing all renditions, then downloads the video one short segment at a time. After each segment it estimates the available bandwidth from how fast that segment arrived, and chooses the quality of the next segment accordingly — starting low for a fast start, climbing when there's headroom, dropping to 240p/480p the moment throughput falls. Because segments are independent, switching quality mid-stream is seamless. The viewer sees resolution shift instead of a spinning buffer.
+
+</Accordion>
+
+<Accordion title="Why upload directly to object storage with pre-signed URLs instead of through your app servers?">
+
+Routing 2 GB uploads through app servers would make them handle enormous, slow byte streams — tying up connections, memory, and bandwidth that should be serving fast API calls. Pre-signed URLs let the client upload straight to object storage; the app server only issues the URL and records metadata. Chunked, resumable uploads on top mean a dropped hotel-Wi-Fi connection resumes from the last chunk instead of restarting. The app tier stays thin and the storage tier does what it's built for.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A video platform is **four decoupled systems**: resumable upload, async encoding, durable storage, edge delivery.
+- **Segmenting** enables parallel encoding, adaptive bitrate streaming, and cacheable CDN files — one idea, three wins.
+- Push encoding onto a **queue**, serve playback from a **CDN**, tier cold storage, and keep metadata a small cached key-value service.
+
+<Cards>
+  <Card title="CDNs" href="/docs/system-design/part-1-networking/06-cdns" description="How the edge serves petabytes of video close to every viewer." />
+  <Card title="Message Queues" href="/docs/system-design/part-3-architecture/03-message-queues" description="Decoupling the fast upload from the slow encoding pipeline." />
+  <Card title="Design a URL Shortener" href="/docs/system-design/part-5-case-studies/01-design-a-url-shortener" description="The read-heavy key-value pattern the metadata service reuses." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+Resist diving into codecs. Frame the whole thing as upload → encode → store → deliver, and make "decouple the slow encoding from the fast paths with a queue" your spine. If you land two ideas — asynchronous encoding via a queue, and segmented adaptive streaming from a CDN — you've covered what matters. Bring up storage tiering and pre-signed uploads to show depth.
+</Callout>

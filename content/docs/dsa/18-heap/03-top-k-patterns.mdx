@@ -1,0 +1,369 @@
+---
+title: "Top-K Patterns"
+description: "The k largest elements, or the cheapest way to join n ropes — problems a heap solves without sorting everything."
+extractedReferences:
+  - href: /docs/dsa/18-heap/01-heap-intro
+  - href: /docs/dsa/18-heap/02-heap-operations-and-heapsort
+  - href: /docs/dsa/20-greedy/03-huffman-coding
+---
+
+## The problem
+
+Your analytics dashboard tracks ten million search queries a day, and the product team wants the **10 most frequent** ones on screen. Ten million rows, and they want the top ten. Sorting the whole pile just to read off the last ten feels like emptying a lake to catch ten fish.
+
+And it is not only "top by count." The same shape shows up everywhere: the 10 closest drivers to a rider, the 5 highest-scoring documents, the cheapest sequence of merges. Each time you want a *small* slice of extremes out of a *huge* collection.
+
+## A first attempt
+
+Sort everything, then take the front (or back) `k`.
+
+```python
+def top_k_sort(nums, k):
+    return sorted(nums, reverse=True)[:k]   # O(n log n)
+```
+
+Correct, and for a one-off it is fine. But you paid `O(n log n)` to order all ten million queries when you only wanted ten of them. You did enormous work — ranking positions 11 through 10,000,000 against each other — and then threw all of it away. When `k` is tiny next to `n`, that is almost pure waste.
+
+## The insight
+
+You never need the losers ranked. You only need a **wall** that separates the top `k` from everyone else — and you need to update that wall cheaply as you stream through the data.
+
+Keep a heap of size exactly `k`. For the **k largest** elements, use a **min-heap**: its root is the *smallest* of your current top `k` — the weakest survivor, the one on the bubble. For each new element, compare it against that root. If the newcomer is bigger, the weakest is evicted and the newcomer joins. If not, discard it instantly. The heap never grows past `k`, so every comparison and swap costs `O(log k)`, not `O(log n)`.
+
+That inversion — a **min**-heap to track the **maximums** — is the move that trips people up, and it is the heart of the pattern.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Seed the heap with the first k elements
+
+Push the first `k` elements into a min-heap. Right now they are your provisional top `k`, and the root is the smallest among them — the current cutoff.
+
+</Step>
+
+<Step>
+
+### Challenge the wall with each remaining element
+
+For every later element `x`, compare it to the root. If `x <= root`, it cannot belong in the top `k`; drop it. If `x > root`, pop the root (evict the weakest) and push `x`.
+
+```text
+heap (k=3): [4, 7, 9]   root = 4  (the cutoff)
+next x = 6:  6 > 4  -> pop 4, push 6
+heap:       [6, 7, 9]   root = 6  (cutoff rose)
+next x = 2:  2 <= 6 -> discard, heap unchanged
+```
+
+</Step>
+
+<Step>
+
+### Read off the answer
+
+After one pass, the heap holds exactly the `k` largest elements. The root is the k-th largest. Pop everything if you want them sorted, or just read the heap if order does not matter.
+
+</Step>
+
+</Steps>
+
+### A second flavor: merging to minimize cost
+
+Some "top-k" problems are really *repeated-extreme* problems. Classic example: you have `n` ropes of given lengths and must join them all into one. Joining two ropes costs the sum of their lengths, and you want the total cost minimized. The greedy insight — always merge the two **shortest** ropes first — needs the two smallest available lengths at every step. A **min-heap** delivers exactly that: pop two, push their sum, repeat.
+
+## The code
+
+Two canonical patterns: k largest elements, and the minimum-cost rope merge.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import heapq
+
+def k_largest(nums, k):
+    h = nums[:k]
+    heapq.heapify(h)                 # min-heap of size k
+    for x in nums[k:]:
+        if x > h[0]:
+            heapq.heapreplace(h, x)  # pop root, push x, O(log k)
+    return sorted(h, reverse=True)
+
+def min_merge_cost(ropes):
+    h = list(ropes)
+    heapq.heapify(h)
+    cost = 0
+    while len(h) > 1:
+        a = heapq.heappop(h)
+        b = heapq.heappop(h)
+        cost += a + b
+        heapq.heappush(h, a + b)
+    return cost
+
+print(k_largest([3, 1, 5, 12, 2, 11], 3))  # [12, 11, 5]
+print(min_merge_cost([4, 3, 2, 6]))         # 29
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// Uses the MinHeap from the "Heaps & Priority Queues" lesson.
+class MinHeap {
+  a: number[] = [];
+  size() { return this.a.length; }
+  peek() { return this.a[0]; }
+  push(x: number) {
+    this.a.push(x);
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.a[p] <= this.a[i]) break;
+      [this.a[p], this.a[i]] = [this.a[i], this.a[p]];
+      i = p;
+    }
+  }
+  pop(): number {
+    const top = this.a[0];
+    const last = this.a.pop()!;
+    if (this.a.length) {
+      this.a[0] = last;
+      let i = 0;
+      const n = this.a.length;
+      while (true) {
+        let s = i;
+        const l = 2 * i + 1, r = 2 * i + 2;
+        if (l < n && this.a[l] < this.a[s]) s = l;
+        if (r < n && this.a[r] < this.a[s]) s = r;
+        if (s === i) break;
+        [this.a[i], this.a[s]] = [this.a[s], this.a[i]];
+        i = s;
+      }
+    }
+    return top;
+  }
+}
+
+function kLargest(nums: number[], k: number): number[] {
+  const h = new MinHeap();
+  for (const x of nums) {
+    if (h.size() < k) h.push(x);
+    else if (x > h.peek()) { h.pop(); h.push(x); }
+  }
+  return h.a.slice().sort((a, b) => b - a);
+}
+
+function minMergeCost(ropes: number[]): number {
+  const h = new MinHeap();
+  for (const r of ropes) h.push(r);
+  let cost = 0;
+  while (h.size() > 1) {
+    const a = h.pop();
+    const b = h.pop();
+    cost += a + b;
+    h.push(a + b);
+  }
+  return cost;
+}
+
+console.log(kLargest([3, 1, 5, 12, 2, 11], 3)); // [12, 11, 5]
+console.log(minMergeCost([4, 3, 2, 6]));         // 29
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.PriorityQueue;
+import java.util.Collections;
+import java.util.List;
+import java.util.ArrayList;
+
+public class TopK {
+    static List<Integer> kLargest(int[] nums, int k) {
+        PriorityQueue<Integer> h = new PriorityQueue<>(); // min-heap
+        for (int x : nums) {
+            if (h.size() < k) h.offer(x);
+            else if (x > h.peek()) { h.poll(); h.offer(x); }
+        }
+        List<Integer> out = new ArrayList<>(h);
+        out.sort(Collections.reverseOrder());
+        return out;
+    }
+
+    static long minMergeCost(int[] ropes) {
+        PriorityQueue<Integer> h = new PriorityQueue<>();
+        for (int r : ropes) h.offer(r);
+        long cost = 0;
+        while (h.size() > 1) {
+            int a = h.poll(), b = h.poll();
+            cost += a + b;
+            h.offer(a + b);
+        }
+        return cost;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(kLargest(new int[]{3, 1, 5, 12, 2, 11}, 3)); // [12, 11, 5]
+        System.out.println(minMergeCost(new int[]{4, 3, 2, 6}));         // 29
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+/* Min-heap over an int array. */
+void push(int h[], int *n, int x) {
+    int i = (*n)++;
+    h[i] = x;
+    while (i > 0) {
+        int p = (i - 1) / 2;
+        if (h[p] <= h[i]) break;
+        int t = h[p]; h[p] = h[i]; h[i] = t;
+        i = p;
+    }
+}
+
+int pop(int h[], int *n) {
+    int top = h[0];
+    h[0] = h[--(*n)];
+    int i = 0;
+    while (1) {
+        int s = i, l = 2 * i + 1, r = 2 * i + 2;
+        if (l < *n && h[l] < h[s]) s = l;
+        if (r < *n && h[r] < h[s]) s = r;
+        if (s == i) break;
+        int t = h[i]; h[i] = h[s]; h[s] = t;
+        i = s;
+    }
+    return top;
+}
+
+long min_merge_cost(int ropes[], int m) {
+    int h[128], n = 0;
+    for (int i = 0; i < m; i++) push(h, &n, ropes[i]);
+    long cost = 0;
+    while (n > 1) {
+        int a = pop(h, &n), b = pop(h, &n);
+        cost += a + b;
+        push(h, &n, a + b);
+    }
+    return cost;
+}
+
+int main(void) {
+    int ropes[] = {4, 3, 2, 6};
+    printf("%ld\n", min_merge_cost(ropes, 4)); /* 29 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+vector<int> kLargest(vector<int>& nums, int k) {
+    priority_queue<int, vector<int>, greater<int>> h; // min-heap
+    for (int x : nums) {
+        if ((int)h.size() < k) h.push(x);
+        else if (x > h.top()) { h.pop(); h.push(x); }
+    }
+    vector<int> out;
+    while (!h.empty()) { out.push_back(h.top()); h.pop(); }
+    sort(out.rbegin(), out.rend());
+    return out;
+}
+
+long long minMergeCost(vector<int>& ropes) {
+    priority_queue<int, vector<int>, greater<int>> h(ropes.begin(), ropes.end());
+    long long cost = 0;
+    while (h.size() > 1) {
+        int a = h.top(); h.pop();
+        int b = h.top(); h.pop();
+        cost += a + b;
+        h.push(a + b);
+    }
+    return cost;
+}
+
+int main() {
+    vector<int> nums = {3, 1, 5, 12, 2, 11};
+    for (int x : kLargest(nums, 3)) cout << x << " "; // 12 11 5
+    cout << "\n";
+    vector<int> ropes = {4, 3, 2, 6};
+    cout << minMergeCost(ropes) << "\n";             // 29
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Sort then slice | O(n log n) | O(n) |
+| Size-k min-heap (k largest) | O(n log k) | O(k) |
+| Quickselect (k largest, unordered) | O(n) average, O(n²) worst | O(1) |
+| Rope merge (n items) | O(n log n) | O(n) |
+
+## When to use it
+
+<Callout type="idea" title="Heap vs. quickselect for top-k">
+When `k` is much smaller than `n`, the size-`k` heap wins: `O(n log k)` time, `O(k)` space, and it works on a **stream** you cannot hold in memory all at once. Quickselect is faster on average (`O(n)`) when the whole array fits in memory and you just need the top `k` in any order, but it needs the full array and has an `O(n²)` worst case. Rule of thumb: streaming or memory-bound leans heap; in-memory one-shot leans quickselect.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="To find the k LARGEST elements you use a MIN-heap. Why the opposite polarity?">
+
+Because you want cheap access to the *weakest* member of your current winners — the one a newcomer must beat to get in. In a min-heap of size `k`, the root is the smallest of those `k`, which is exactly the k-th largest so far. Comparing each new element against that root is `O(1)`, and evicting it is `O(log k)`. A max-heap would keep the *strongest* on top, which tells you nothing about who is on the bubble, so you would have to scan for the minimum every time.
+
+</Accordion>
+
+<Accordion title="For the rope-merge problem, why does always merging the two shortest ropes minimize total cost?">
+
+Because a rope's length is re-counted in the cost every time it is part of a merge, and the earliest-merged ropes participate in the most subsequent merges. So the shortest ropes should be merged first, letting them accumulate through many rounds while their small length keeps each round cheap; the longest ropes should be touched last, counted the fewest times. This is exactly the logic behind Huffman coding — build the tree bottom-up, always combining the two least-frequent nodes.
+
+</Accordion>
+
+<Accordion title="You need the top k out of a stream of a billion numbers that will not fit in RAM. Which method, and what does it cost?">
+
+The size-`k` min-heap, because it only ever holds `k` elements — you process the billion one at a time and never store them all. Time is `O(n log k)` and space is `O(k)`, independent of the stream length. Sorting is impossible (no room for a billion numbers) and quickselect needs the full array in memory, so both are off the table. The bounded heap is the only approach that survives the memory constraint.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Top-k asks for a small slice of extremes; a size-`k` heap gives it in `O(n log k)` without ranking the losers.
+- Use the **opposite** polarity: a min-heap to hold the k largest, a max-heap to hold the k smallest.
+- Repeated-extreme problems like rope merging are the same pattern — pull the two smallest, combine, push back — and generalize to Huffman coding.
+
+<Cards>
+  <Card title="Heaps & Priority Queues" href="/docs/dsa/18-heap/01-heap-intro" description="The structure every top-k pattern rests on." />
+  <Card title="Heap Operations & Heap Sort" href="/docs/dsa/18-heap/02-heap-operations-and-heapsort" description="Full ordering when you truly need it." />
+  <Card title="Huffman Coding" href="/docs/dsa/20-greedy/03-huffman-coding" description="The rope-merge idea turned into compression." />
+</Cards>

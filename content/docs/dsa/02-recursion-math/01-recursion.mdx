@@ -1,0 +1,218 @@
+---
+title: "Recursion"
+description: "A problem that contains smaller copies of itself can be solved by a function that calls itself — once it clicks, whole classes of problems get simpler."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/02-analysis-of-recursion
+  - href: /docs/dsa/02-recursion-math/03-recursion-patterns
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You need to multiply `5 × 4 × 3 × 2 × 1` to get `5!`. Easy. Now do `100!`. You are not going to write a hundred multiplications by hand, and a loop feels like overkill for something you can describe in one breath.
+
+Here is the breath: `5!` is just `5 × 4!`. And `4!` is just `4 × 3!`. Every factorial is a slightly smaller factorial waiting to happen. The problem literally contains a smaller copy of itself. Can your code say that as plainly as you just did?
+
+## A first attempt
+
+Reach for a loop and you get something that works but hides the idea:
+
+```python
+def factorial(n):
+    result = 1
+    for i in range(2, n + 1):
+        result *= i
+    return result
+```
+
+Nothing is wrong here — it runs in **O(n)** time and **O(1)** space. But you had to invent a `result` accumulator and a counter `i` that have nothing to do with the definition of a factorial. The loop describes *how* to grind it out, not *what* a factorial is. When the structure of a problem is self-similar, a loop forces you to flatten that structure by hand.
+
+## The insight
+
+A function is allowed to call itself. If `factorial(5)` can ask `factorial(4)` for its answer and just multiply by `5`, you never have to manage a counter at all. You describe the problem in terms of a smaller version of the same problem.
+
+Two things make this safe rather than an infinite loop:
+
+- A **base case** — the smallest input you can answer with no further help. `factorial(1)` is `1`.
+- A **recursive case** — everything else, expressed using a smaller input that marches *toward* the base case.
+
+That is recursion: a function defined in terms of itself, anchored by a base case.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Anchor the base case
+
+Decide the smallest input you can answer directly. For factorial, `n <= 1` returns `1`. Without this anchor the calls never stop and the call stack overflows.
+
+</Step>
+
+<Step>
+
+### Shrink toward it
+
+Express the answer using a strictly smaller input: `factorial(n) = n * factorial(n - 1)`. Each call must move closer to the base case, or you never arrive.
+
+</Step>
+
+<Step>
+
+### Trust the recursion
+
+Assume `factorial(n - 1)` already returns the right answer. You only have to combine it with `n`. This leap of faith is the whole skill — you reason about one layer, not the whole tower.
+
+</Step>
+
+<Step>
+
+### Watch the stack unwind
+
+Calls pile up until the base case, then resolve back down:
+
+```text
+factorial(4)
+= 4 * factorial(3)
+      = 3 * factorial(2)
+            = 2 * factorial(1)
+                  = 1          <- base case
+            = 2 * 1 = 2
+      = 3 * 2 = 6
+= 4 * 6 = 24
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def factorial(n):
+    if n <= 1:              # base case
+        return 1
+    return n * factorial(n - 1)  # recursive case
+
+
+print(factorial(5))  # 120
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function factorial(n: number): number {
+  if (n <= 1) return 1; // base case
+  return n * factorial(n - 1); // recursive case
+}
+
+console.log(factorial(5)); // 120
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static long factorial(int n) {
+    if (n <= 1) return 1;              // base case
+    return n * factorial(n - 1);       // recursive case
+}
+
+// factorial(5) -> 120
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+long factorial(int n) {
+    if (n <= 1) return 1;              /* base case */
+    return n * factorial(n - 1);       /* recursive case */
+}
+
+/* factorial(5) -> 120 */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+long long factorial(int n) {
+    if (n <= 1) return 1;                       // base case
+    return (long long)n * factorial(n - 1);     // recursive case
+}
+
+// factorial(5) -> 120
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Measure | Cost  | Why                                                        |
+| ------- | ----- | ---------------------------------------------------------- |
+| Time    | O(n)  | One multiplication per level, `n` levels deep.             |
+| Space   | O(n)  | Each pending call keeps a stack frame until it resolves.   |
+
+Note the hidden cost: the iterative loop was **O(1)** space, but recursion pays **O(n)** for the call stack. Elegance is not free.
+
+## When to use it
+
+<Callout type="idea" title="Reach for recursion when the problem is self-similar">
+If you can describe the answer in terms of a smaller version of the same problem — trees, nested folders, divide-and-conquer — recursion mirrors the structure and reads beautifully. Avoid it for simple linear counting where a loop is clearer and cheaper, and beware deep recursion in languages without tail-call optimization: a chain of ~10,000 calls can overflow the stack.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="What happens if you forget the base case?">
+
+The recursive case keeps calling with smaller `n` forever — `factorial(0)` calls `factorial(-1)` calls `factorial(-2)` and so on. Nothing stops it, so the call stack grows until the runtime throws a stack-overflow error. The base case is what turns infinite regress into a finite answer.
+
+</Accordion>
+
+<Accordion title="Rewrite the sum 1 + 2 + ... + n recursively.">
+
+Same skeleton: the smallest case is `sum(0) = 0`, and every larger case is `n` plus the sum of everything below it.
+
+```python
+def sum_to(n):
+    if n == 0:
+        return 0
+    return n + sum_to(n - 1)
+```
+
+</Accordion>
+
+<Accordion title="Is recursion ever faster than a loop?">
+
+Not in raw speed — a recursive call carries function-call overhead a loop avoids, and it uses more memory. Its value is expressiveness: for tree traversal, backtracking, and divide-and-conquer, the recursive version is dramatically shorter and clearer, which is often worth more than a constant-factor speedup.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A recursive function solves a problem by calling itself on a smaller input.
+- Every recursion needs a **base case** to stop and a **recursive case** that shrinks toward it.
+- Recursion trades **O(n)** stack space for code that mirrors a self-similar problem.
+
+<Cards>
+  <Card title="Analyzing Recursion" href="/docs/dsa/02-recursion-math/02-analysis-of-recursion" description="Turn recursive calls into a Big-O number with recurrence relations." />
+  <Card title="Recursion Patterns" href="/docs/dsa/02-recursion-math/03-recursion-patterns" description="One skeleton that solves factorial, GCD, power, and more." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="The language for the costs you just measured." />
+</Cards>

@@ -1,0 +1,296 @@
+---
+title: "Ancestors & Paths"
+description: "The lowest common ancestor of two nodes, or the maximum path sum, are the questions that make trees interview favorites."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/05-tree-properties
+  - href: /docs/dsa/16-binary-tree/02-traversals
+---
+
+## The problem
+
+Two employees want to know their closest shared manager. On an org chart that's a real question: given two people deep in different branches, who is the lowest person that both report up to? Scroll up from each and you'll eventually collide on a common boss — you want the *first* one, not the CEO.
+
+The same shape shows up everywhere: the nearest shared category of two products, the merge base of two git commits, the join point of two routes. And a cousin question — "what's the most valuable path anywhere in this tree?" — turns up in scoring and routing. Both are about relationships *between* nodes, not single nodes, and that's what makes them tricky.
+
+## A first attempt
+
+The direct approach: find the full root-to-node path for each of the two targets, store them as two lists, then walk both lists from the top and take the last node they agree on. It works, and it's `O(n)` time — but it needs two separate searches and `O(h)` extra memory to hold the paths, plus a comparison pass.
+
+It also feels clumsy. You're materializing entire ancestor lists just to find where they diverge. The tree already encodes ancestry in its structure; storing paths as arrays throws that away and does redundant work. There should be a way to let the recursion itself find the meeting point.
+
+## The insight
+
+Ask each node a local question: **"does either target live in my subtree?"** Recurse into both children. If one target turns up on your **left** and the other on your **right**, then *you* are the lowest common ancestor — the split happens right here. If both come back from the same side, the answer is up that side; bubble it up.
+
+That's the whole algorithm: a single post-order pass where each node returns what it found. No path lists, no second search. The **maximum path sum** rides the same idea — at each node, the best path *through* it is the node's value plus the best downward gain from each child, and you track a global maximum as the recursion unwinds.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### LCA: search both subtrees
+
+At a node, if it *is* one of the two targets, return it. Otherwise recurse left and right, each returning either a found target, an ancestor, or null.
+
+```
+          3
+         / \
+        5   1        LCA(5, 1) = 3  (one each side)
+       /|   |\       LCA(6, 4) = 5  (both under 5)
+      6 2   0 8
+       / \
+      7   4
+```
+
+</Step>
+
+<Step>
+
+### Decide at the split
+
+If the left recursion returns non-null **and** the right does too, the two targets are in different subtrees — the current node is their LCA, so return it. If only one side is non-null, both targets are down that side; return whatever it gave you and let the answer rise.
+
+</Step>
+
+<Step>
+
+### Max path sum: best downward gain
+
+Reframe paths. For each node compute the best *downward* path starting at it: `node.value + max(0, leftGain, rightGain)` — clamp negatives to zero because a negative branch only hurts, so you'd rather stop.
+
+</Step>
+
+<Step>
+
+### Combine at the top of each path
+
+A full path can *bend* at a node, using both children. So while recursing, update a global best with `node.value + max(0, leftGain) + max(0, rightGain)`. Return only the straight downward gain to the parent (a path can't fork twice), but record the bent total as a candidate answer.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def lowest_common_ancestor(root, p, q):
+    if root is None or root is p or root is q:
+        return root
+    left = lowest_common_ancestor(root.left, p, q)
+    right = lowest_common_ancestor(root.right, p, q)
+    if left and right:      # targets split here -> this node is the LCA
+        return root
+    return left or right    # both on one side -> pass it up
+
+def max_path_sum(root):
+    best = float('-inf')
+    def gain(node):
+        nonlocal best
+        if node is None:
+            return 0
+        left = max(gain(node.left), 0)      # drop negative branches
+        right = max(gain(node.right), 0)
+        best = max(best, node.value + left + right)  # path bends here
+        return node.value + max(left, right)         # straight path up
+    gain(root)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function lowestCommonAncestor(
+  root: TreeNode | null,
+  p: TreeNode,
+  q: TreeNode,
+): TreeNode | null {
+  if (root === null || root === p || root === q) return root;
+  const left = lowestCommonAncestor(root.left, p, q);
+  const right = lowestCommonAncestor(root.right, p, q);
+  if (left && right) return root;   // split here -> LCA
+  return left ?? right;             // both one side -> pass up
+}
+
+function maxPathSum(root: TreeNode | null): number {
+  let best = -Infinity;
+  function gain(node: TreeNode | null): number {
+    if (node === null) return 0;
+    const left = Math.max(gain(node.left), 0);   // drop negatives
+    const right = Math.max(gain(node.right), 0);
+    best = Math.max(best, node.value + left + right); // bends here
+    return node.value + Math.max(left, right);        // straight up
+  }
+  gain(root);
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Paths {
+    static TreeNode lowestCommonAncestor(TreeNode root, TreeNode p, TreeNode q) {
+        if (root == null || root == p || root == q) return root;
+        TreeNode left = lowestCommonAncestor(root.left, p, q);
+        TreeNode right = lowestCommonAncestor(root.right, p, q);
+        if (left != null && right != null) return root; // split -> LCA
+        return left != null ? left : right;             // pass up
+    }
+
+    static int best;
+    static int maxPathSum(TreeNode root) {
+        best = Integer.MIN_VALUE;
+        gain(root);
+        return best;
+    }
+    static int gain(TreeNode node) {
+        if (node == null) return 0;
+        int left = Math.max(gain(node.left), 0);    // drop negatives
+        int right = Math.max(gain(node.right), 0);
+        best = Math.max(best, node.value + left + right); // bends here
+        return node.value + Math.max(left, right);        // straight up
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <limits.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+Node *lowestCommonAncestor(Node *root, Node *p, Node *q) {
+    if (root == NULL || root == p || root == q) return root;
+    Node *left = lowestCommonAncestor(root->left, p, q);
+    Node *right = lowestCommonAncestor(root->right, p, q);
+    if (left != NULL && right != NULL) return root;  /* split -> LCA */
+    return left != NULL ? left : right;              /* pass up */
+}
+
+int best;
+int max(int a, int b) { return a > b ? a : b; }
+
+int gain(Node *node) {
+    if (node == NULL) return 0;
+    int left = max(gain(node->left), 0);     /* drop negatives */
+    int right = max(gain(node->right), 0);
+    int bend = node->value + left + right;
+    if (bend > best) best = bend;            /* path bends here */
+    return node->value + max(left, right);   /* straight path up */
+}
+int maxPathSum(Node *root) {
+    best = INT_MIN;
+    gain(root);
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <algorithm>
+#include <climits>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+Node *lowestCommonAncestor(Node *root, Node *p, Node *q) {
+    if (root == nullptr || root == p || root == q) return root;
+    Node *left = lowestCommonAncestor(root->left, p, q);
+    Node *right = lowestCommonAncestor(root->right, p, q);
+    if (left && right) return root;   // split -> LCA
+    return left ? left : right;       // pass up
+}
+
+int best;
+int gain(Node *node) {
+    if (node == nullptr) return 0;
+    int left = max(gain(node->left), 0);    // drop negatives
+    int right = max(gain(node->right), 0);
+    best = max(best, node->value + left + right); // bends here
+    return node->value + max(left, right);        // straight up
+}
+int maxPathSum(Node *root) {
+    best = INT_MIN;
+    gain(root);
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Problem | Time | Space |
+| --- | --- | --- |
+| LCA (path lists) | O(n) | O(h) two path arrays |
+| LCA (single recursion) | O(n) | O(h) recursion stack |
+| Maximum path sum | O(n) | O(h) recursion stack |
+
+Both single-pass solutions visit each node once, so time is `O(n)` and the only extra space is the `O(h)` recursion stack — no auxiliary path lists needed.
+
+## When to use it
+
+<Callout type="warn" title="Return the straight path, but score the bent one">
+The recurring trap in path problems is confusing "the value a node returns to its parent" with "the value a node records as a candidate answer." A path can *bend* through a node using both children, but it can't fork twice, so you **return** only the better single downward branch while you **update the global best** with both branches combined. For LCA, the clean recursion assumes both targets actually exist in the tree — if that's not guaranteed, do a presence check first, or you may return a node that's only an ancestor of one. On a *binary search tree* the LCA is even simpler: walk down comparing values and stop where the two targets straddle the current node.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How does the recursion know a node is the lowest common ancestor rather than just some ancestor?">
+
+Each call returns non-null only if a target was found in that subtree. A node becomes the LCA precisely when its **left** recursion and its **right** recursion *both* return non-null — that means one target lies in each subtree, so they first meet at this node. Any ancestor higher up will get a non-null answer from only one side (the side containing this whole subtree), so it correctly passes that answer along instead of claiming to be the LCA. The lowest split point is the only node that sees targets on both sides.
+
+</Accordion>
+
+<Accordion title="In maximum path sum, why clamp each child's gain to zero with max(gain, 0)?">
+
+The gain from a child is how much a downward path extends your total if you include that branch. If that gain is negative, including the branch only lowers your sum, so you're better off not extending into it at all — which is exactly what clamping to zero expresses ("take this branch, or take nothing"). Without the clamp, a deeply negative subtree would drag down every path that could have simply stopped at the node. The node's own value is *not* clamped, because a single-node path must still be considered even if the value is negative.
+
+</Accordion>
+
+<Accordion title="How does finding the LCA on a binary search tree differ from a general binary tree?">
+
+In a BST the ordering lets you skip the recursion entirely. Start at the root and compare: if both targets are smaller than the current node, the LCA is in the left subtree; if both are larger, go right; the moment they fall on opposite sides (or one equals the node), the current node is the LCA. This runs in `O(h)` time and `O(1)` extra space because you follow a single path down and never explore both subtrees. The general binary-tree method must search both sides since it has no ordering to prune with.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Relationship questions between two nodes are answered by asking each node a local "is a target in my subtree?" question in one post-order pass.
+- The LCA is the lowest node whose left and right recursions each return a target; otherwise the answer bubbles up one side.
+- Max path sum returns only the best straight downward branch to the parent but scores the bent left-plus-right total against a global best.
+
+<Cards>
+  <Card title="Tree Properties" href="/docs/dsa/16-binary-tree/05-tree-properties" description="The same bottom-up return trick, applied to height and diameter." />
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="Post-order, the traversal these path algorithms ride on." />
+</Cards>

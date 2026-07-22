@@ -1,0 +1,9 @@
+{
+  "title": "Trie",
+  "icon": "TextCursorInput",
+  "pages": [
+    "01-trie-intro",
+    "02-trie-applications",
+    "03-bitwise-trie"
+  ]
+}

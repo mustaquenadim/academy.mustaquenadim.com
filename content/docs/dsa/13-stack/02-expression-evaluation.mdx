@@ -1,0 +1,301 @@
+---
+title: "Evaluating Expressions"
+description: "How does a computer compute \"3 + 4 × 2\" with the right precedence? A stack turns the mess into an answer."
+extractedReferences:
+  - href: /docs/dsa/13-stack/01-stack-intro
+  - href: /docs/dsa/13-stack/03-stack-design
+  - href: /docs/dsa/13-stack/04-monotonic-stack
+---
+
+## The problem
+
+You type `3 + 4 * 2` into a calculator and expect `11`, not `14`. The machine reads left to right, but it cannot just apply operators as it meets them — multiplication has to happen before addition, and parentheses can override everything. Somehow a flat line of characters has to become a correctly-ordered computation.
+
+It gets worse with `(1 + 2) * (3 + 4)` or nested `2 * (3 + (4 - 1))`. The operator that runs first can sit far from where you first see it. You need a way to *remember* pending numbers and operators until it is finally their turn.
+
+## A first attempt
+
+Your first instinct is to scan the string and compute as you go: keep a running total, and when you hit `+`, add the next number. But that ignores precedence entirely — `3 + 4 * 2` becomes `(3 + 4) * 2 = 14`. Wrong.
+
+You could patch it by scanning multiple times: one pass for every `*` and `/`, another for `+` and `-`, plus special handling to find matching parentheses. Each pass is O(n), and nested parentheses force you to rescan regions repeatedly. The logic balloons into a tangle of special cases and the cost creeps toward O(n²) on deeply nested input. There has to be something cleaner.
+
+## The insight
+
+Split the job in two. First **defer** the hard part: convert the human-friendly *infix* form (`3 + 4 * 2`) into **postfix** (also called Reverse Polish Notation: `3 4 2 * +`), where precedence is already baked into the order and no parentheses remain. Then **evaluate** the postfix left to right with a single stack.
+
+Both halves lean on the same idea: a stack holds things whose turn has not come yet — pending operators while converting, pending operands while evaluating. The last operator you deferred is the first one ready to fire. That is LIFO, exactly what a stack gives you.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Evaluate postfix with an operand stack
+
+Scan the postfix tokens. Push every number. On an operator, pop the top two numbers, apply it, and push the result back. One number remains at the end — the answer.
+
+```text
+tokens: 3 4 2 * +
+3        -> [3]
+4        -> [3, 4]
+2        -> [3, 4, 2]
+*        -> pop 2,4 -> 8 -> [3, 8]
++        -> pop 8,3 -> 11 -> [11]
+```
+
+</Step>
+
+<Step>
+
+### Convert infix to postfix with an operator stack
+
+This is the shunting-yard idea. Scan infix tokens. Output numbers immediately. For an operator, first pop to output any stacked operator of **greater-or-equal** precedence, then push the new one.
+
+</Step>
+
+<Step>
+
+### Handle parentheses
+
+Push `(` onto the operator stack as a barrier. When you meet `)`, pop operators to the output until you reach the matching `(`, then discard both parentheses. Nothing crosses a `(` barrier, so a parenthesized group is fully resolved first.
+
+</Step>
+
+<Step>
+
+### Mind operand order for subtraction
+
+When you pop two operands, the *second* pop is the left operand. For `-` and `/`, compute `left op right`, not `right op left`, or `5 - 3` becomes `-2`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+The examples evaluate a space-separated postfix expression — the reusable core once conversion is done.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def eval_postfix(expr):
+    stack = []
+    ops = {
+        "+": lambda a, b: a + b,
+        "-": lambda a, b: a - b,
+        "*": lambda a, b: a * b,
+        "/": lambda a, b: int(a / b),  # truncate toward zero
+    }
+    for token in expr.split():
+        if token in ops:
+            right = stack.pop()
+            left = stack.pop()
+            stack.append(ops[token](left, right))
+        else:
+            stack.append(int(token))
+    return stack.pop()
+
+
+print(eval_postfix("3 4 2 * +"))    # 11
+print(eval_postfix("5 1 2 + 4 * + 3 -"))  # 14
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function evalPostfix(expr: string): number {
+  const stack: number[] = [];
+  for (const token of expr.split(/\s+/)) {
+    if (token === "+" || token === "-" || token === "*" || token === "/") {
+      const right = stack.pop() as number;
+      const left = stack.pop() as number;
+      if (token === "+") stack.push(left + right);
+      else if (token === "-") stack.push(left - right);
+      else if (token === "*") stack.push(left * right);
+      else stack.push(Math.trunc(left / right));
+    } else {
+      stack.push(Number(token));
+    }
+  }
+  return stack.pop() as number;
+}
+
+console.log(evalPostfix("3 4 2 * +"));         // 11
+console.log(evalPostfix("5 1 2 + 4 * + 3 -")); // 14
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+public class PostfixEval {
+    public static int evalPostfix(String expr) {
+        Deque<Integer> stack = new ArrayDeque<>();
+        for (String token : expr.trim().split("\\s+")) {
+            switch (token) {
+                case "+": case "-": case "*": case "/":
+                    int right = stack.pop();
+                    int left = stack.pop();
+                    int result = switch (token) {
+                        case "+" -> left + right;
+                        case "-" -> left - right;
+                        case "*" -> left * right;
+                        default  -> left / right; // truncates toward zero
+                    };
+                    stack.push(result);
+                    break;
+                default:
+                    stack.push(Integer.parseInt(token));
+            }
+        }
+        return stack.pop();
+    }
+
+    public static void main(String[] args) {
+        System.out.println(evalPostfix("3 4 2 * +"));         // 11
+        System.out.println(evalPostfix("5 1 2 + 4 * + 3 -")); // 14
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+int eval_postfix(const char *expr) {
+    int stack[256];
+    int top = -1;
+    char buf[256];
+    strncpy(buf, expr, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+
+    for (char *tok = strtok(buf, " "); tok; tok = strtok(NULL, " ")) {
+        if (strlen(tok) == 1 && strchr("+-*/", tok[0]) && !isdigit((unsigned char)tok[0])) {
+            int right = stack[top--];
+            int left = stack[top--];
+            switch (tok[0]) {
+                case '+': stack[++top] = left + right; break;
+                case '-': stack[++top] = left - right; break;
+                case '*': stack[++top] = left * right; break;
+                case '/': stack[++top] = left / right; break;
+            }
+        } else {
+            stack[++top] = atoi(tok);
+        }
+    }
+    return stack[top];
+}
+
+int main(void) {
+    printf("%d\n", eval_postfix("3 4 2 * +"));         // 11
+    printf("%d\n", eval_postfix("5 1 2 + 4 * + 3 -")); // 14
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <sstream>
+#include <stack>
+#include <string>
+
+int evalPostfix(const std::string &expr) {
+    std::stack<int> stack;
+    std::istringstream in(expr);
+    std::string token;
+    while (in >> token) {
+        if (token == "+" || token == "-" || token == "*" || token == "/") {
+            int right = stack.top(); stack.pop();
+            int left = stack.top(); stack.pop();
+            if (token == "+") stack.push(left + right);
+            else if (token == "-") stack.push(left - right);
+            else if (token == "*") stack.push(left * right);
+            else stack.push(left / right);
+        } else {
+            stack.push(std::stoi(token));
+        }
+    }
+    return stack.top();
+}
+
+int main() {
+    std::cout << evalPostfix("3 4 2 * +") << "\n";         // 11
+    std::cout << evalPostfix("5 1 2 + 4 * + 3 -") << "\n"; // 14
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Phase | Time | Space |
+| ----- | ---- | ----- |
+| Infix → postfix | O(n) | O(n) |
+| Evaluate postfix | O(n) | O(n) |
+| Combined | O(n) | O(n) |
+
+Each token is pushed and popped at most once, so both phases are linear — a clean win over the multi-pass approach.
+
+## When to use it
+
+<Callout type="warn" title="Watch operand order and division">
+The stack approach is the standard way calculators, spreadsheets, and compilers parse arithmetic. Two classic bugs: popping operands in the wrong order (the second pop is the *left* operand, which matters for `-` and `/`), and integer division rounding differently than you expect. Decide truncation-toward-zero vs floor up front, and test with negatives.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Convert (1 + 2) * 3 to postfix by hand using the operator stack. What do you get?">
+
+Scan left to right. `(` pushes a barrier. `1` outputs. `+` pushes. `2` outputs. `)` pops until `(`, sending `+` to output and discarding the parentheses; output so far is `1 2 +`. `*` pushes onto the now-empty operator stack. `3` outputs. At the end, pop remaining operators: `*`. Final postfix: `1 2 + 3 *`, which evaluates to `9`.
+
+</Accordion>
+
+<Accordion title="Why do you pop operators of greater-OR-equal precedence, but for right-associative operators like exponentiation only strictly greater?">
+
+For left-associative `-`, `a - b - c` must group as `(a - b) - c`, so a new `-` should fire the pending `-` first — hence pop on equal precedence. For right-associative `^`, `a ^ b ^ c` groups as `a ^ (b ^ c)`, so a new `^` must *not* fire the pending one; you only pop on strictly greater precedence, leaving equals on the stack.
+
+</Accordion>
+
+<Accordion title="How would you evaluate infix directly without first producing postfix?">
+
+Run two stacks at once: an operand stack and an operator stack. Push numbers to operands and operators to the operator stack, but before pushing an operator (or on `)`), apply any stacked operator of greater-or-equal precedence by popping two operands and one operator and pushing the result. It is the same shunting-yard logic fused into a single pass, O(n) time.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Precedence makes a flat expression need memory — a stack supplies it.
+- Split the work: convert infix to **postfix**, then evaluate postfix with one operand stack.
+- Every token is pushed and popped once, so the whole thing is O(n) time and space.
+
+<Cards>
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="The LIFO fundamentals this lesson builds on." />
+  <Card title="Designing Stacks" href="/docs/dsa/13-stack/03-stack-design" description="Clever stack variants like an O(1) minimum stack." />
+  <Card title="The Monotonic Stack" href="/docs/dsa/13-stack/04-monotonic-stack" description="Another single-pass stack pattern for array problems." />
+</Cards>

@@ -1,0 +1,345 @@
+---
+title: "Multi-Source BFS"
+description: "How fast do rotten oranges spoil the whole crate? Start the search from every source at once."
+extractedReferences:
+  - href: /docs/dsa/19-graph/02-bfs
+  - href: /docs/dsa/19-graph/01-graph-representations
+  - href: /docs/dsa/19-graph/06-shortest-paths
+---
+
+## The problem
+
+A crate holds a grid of oranges. Some are already rotten. Each minute, every rotten orange
+spoils its fresh up/down/left/right neighbors. Question: how many minutes until the whole
+crate is rotten — or is that impossible because some orange is walled off?
+
+Or think of a wildfire starting from several lightning strikes at once, or the distance from
+every cell to its *nearest* hospital on a city map. In all of them, spreading starts from
+**many places simultaneously**, and you want the time (or hop distance) for the spread to
+reach each cell — specifically, the distance to the *closest* source.
+
+## A first attempt
+
+The obvious plan: run a separate [BFS](/docs/dsa/19-graph/02-bfs) from each source, and for
+each cell keep the minimum distance across all those runs. Correct, but wasteful. With `k`
+sources and a grid of `N` cells, that's `O(k · N)` — you re-walk the whole grid `k` times,
+and most of that work overlaps because the ripples collide almost immediately.
+
+The redundancy is the clue. All those BFS frontiers are expanding at the *same speed*. Why
+run them one after another when they could all advance together?
+
+## The insight
+
+Seed the BFS queue with **all sources at once**, each at distance 0. Then run a single,
+ordinary BFS. Because a queue processes vertices in nondecreasing distance order, the first
+time any cell is reached, it's reached by the *nearest* source — exactly the minimum you
+wanted — and each cell is still visited only once.
+
+Conceptually, add a virtual "super-source" connected to every real source by a zero-cost
+edge; BFS from it is multi-source BFS. One pass, `O(N)`, no matter how many sources.
+
+<Callout type="idea" title="It's just BFS with a fuller starting queue">
+Single-source BFS starts with one vertex enqueued. Multi-source BFS starts with *all*
+sources enqueued at distance 0. Everything else — the loop, the visited marking, the
+guarantee — is identical. The "minutes elapsed" is simply the maximum distance BFS assigns.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Enqueue every source
+
+Push all source cells into the queue with distance 0 and mark them visited. This is the only
+change from ordinary BFS.
+
+</Step>
+
+<Step>
+
+### Expand the combined frontier
+
+Pop a cell. For each fresh (unvisited, passable) neighbor, set its distance to
+`dist[current] + 1`, mark it visited, and enqueue it. Ripples from all sources advance in
+lockstep.
+
+</Step>
+
+<Step>
+
+### Track the elapsed time
+
+The answer for "how long until everything is reached" is the largest distance assigned — the
+last ripple. For rotting oranges, that's the number of minutes.
+
+</Step>
+
+<Step>
+
+### Check for unreachable cells
+
+After BFS, if any passable cell was never visited, it's cut off from all sources — the spread
+can never reach it. For the oranges puzzle, that means the answer is `-1`.
+
+</Step>
+
+</Steps>
+
+Rotten (`R`) spread over a grid, distances after multi-source BFS:
+
+```text
+grid            distances (minutes to rot)
+R . .           0 1 2
+. . .    ->     1 2 3
+. . R           2 3 0     (bottom-right R also starts at 0)
+
+both R cells enqueued at t=0; answer = max distance reached
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+def oranges_rotting(grid):
+    rows, cols = len(grid), len(grid[0])
+    q = deque()
+    fresh = 0
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == 2:          # rotten source
+                q.append((r, c, 0))
+            elif grid[r][c] == 1:
+                fresh += 1
+
+    minutes = 0
+    while q:
+        r, c, t = q.popleft()
+        minutes = max(minutes, t)
+        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 1:
+                grid[nr][nc] = 2         # mark visited on enqueue
+                fresh -= 1
+                q.append((nr, nc, t + 1))
+
+    return minutes if fresh == 0 else -1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function orangesRotting(grid: number[][]): number {
+  const rows = grid.length, cols = grid[0].length;
+  const q: [number, number, number][] = [];
+  let fresh = 0;
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      if (grid[r][c] === 2) q.push([r, c, 0]);
+      else if (grid[r][c] === 1) fresh++;
+    }
+
+  let minutes = 0, head = 0;
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  while (head < q.length) {
+    const [r, c, t] = q[head++];
+    minutes = Math.max(minutes, t);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] === 1) {
+        grid[nr][nc] = 2;
+        fresh--;
+        q.push([nr, nc, t + 1]);
+      }
+    }
+  }
+  return fresh === 0 ? minutes : -1;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int orangesRotting(int[][] grid) {
+    int rows = grid.length, cols = grid[0].length, fresh = 0;
+    Queue<int[]> q = new ArrayDeque<>();
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] == 2) q.add(new int[]{r, c, 0});
+            else if (grid[r][c] == 1) fresh++;
+        }
+
+    int minutes = 0;
+    int[][] dirs = {{1,0},{-1,0},{0,1},{0,-1}};
+    while (!q.isEmpty()) {
+        int[] cur = q.poll();
+        minutes = Math.max(minutes, cur[2]);
+        for (int[] d : dirs) {
+            int nr = cur[0] + d[0], nc = cur[1] + d[1];
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] == 1) {
+                grid[nr][nc] = 2;
+                fresh--;
+                q.add(new int[]{nr, nc, cur[2] + 1});
+            }
+        }
+    }
+    return fresh == 0 ? minutes : -1;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int oranges_rotting(int** grid, int rows, int cols) {
+    int (*q)[3] = malloc(sizeof(int[3]) * rows * cols);
+    int head = 0, tail = 0, fresh = 0;
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] == 2) { q[tail][0]=r; q[tail][1]=c; q[tail][2]=0; tail++; }
+            else if (grid[r][c] == 1) fresh++;
+        }
+
+    int dr[] = {1,-1,0,0}, dc[] = {0,0,1,-1}, minutes = 0;
+    while (head < tail) {
+        int r = q[head][0], c = q[head][1], t = q[head][2]; head++;
+        if (t > minutes) minutes = t;
+        for (int i = 0; i < 4; i++) {
+            int nr = r + dr[i], nc = c + dc[i];
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] == 1) {
+                grid[nr][nc] = 2; fresh--;
+                q[tail][0]=nr; q[tail][1]=nc; q[tail][2]=t+1; tail++;
+            }
+        }
+    }
+    free(q);
+    return fresh == 0 ? minutes : -1;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <queue>
+#include <array>
+using namespace std;
+
+int orangesRotting(vector<vector<int>>& grid) {
+    int rows = grid.size(), cols = grid[0].size(), fresh = 0;
+    queue<array<int,3>> q;
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] == 2) q.push({r, c, 0});
+            else if (grid[r][c] == 1) fresh++;
+        }
+
+    int minutes = 0, dr[] = {1,-1,0,0}, dc[] = {0,0,1,-1};
+    while (!q.empty()) {
+        auto [r, c, t] = q.front(); q.pop();
+        minutes = max(minutes, t);
+        for (int i = 0; i < 4; i++) {
+            int nr = r + dr[i], nc = c + dc[i];
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] == 1) {
+                grid[nr][nc] = 2; fresh--;
+                q.push({nr, nc, t + 1});
+            }
+        }
+    }
+    return fresh == 0 ? minutes : -1;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Seed ALL sources before the loop starts">
+The whole trick depends on every source sitting in the queue at distance 0 *before* you pop
+the first cell. If you add sources lazily mid-loop, their ripples start late and the "nearest
+source" distances come out wrong. Do the full seeding pass first.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost   | Why                                                       |
+| ------ | ------ | -------------------------------------------------------- |
+| Time   | `O(N)` | one BFS over all `N` cells/vertices, each visited once   |
+| Space  | `O(N)` | the queue and visited/distance grid                      |
+
+Here `N` is the number of cells (or `n + m` for a general graph). Crucially, the cost is
+**independent of the number of sources** — one pass covers them all, versus `O(k · N)` for
+`k` separate searches.
+
+## When to use it
+
+<Callout type="info" title="Spot the multi-source pattern">
+Reach for multi-source BFS whenever the question is **"distance to the nearest of several
+starting points"** or **"time for a spread from many origins"**: rotting oranges, wildfire
+spread, distance-to-nearest-gate/hospital, `0/1` matrix distance, walls-and-gates. It still
+requires **uniform edge cost** (each step is 1). If steps have different weights, you need a
+priority queue — see [Shortest Paths](/docs/dsa/19-graph/06-shortest-paths).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is enqueuing all sources at once correct rather than just faster?">
+
+Because BFS visits vertices in nondecreasing distance order regardless of how many seeds
+started at distance 0. The first time a cell is dequeued, its recorded distance is the
+minimum over *all* sources — no later ripple can reach it sooner. So the single combined pass
+produces exactly the per-cell nearest-source distances, and does it in one `O(N)` sweep
+instead of `k` of them.
+
+</Accordion>
+
+<Accordion title="The rotting-oranges answer is -1 sometimes. What situation causes that, and how does the code detect it?">
+
+`-1` means some fresh orange can never rot — it's enclosed by empty cells or the crate wall,
+with no path to any rotten source. The code tracks a `fresh` counter, decrementing it each
+time a cell is newly rotted. If `fresh > 0` after BFS drains the queue, at least one orange
+was unreachable, so it returns `-1`.
+
+</Accordion>
+
+<Accordion title="How would you find, for every cell, the distance to the nearest source (not just the total time)?">
+
+You already have it: keep the per-cell distance you assign during BFS (the `t + 1` value)
+in a separate distance grid instead of only tracking the running max. After the single
+multi-source pass, each cell's stored value *is* its distance to the closest source. This is
+the "distance to nearest gate/hospital" problem, solved in one sweep.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Multi-source BFS seeds the queue with **all sources at distance 0**, then runs one ordinary
+  BFS.
+- The first visit to each cell is by its **nearest** source — correct minimum distances in a
+  single `O(N)` pass, independent of source count.
+- It needs **uniform step cost**; for weighted spread, use Dijkstra instead.
+
+<Cards>
+  <Card title="Breadth-First Search" href="/docs/dsa/19-graph/02-bfs" description="The single-source version this generalizes." />
+  <Card title="Representing Graphs" href="/docs/dsa/19-graph/01-graph-representations" description="Grids are graphs with 4-directional edges." />
+  <Card title="Shortest Paths" href="/docs/dsa/19-graph/06-shortest-paths" description="When steps have different weights." />
+</Cards>

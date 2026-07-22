@@ -1,0 +1,15 @@
+{
+  "title": "Graph",
+  "icon": "Share2",
+  "pages": [
+    "01-graph-representations",
+    "02-bfs",
+    "03-dfs",
+    "04-cycle-detection",
+    "05-topological-sort",
+    "06-shortest-paths",
+    "07-multi-source-bfs",
+    "08-minimum-spanning-tree",
+    "09-union-find"
+  ]
+}

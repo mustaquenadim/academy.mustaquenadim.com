@@ -1,0 +1,328 @@
+---
+title: "Deques"
+description: "Sometimes you need to add and remove from both ends — a double-ended queue is the best of both worlds."
+extractedReferences:
+  - href: /docs/dsa/15-deque/02-sliding-window-maximum
+  - href: /docs/dsa/14-queue/01-queue-intro
+  - href: /docs/dsa/13-stack/01-stack-intro
+---
+
+## The problem
+
+You are building the "undo/redo" bar for an editor, and next to it a live feed of the
+last five actions the user took. New actions arrive at the front of that feed. When the
+feed grows past five, the oldest one drops off the back. So you are constantly adding to
+one end and removing from the other — and sometimes doing the reverse when the user hits
+undo.
+
+A stack only lets you touch one end. A queue lets you push at the back and pop at the
+front, but never the other way. Your feed needs both ends open at once, and it needs every
+one of those pokes to be fast. Reach for the wrong structure and each update quietly slides
+the whole list over in memory.
+
+## A first attempt
+
+The obvious move is a plain array (a Python `list`, a JS `Array`). Appending to the back is
+cheap. But your feed adds to the *front*:
+
+```python
+feed = []
+feed.insert(0, action)   # add to front
+feed.pop()               # remove from back
+```
+
+`insert(0, x)` looks innocent. Under the hood it shifts every existing element one slot to
+the right to make room. With `n` items that is O(n) work — every single time. Do it for `n`
+actions and you have spent O(n²) just maintaining a five-item feed. The list is fighting
+you, and it only gets worse as the app runs longer.
+
+## The insight
+
+The pain comes from one place: an array stores elements in one contiguous block, so making
+room at the front means moving everything. What if the two ends didn't have to know about
+each other?
+
+A **deque** ("deck", short for *double-ended queue*) is built exactly for this. It keeps the
+front and the back as independent access points, so pushing or popping at *either* end is
+O(1). Internally it is usually a doubly linked list or a ring of fixed-size blocks — never a
+single array you have to shuffle. Once you stop forcing a one-ended tool to work on both
+ends, the cost collapses to constant time.
+
+## How it works
+
+A deque exposes four core operations. Picture a row of blocks with a pointer at each end.
+
+```
+        push_front            push_back
+           │                      │
+           ▼                      ▼
+        ┌─────┬─────┬─────┬─────┬─────┐
+ front ◀│  A  │  B  │  C  │  D  │  E  │▶ back
+        └─────┴─────┴─────┴─────┴─────┘
+           ▲                      ▲
+        pop_front             pop_back
+```
+
+<Steps>
+
+<Step>
+
+### Start empty
+
+Both the front and back pointers refer to nothing. Size is 0.
+
+</Step>
+
+<Step>
+
+### push_front / push_back
+
+To add at an end, you attach a new node just outside the matching pointer and move that
+pointer onto it. The *other* end never moves, so it stays valid. Both are O(1).
+
+</Step>
+
+<Step>
+
+### pop_front / pop_back
+
+To remove from an end, you read the pointer's node, step the pointer inward to its
+neighbour, and detach the old node. Again the far end is untouched, so this is O(1).
+
+</Step>
+
+<Step>
+
+### Model the feed
+
+Your live feed becomes: `push_front(action)` on every new event, and when
+`len(feed) > 5`, call `pop_back()` to drop the stale one. Both ends fast, no shifting.
+
+</Step>
+
+</Steps>
+
+## The code
+
+Most languages ship a deque so you rarely build one by hand. Here is the standard type in
+each, driving the five-item feed.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+feed = deque(maxlen=5)  # auto-drops from the far end when full
+
+def record(action: str) -> None:
+    feed.appendleft(action)  # add to front, O(1)
+
+record("open")
+record("type")
+record("bold")
+print(list(feed))       # ['bold', 'type', 'open']
+print(feed.popleft())   # 'bold'  (most recent)
+print(feed.pop())       # 'open'  (oldest)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// A minimal deque backed by a doubly linked list.
+class Deque<T> {
+  private head?: { value: T; prev?: any; next?: any };
+  private tail?: typeof this.head;
+  size = 0;
+
+  pushFront(value: T): void {
+    const node = { value, next: this.head };
+    if (this.head) this.head.prev = node;
+    this.head = node;
+    this.tail ??= node;
+    this.size++;
+  }
+
+  popBack(): T | undefined {
+    if (!this.tail) return undefined;
+    const value = this.tail.value;
+    this.tail = this.tail.prev;
+    if (this.tail) this.tail.next = undefined;
+    else this.head = undefined;
+    this.size--;
+    return value;
+  }
+}
+
+const feed = new Deque<string>();
+feed.pushFront("open");
+feed.pushFront("type");
+if (feed.size > 1) feed.popBack(); // drop oldest
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+public class Feed {
+    public static void main(String[] args) {
+        Deque<String> feed = new ArrayDeque<>();
+        feed.addFirst("open");   // push front, O(1)
+        feed.addFirst("type");
+        feed.addFirst("bold");
+
+        if (feed.size() > 2) {
+            feed.removeLast();   // drop oldest, O(1)
+        }
+        System.out.println(feed.peekFirst()); // bold
+        System.out.println(feed.peekLast());  // type
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    char *value;
+    struct Node *prev, *next;
+} Node;
+
+typedef struct {
+    Node *head, *tail;
+    int size;
+} Deque;
+
+void push_front(Deque *d, char *value) {
+    Node *n = malloc(sizeof(Node));
+    n->value = value;
+    n->prev = NULL;
+    n->next = d->head;
+    if (d->head) d->head->prev = n;
+    d->head = n;
+    if (!d->tail) d->tail = n;
+    d->size++;
+}
+
+char *pop_back(Deque *d) {
+    if (!d->tail) return NULL;
+    Node *t = d->tail;
+    char *value = t->value;
+    d->tail = t->prev;
+    if (d->tail) d->tail->next = NULL;
+    else d->head = NULL;
+    free(t);
+    d->size--;
+    return value;
+}
+
+int main(void) {
+    Deque d = {NULL, NULL, 0};
+    push_front(&d, "open");
+    push_front(&d, "type");
+    if (d.size > 1) printf("%s\n", pop_back(&d)); // open
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <deque>
+#include <iostream>
+#include <string>
+
+int main() {
+    std::deque<std::string> feed;
+    feed.push_front("open");   // O(1)
+    feed.push_front("type");
+    feed.push_front("bold");
+
+    if (feed.size() > 2) {
+        feed.pop_back();       // drop oldest, O(1)
+    }
+    std::cout << feed.front() << '\n'; // bold
+    std::cout << feed.back()  << '\n'; // type
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation                       | Time | Space |
+| ------------------------------- | ---- | ----- |
+| push_front / push_back          | O(1) | O(1)  |
+| pop_front / pop_back            | O(1) | O(1)  |
+| peek_front / peek_back          | O(1) | O(1)  |
+| random access by index          | O(n) | O(1)  |
+| Whole structure holding n items | —    | O(n)  |
+
+## When to use it
+
+<Callout type="idea" title="Reach for a deque when both ends are hot">
+A deque is a superset of both stack and queue — it can do everything they do. Use it for
+sliding windows, undo/redo history, work-stealing schedulers, and palindrome checks. The
+catch: indexing into the middle is O(n), so if you need fast `deque[i]` in the middle, a
+plain array is the better tool.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How would you build a queue and a stack using only a deque?">
+
+A stack uses one end: `push_front` to push, `pop_front` to pop (or both on the back). A
+queue uses opposite ends: `push_back` to enqueue, `pop_front` to dequeue. Because every
+deque end is O(1), both simulations stay O(1) per operation — the deque simply exposes more
+than either needs.
+
+</Accordion>
+
+<Accordion title="Why does Python's list.insert(0, x) turn a loop into O(n²)?">
+
+`insert(0, x)` shifts all existing elements right by one to open slot 0, costing O(n). Do it
+`n` times and you pay 1 + 2 + … + n ≈ n²/2 total, i.e. O(n²). `collections.deque.appendleft`
+is O(1), so the same loop drops to O(n).
+
+</Accordion>
+
+<Accordion title="Is a deque a good fit for checking whether a word is a palindrome?">
+
+Yes. Push each character to the back, then repeatedly `pop_front` and `pop_back` and compare
+the pair. If any pair differs it is not a palindrome; if you meet in the middle it is. That
+is O(n) time and O(n) space, using both ends naturally.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A deque is a double-ended queue: O(1) push and pop at **both** the front and the back.
+- It beats a plain array whenever you mutate the front, where `insert(0, x)` is a hidden O(n).
+- It generalizes stacks and queues; the trade-off is O(n) access to the middle.
+
+<Cards>
+  <Card title="Sliding Window Maximum" href="/docs/dsa/15-deque/02-sliding-window-maximum" description="The deque's signature O(n) trick." />
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="One end in, the other out." />
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="Last in, first out." />
+</Cards>

@@ -1,0 +1,297 @@
+---
+title: "Depth-First Search"
+description: "To escape a maze you follow one path as far as it goes, then back up and try another — that’s DFS."
+extractedReferences:
+  - href: /docs/dsa/19-graph/02-bfs
+  - href: /docs/dsa/19-graph/04-cycle-detection
+  - href: /docs/dsa/19-graph/05-topological-sort
+---
+
+## The problem
+
+You're standing in a hedge maze. There's no map, just corridors and junctions. How do you
+guarantee you visit every dead end without wandering forever? The natural human strategy:
+pick a corridor and follow it as far as it goes. Hit a dead end, back up to the last
+junction, and take the next unexplored corridor. Repeat until nothing new is left.
+
+That's exploring a [graph](/docs/dsa/19-graph/01-graph-representations) where junctions are
+vertices and corridors are edges. The strategy has to remember *where to back up to*, and it
+has to avoid re-treading corridors it has already walked, or it loops forever in a maze with
+cycles. That "go deep, then back up" instinct is **depth-first search**.
+
+## A first attempt
+
+You could try to be systematic without backtracking — say, always turn left. In a simply
+connected maze that famously works, but general graphs aren't mazes with walls; a vertex can
+link to any others, and "left" is meaningless. Worse, without tracking where you've been,
+any cycle sends you round and round the same corridors, never terminating.
+
+So two things are non-negotiable: a way to **remember the path back** to earlier junctions,
+and a **visited set** so each vertex is entered once.
+
+## The insight
+
+"Back up to the last junction" is exactly **last in, first out** — the most recently entered
+vertex is the first you return to. That's a **stack**. Recursion gives you one for free (the
+call stack), or you can carry an explicit stack.
+
+Combine the stack with a visited set and the method is complete: dive down an edge to an
+unvisited neighbor, recurse, and when a vertex has no unvisited neighbors left, *return* —
+which pops you back to where you came from. Every vertex entered once, every edge examined
+once.
+
+<Callout type="idea" title="BFS and DFS are the same algorithm">
+Both keep a frontier of discovered-but-unexplored vertices. [BFS](/docs/dsa/19-graph/02-bfs)
+uses a **queue** (explore oldest first → rings), DFS uses a **stack** (explore newest first
+→ deep dives). Change the container, change the traversal.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Visit a vertex
+
+Mark the current vertex visited so you never enter it again, and do whatever work this
+traversal needs (record it, count it, etc.).
+
+</Step>
+
+<Step>
+
+### Recurse into an unvisited neighbor
+
+Look at each neighbor. The first unvisited one you find, dive straight into it — call DFS on
+it before looking at the others. This is the "go as deep as possible" move.
+
+</Step>
+
+<Step>
+
+### Backtrack when stuck
+
+When a vertex has no unvisited neighbors left, the call returns. Control pops back to the
+vertex that called it, which continues with *its* next neighbor.
+
+</Step>
+
+<Step>
+
+### Cover every component
+
+If the graph may be disconnected, loop over all vertices and start a fresh DFS from any still
+unvisited, so nothing is missed.
+
+</Step>
+
+</Steps>
+
+DFS from `0`, always taking the lowest-numbered unvisited neighbor, visits `0 → 1 → 3 → 2 →
+4`, backing up each time a branch dead-ends:
+
+```text
+      (1)---(3)
+     /
+   (0)
+     \
+      (2)---(4)
+
+dive 0→1→3   (3 dead-ends) back to 1, back to 0
+dive 0→2→4   (4 dead-ends) back to 2, back to 0
+order visited: 0, 1, 3, 2, 4
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def dfs(adj, start):
+    visited = [False] * len(adj)
+    order = []
+
+    def visit(u):
+        visited[u] = True
+        order.append(u)
+        for v in adj[u]:
+            if not visited[v]:
+                visit(v)
+
+    visit(start)
+    return order
+
+# Iterative version with an explicit stack:
+def dfs_iter(adj, start):
+    visited = [False] * len(adj)
+    stack, order = [start], []
+    while stack:
+        u = stack.pop()
+        if visited[u]:
+            continue
+        visited[u] = True
+        order.append(u)
+        for v in reversed(adj[u]):   # reversed -> visit lowest first
+            if not visited[v]:
+                stack.append(v)
+    return order
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function dfs(adj: number[][], start: number): number[] {
+  const visited = new Array(adj.length).fill(false);
+  const order: number[] = [];
+
+  function visit(u: number): void {
+    visited[u] = true;
+    order.push(u);
+    for (const v of adj[u]) {
+      if (!visited[v]) visit(v);
+    }
+  }
+
+  visit(start);
+  return order;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+List<Integer> dfs(List<List<Integer>> adj, int start) {
+    boolean[] visited = new boolean[adj.size()];
+    List<Integer> order = new ArrayList<>();
+    visit(adj, start, visited, order);
+    return order;
+}
+
+void visit(List<List<Integer>> adj, int u, boolean[] visited, List<Integer> order) {
+    visited[u] = true;
+    order.add(u);
+    for (int v : adj.get(u)) {
+        if (!visited[v]) visit(adj, v, visited, order);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+
+bool visited[100000];
+
+void dfs(int adj[][100], int deg[], int u) {
+    visited[u] = true;
+    /* process u here */
+    for (int i = 0; i < deg[u]; i++) {
+        int v = adj[u][i];
+        if (!visited[v]) dfs(adj, deg, v);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+
+void dfs(const std::vector<std::vector<int>>& adj, int u,
+         std::vector<bool>& visited, std::vector<int>& order) {
+    visited[u] = true;
+    order.push_back(u);
+    for (int v : adj[u]) {
+        if (!visited[v]) dfs(adj, v, visited, order);
+    }
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Recursion depth is real">
+The recursive form uses the call stack, which is `O(n)` deep in the worst case (a long
+chain). On graphs with hundreds of thousands of vertices, deep recursion can overflow the
+stack — switch to the explicit-stack iterative form or raise the recursion limit.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                                   |
+| ------ | ---------- | ----------------------------------------------------- |
+| Time   | `O(n + m)` | each vertex visited once, each edge examined once     |
+| Space  | `O(n)`     | visited array plus the recursion/explicit stack       |
+
+Same asymptotics as BFS — both are linear in the graph's size. The difference is *order of
+visitation*, not cost.
+
+## When to use it
+
+<Callout type="info" title="DFS is the workhorse">
+DFS underpins a huge family of algorithms: detecting [cycles](/docs/dsa/19-graph/04-cycle-detection),
+[topological sorting](/docs/dsa/19-graph/05-topological-sort), finding connected components,
+bridges and articulation points, and solving mazes/backtracking puzzles. Prefer BFS when you
+specifically need the **shortest unweighted path** — DFS gives no such guarantee.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="The recursive DFS is elegant but crashes on a graph with 500,000 vertices in a long chain. Why, and what's the fix?">
+
+Each recursive call adds a frame to the call stack; a chain forces ~500,000 nested calls,
+blowing the default stack limit. Convert to the **iterative version with an explicit stack**
+(shown above), which stores the frontier on the heap and has no such depth limit — or, in
+Python, raise `sys.setrecursionlimit`. The time cost is identical `O(n + m)`.
+
+</Accordion>
+
+<Accordion title="You want to know if the whole graph is reachable from vertex 0. How do you use DFS to answer it?">
+
+Run DFS from `0`, then count the visited vertices. If the count equals `n`, every vertex is
+reachable and the graph (viewed from `0`) is connected. If it's fewer, the unvisited ones
+form separate components. This is a one-line check on top of the standard traversal.
+
+</Accordion>
+
+<Accordion title="In the iterative version, why do we push neighbors in reversed order?">
+
+A stack pops the last thing pushed. If you push neighbors `[1, 2, 3]` in that order, `3`
+comes off first, so you'd explore the highest-numbered neighbor first. Pushing them
+**reversed** (`3, 2, 1`) makes `1` pop first, matching the recursive version's "lowest
+neighbor first" order. It only affects visit order, not correctness.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- DFS explores **as deep as possible, then backtracks**, using a stack (often the call
+  stack via recursion).
+- It runs in `O(n + m)` time and `O(n)` space — same as BFS, but a different visiting order.
+- It's the foundation for cycle detection, topological sort, and connectivity — but it does
+  **not** find shortest paths.
+
+<Cards>
+  <Card title="Breadth-First Search" href="/docs/dsa/19-graph/02-bfs" description="The queue-based sibling for shortest paths." />
+  <Card title="Cycle Detection" href="/docs/dsa/19-graph/04-cycle-detection" description="DFS with colors finds loops." />
+  <Card title="Topological Sort" href="/docs/dsa/19-graph/05-topological-sort" description="DFS finish-times give a valid ordering." />
+</Cards>

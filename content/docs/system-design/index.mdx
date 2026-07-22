@@ -1,0 +1,64 @@
+---
+title: "System Design, Told as a Story"
+description: "Learn system design the way it actually happens — one growing product, one crisis at a time. Meet Adda, follow it from a laptop under a desk to millions of users."
+---
+
+Most system design courses hand you a glossary. Load balancers, sharding, CAP theorem, CQRS — a wall of terms, each defined in isolation, none of them explaining *why anyone would reach for it*.
+
+Real systems aren't built that way. Nobody wakes up wanting a message queue. They add one because something broke at 3am and a queue was the fix. Every concept in this book exists because a real product hit a real wall.
+
+So we'll learn it the way it's actually lived: **as a story.**
+
+## Meet Adda
+
+<Callout title="The product we're building">
+**Adda** (আড্ডা — a friendly hangout, a place to talk) is a social app. It starts as a single page running on **Ria Rahman's** laptop in a Dhaka apartment, with exactly one user: her friend **Fahim**.
+
+By the end of this book, Adda serves millions of people across the world. Every chapter is one step of that journey — a moment where the old way stopped working and Ria's team had to learn something new.
+</Callout>
+
+You'll meet the team as the company grows, because that's how teams actually grow:
+
+<Cards>
+  <Card title="Ria" description="Founder and first engineer. Writes the first version of Adda alone." />
+  <Card title="Fahim" description="The very first user. Always the first to notice when something is broken." />
+  <Card title="Tanvir" description="Backend engineer. Joins when one person can no longer hold the whole system in their head." />
+  <Card title="Mou" description="Site reliability. Joins the night uptime becomes someone's actual job." />
+</Cards>
+
+## How each chapter works
+
+Every chapter follows the same rhythm, so you always know where you are:
+
+<Steps>
+<Step>
+**The 3am moment** — something breaks, or someone complains, or a graph turns the wrong color. A concrete problem.
+</Step>
+<Step>
+**The idea** — the concept that solves it, explained with a plain-language analogy first, then the real mechanics.
+</Step>
+<Step>
+**How Adda used it** — exactly where it slots into our growing system, and what it cost.
+</Step>
+<Step>
+**The trade-off & the interview lens** — nothing is free. What you gave up, and how to talk about it when someone asks in an interview.
+</Step>
+</Steps>
+
+## The five acts
+
+<Cards>
+  <Card title="Part 1 · Networking & Basics" href="/docs/part-1-networking/ip" description="A request leaves Fahim's phone and finds Adda. Then traffic grows — load balancing, caching, CDNs." />
+  <Card title="Part 2 · Databases & Consistency" href="/docs/part-2-databases/database" description="The data outgrows one machine. SQL vs NoSQL, replication, CAP, sharding." />
+  <Card title="Part 3 · System Architecture" href="/docs/part-3-architecture/n-tier" description="The monolith cracks. Microservices, queues, events, APIs." />
+  <Card title="Part 4 · Reliability & Security" href="/docs/part-4-reliability/geohashing" description="Staying up under pressure, and letting the right people in." />
+  <Card title="Part 5 · Case Studies & Interview" href="/docs/part-5-case-studies/interview-intro" description="Design a URL shortener, WhatsApp, Twitter, Netflix, Uber — with everything you've learned." />
+</Cards>
+
+<Callout type="info" title="Where to start">
+If you're new, read [What is system design?](/docs/intro) next — it sets up the whole journey. If you're here for a specific topic, jump straight to it from the sidebar. Every chapter stands on its own, but they're best read in order.
+</Callout>
+
+---
+
+*Adapted and expanded in English from the topic map of [System Design Bangla](https://systemdesignbangla.com). The story, characters, and framing are original to this course.*

@@ -1,0 +1,262 @@
+---
+title: "Modular Arithmetic"
+description: "When numbers get astronomically large, we work with remainders — and modular exponentiation keeps them in check."
+extractedReferences:
+  - href: /docs/dsa/22-number-theory/01-number-theory-intro
+  - href: /docs/dsa/22-number-theory/04-combinatorics
+  - href: /docs/dsa/06-bit-manipulation/02-bit-tricks
+---
+
+## The problem
+
+A problem asks you to compute `7^1000000 mod 1000000007`. You type `7 ** 1000000` and wait.
+In Python it eventually returns a number with over 800,000 digits; in Java and C it silently
+overflows into garbage long before that. Either way you have burned time and memory building
+a monster of a number, only to throw almost all of it away with one final `mod`.
+
+The answer you actually want fits in a single 64-bit integer. The trouble is getting there
+without ever holding the giant intermediate value. This is what modular arithmetic is for —
+staying small the whole way.
+
+## A first attempt
+
+Multiply the base by itself `exp` times, taking the remainder as you go so the running value
+never explodes:
+
+```python
+def mod_pow_slow(base, exp, mod):
+    result = 1
+    for _ in range(exp):
+        result = result * base % mod
+    return result
+```
+
+Taking the mod every step keeps each number small — good. But it still loops `exp` times.
+For an exponent of a billion that is a billion multiplications, **O(exp)** time. We fixed the
+size problem but not the count problem.
+
+## The insight
+
+You do not have to multiply one factor at a time. Any exponent can be built from **repeated
+squaring**. Reading the exponent in binary, `x^13 = x^8 · x^4 · x^1`, and each of
+`x^2, x^4, x^8` is just the previous one squared. So instead of `exp` multiplications you
+need about `log₂(exp)` of them.
+
+Combine that with two facts that let you take the remainder early and often:
+
+```
+(a · b) mod m = ((a mod m) · (b mod m)) mod m
+(a + b) mod m = ((a mod m) + (b mod m)) mod m
+```
+
+The result is **modular exponentiation by squaring** — a billion-step loop becomes about 30
+steps, and no value ever leaves the range of the modulus.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Reduce the base and start at 1
+
+Set `result = 1` and `base = base mod m`. Everything from here stays below `m²`, which fits
+in a 64-bit integer for reasonable moduli.
+
+</Step>
+
+<Step>
+
+### Look at the lowest bit of the exponent
+
+If `exp` is odd (its last bit is 1), the current `base` contributes to the answer, so fold
+it in: `result = result · base mod m`.
+
+</Step>
+
+<Step>
+
+### Square the base, shift the exponent
+
+Square the base for the next bit: `base = base · base mod m`. Then drop the bit you just
+handled with `exp >>= 1`.
+
+</Step>
+
+<Step>
+
+### Stop when the exponent hits zero
+
+Repeat until `exp` is 0. You have processed every binary digit, and `result` holds
+`base^exp mod m`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def mod_pow(base, exp, mod):
+    result = 1
+    base %= mod
+    while exp > 0:
+        if exp & 1:
+            result = result * base % mod
+        base = base * base % mod
+        exp >>= 1
+    return result
+
+print(mod_pow(7, 1000000, 1000000007))  # 880007888
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// BigInt keeps intermediate products exact for large moduli.
+function modPow(base: bigint, exp: bigint, mod: bigint): bigint {
+  let result = 1n;
+  base %= mod;
+  while (exp > 0n) {
+    if (exp & 1n) {
+      result = (result * base) % mod;
+    }
+    base = (base * base) % mod;
+    exp >>= 1n;
+  }
+  return result;
+}
+
+console.log(modPow(7n, 1000000n, 1000000007n).toString()); // 880007888
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+// Safe while mod < ~3 billion, so base * base fits in a long.
+static long modPow(long base, long exp, long mod) {
+    long result = 1;
+    base %= mod;
+    while (exp > 0) {
+        if ((exp & 1) == 1) {
+            result = result * base % mod;
+        }
+        base = base * base % mod;
+        exp >>= 1;
+    }
+    return result;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+long long mod_pow(long long base, long long exp, long long mod) {
+    long long result = 1;
+    base %= mod;
+    while (exp > 0) {
+        if (exp & 1) {
+            result = result * base % mod;
+        }
+        base = base * base % mod;
+        exp >>= 1;
+    }
+    return result;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+long long modPow(long long base, long long exp, long long mod) {
+    long long result = 1;
+    base %= mod;
+    while (exp > 0) {
+        if (exp & 1) {
+            result = result * base % mod;
+        }
+        base = base * base % mod;
+        exp >>= 1;
+    }
+    return result;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Repeated multiply `mod_pow_slow` | O(exp) | O(1) |
+| Exponentiation by squaring | O(log exp) | O(1) |
+
+Each iteration handles one bit of the exponent, so the loop runs `⌊log₂ exp⌋ + 1` times —
+about 30 iterations for a billion, 60 for a quintillion.
+
+## When to use it
+
+<Callout type="warn" title="Mind the overflow and the sign">
+Modular exponentiation powers hashing, RSA, and every `mod 1e9+7` competitive problem. Two
+traps: `base * base` can overflow a 64-bit integer once `mod` exceeds ~3 billion — use
+128-bit or BigInt then. And in C, C++, and Java the `%` of a negative number is negative, so
+normalize with `((x % m) + m) % m` when inputs might be negative.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How does reading the exponent in binary give repeated squaring?">
+
+Write the exponent in binary, e.g. `13 = 1101₂ = 8 + 4 + 1`. Then
+`x^13 = x^8 · x^4 · x^1`. As you scan bits from least to most significant you keep squaring
+`x` to get `x^1, x^2, x^4, x^8, …`, and you multiply the current power into the result only
+when that bit is set. That is exactly the loop body.
+
+</Accordion>
+
+<Accordion title="How would you compute a modular inverse with this?">
+
+When `mod` is prime, Fermat's little theorem gives `a^(mod−1) ≡ 1`, so the inverse of `a` is
+`a^(mod−2) mod mod`. Call `mod_pow(a, mod - 2, mod)`. This is the standard way to "divide"
+under a modulus, used constantly in combinatorics with `mod 1e9+7`.
+
+</Accordion>
+
+<Accordion title="Why take the mod after every multiplication instead of once at the end?">
+
+Because the whole point is to never build a huge number. If you defer the mod, the product
+grows past what a 64-bit integer can hold and overflows. Applying `mod` after each multiply
+keeps every intermediate value below `m²`, which is the guarantee that makes the algorithm
+usable in fixed-width integer types.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Naive powering either overflows or loops `exp` times — both are unacceptable at scale.
+- `(a·b) mod m` distributes, so you can take remainders early and keep numbers small.
+- Exponentiation by squaring reads the exponent's bits for an O(log exp) modular power.
+
+<Cards>
+  <Card title="Number Theory Essentials" href="/docs/dsa/22-number-theory/01-number-theory-intro" description="GCD, LCM, and the divisibility groundwork." />
+  <Card title="Combinatorics" href="/docs/dsa/22-number-theory/04-combinatorics" description="Count with nCr under a prime modulus." />
+  <Card title="Bit Tricks" href="/docs/dsa/06-bit-manipulation/02-bit-tricks" description="The bit shifts and masks squaring relies on." />
+</Cards>

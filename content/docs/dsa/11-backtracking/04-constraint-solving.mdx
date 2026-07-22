@@ -1,0 +1,314 @@
+---
+title: "Constraint Solving"
+description: "N-Queens and Sudoku feel unrelated until you see them as the same thing: place, check, and undo when it doesn’t fit."
+extractedReferences:
+  - href: /docs/dsa/11-backtracking/01-backtracking-intro
+  - href: /docs/dsa/11-backtracking/03-grid-backtracking
+  - href: /docs/dsa/21-dynamic-programming/01-what-is-dp
+---
+
+## The problem
+
+You are handed a Sudoku with a dozen blanks and a rule: no digit repeats in any row, column, or box. You pencil a `4` into a blank, keep going, and three cells later there is nowhere legal to write anything. So you erase back and try a `5` in that first blank instead. Now try the same story with eight queens on a chessboard, none allowed to attack another. You place a queen, place another, get stuck, and lift one back off.
+
+These feel like two different puzzles — one is arithmetic, one is chess. But strip away the theme and the loop is identical: **place something, check the rules, and undo the placement the instant it violates them.** They are both *constraint satisfaction* problems, and backtracking is their native language.
+
+## A first attempt
+
+Try brute force on N-Queens. Place 8 queens anywhere on the 64 squares, then check if the arrangement is legal. That is `C(64, 8)` ≈ 4.4 billion placements to sift through, almost all illegal. Sudoku is worse: `9^(number of blanks)` full grids, the overwhelming majority breaking a rule in the very first row.
+
+```text
+Generate every full board, then test it:
+  N-Queens: ~4.4 billion boards for 8 queens
+  Sudoku:   9^blanks  (astronomically many)
+```
+
+The insult is that most illegality is decidable *immediately*. Two queens in the same column? Illegal — and you knew it the moment you placed the second one, long before filling the other six. Generate-then-test throws that knowledge away and grinds through billions of hopeless boards.
+
+## The insight
+
+Enforce the constraints *incrementally*, and only ever extend a placement that is still legal.
+
+For N-Queens, place exactly one queen per row and, before committing, check it shares no column and no diagonal with a queen already placed. For Sudoku, find the next blank and only try digits that don't already appear in its row, column, or box. A partial board that is still legal is called **consistent**; the search only ever descends from consistent states, so entire illegal subtrees are pruned before they exist.
+
+That is constraint solving via backtracking: **place → check consistency → recurse → undo**. The "check consistency" step is where all the leverage lives — the cheaper and earlier it rejects, the smaller the search.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Order the decision points
+
+Impose an order so you never place two things in a way that conflicts by construction. N-Queens fills one queen per **row** in order; Sudoku walks cells and stops at the next **blank**. This ordering removes symmetric duplicate work.
+
+</Step>
+
+<Step>
+
+### Try a candidate value
+
+Pick the next legal-looking value — a column for the current row's queen, or a digit `1-9` for the blank cell.
+
+</Step>
+
+<Step>
+
+### Check consistency before committing
+
+Verify the value conflicts with nothing already placed: no shared column or diagonal (queens); no repeat in row, column, or box (Sudoku). If it conflicts, skip it — never recurse into an inconsistent state.
+
+</Step>
+
+<Step>
+
+### Place and recurse
+
+Commit the value and solve the rest of the board. If the recursion reports success, you are done — propagate it up. If it fails, the recursion has already cleaned up after itself.
+
+</Step>
+
+<Step>
+
+### Undo and try the next value
+
+Remove the value (lift the queen, blank the cell) and try the next candidate. If no candidate works, return failure so the previous decision point can advance. This is the eraser that makes the whole thing a search rather than a guess.
+
+</Step>
+
+</Steps>
+
+```text
+N-Queens conflict check (Q at row r, col c):
+  same column?      col already used
+  same diagonal?    (r - c) already used   (top-left / bottom-right)
+  same anti-diag?   (r + c) already used   (top-right / bottom-left)
+```
+
+## The code
+
+N-Queens: count the ways to place `n` non-attacking queens. Three boolean sets make the consistency check `O(1)`.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def solve_n_queens(n):
+    cols, diag, anti = set(), set(), set()
+    count = 0
+
+    def backtrack(row):
+        nonlocal count
+        if row == n:
+            count += 1                           # all queens placed
+            return
+        for col in range(n):
+            if col in cols or (row - col) in diag or (row + col) in anti:
+                continue                         # conflict -> skip
+            cols.add(col); diag.add(row - col); anti.add(row + col)   # place
+            backtrack(row + 1)                   # recurse
+            cols.discard(col); diag.discard(row - col); anti.discard(row + col)  # undo
+
+    backtrack(0)
+    return count
+
+
+print(solve_n_queens(8))  # 92
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function solveNQueens(n: number): number {
+  const cols = new Set<number>();
+  const diag = new Set<number>();   // row - col
+  const anti = new Set<number>();   // row + col
+  let count = 0;
+
+  function backtrack(row: number): void {
+    if (row === n) {
+      count++;                                   // all queens placed
+      return;
+    }
+    for (let col = 0; col < n; col++) {
+      if (cols.has(col) || diag.has(row - col) || anti.has(row + col)) {
+        continue;                                // conflict -> skip
+      }
+      cols.add(col); diag.add(row - col); anti.add(row + col);   // place
+      backtrack(row + 1);                        // recurse
+      cols.delete(col); diag.delete(row - col); anti.delete(row + col); // undo
+    }
+  }
+
+  backtrack(0);
+  return count;
+}
+
+console.log(solveNQueens(8)); // 92
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.HashSet;
+import java.util.Set;
+
+public class NQueens {
+    private static int count = 0;
+
+    public static int solve(int n) {
+        count = 0;
+        backtrack(0, n, new HashSet<>(), new HashSet<>(), new HashSet<>());
+        return count;
+    }
+
+    private static void backtrack(int row, int n,
+                                  Set<Integer> cols,
+                                  Set<Integer> diag, Set<Integer> anti) {
+        if (row == n) {
+            count++;                              // all queens placed
+            return;
+        }
+        for (int col = 0; col < n; col++) {
+            if (cols.contains(col) || diag.contains(row - col)
+                    || anti.contains(row + col)) {
+                continue;                         // conflict -> skip
+            }
+            cols.add(col); diag.add(row - col); anti.add(row + col);   // place
+            backtrack(row + 1, n, cols, diag, anti);                   // recurse
+            cols.remove(col); diag.remove(row - col); anti.remove(row + col); // undo
+        }
+    }
+
+    public static void main(String[] args) {
+        System.out.println(solve(8)); // 92
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+/* cols[c], diag[row-col+n], anti[row+col] as boolean flags */
+static int backtrack(int row, int n, int *cols, int *diag, int *anti) {
+    if (row == n) return 1;                      /* all queens placed */
+    int count = 0;
+    for (int col = 0; col < n; col++) {
+        int d = row - col + n, a = row + col;
+        if (cols[col] || diag[d] || anti[a]) continue;   /* conflict -> skip */
+        cols[col] = diag[d] = anti[a] = 1;       /* place */
+        count += backtrack(row + 1, n, cols, diag, anti); /* recurse */
+        cols[col] = diag[d] = anti[a] = 0;       /* undo */
+    }
+    return count;
+}
+
+int main(void) {
+    int n = 8;
+    int *cols = calloc(n, sizeof(int));
+    int *diag = calloc(2 * n, sizeof(int));
+    int *anti = calloc(2 * n, sizeof(int));
+    printf("%d\n", backtrack(0, n, cols, diag, anti)); /* 92 */
+    free(cols); free(diag); free(anti);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+using namespace std;
+
+int backtrack(int row, int n, vector<bool> &cols,
+              vector<bool> &diag, vector<bool> &anti) {
+    if (row == n) return 1;                      // all queens placed
+    int count = 0;
+    for (int col = 0; col < n; col++) {
+        int d = row - col + n, a = row + col;
+        if (cols[col] || diag[d] || anti[a]) continue;   // conflict -> skip
+        cols[col] = diag[d] = anti[a] = true;    // place
+        count += backtrack(row + 1, n, cols, diag, anti); // recurse
+        cols[col] = diag[d] = anti[a] = false;   // undo
+    }
+    return count;
+}
+
+int main() {
+    int n = 8;
+    vector<bool> cols(n, false), diag(2 * n, false), anti(2 * n, false);
+    cout << backtrack(0, n, cols, diag, anti) << "\n"; // 92
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Sudoku is the same skeleton: find the next blank, loop digits `1-9`, keep a digit only if it is absent from its row, column, and box, place it, recurse, and blank it on failure — the identical place / check / undo rhythm.
+
+## Complexity
+
+| Problem | Time (worst case) | Space |
+| --- | --- | --- |
+| N-Queens | `O(n!)` | `O(n)` for the sets plus recursion |
+| Sudoku (9x9) | `O(9^m)`, `m` = blanks | `O(1)` extra (fixed board) |
+
+The `O(1)` consistency check (three set lookups for queens) does not lower the worst-case bound, but pruning shrinks the *explored* tree so drastically that 8-queens finishes instantly and most Sudokus solve in milliseconds.
+
+## When to use it
+
+<Callout type="idea" title="Prune harder to go faster">
+Constraint solving shines when a partial state can be cheaply proven inconsistent. Two upgrades pay off hugely: **constraint propagation** (after placing a value, immediately eliminate it from peers' options) and **most-constrained-variable ordering** (always fill the cell or row with the fewest legal choices next — fail fast, prune early). For problems where you only need whether a solution *exists* rather than all of them, return the moment you find one. Beyond a certain scale, hand the constraints to a SAT or CP solver instead of hand-rolling the search.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why place exactly one queen per row instead of searching all 64 squares freely?">
+
+Fixing one queen per row bakes the row constraint into the *structure* of the search — two queens can never share a row because each row is visited once. That drops the branching from "any of 64 squares" to "one of `n` columns per row," shrinking the tree from billions of placements to at most `n!` and removing a whole class of redundant, symmetric states before the code even runs.
+
+</Accordion>
+
+<Accordion title="How do the two diagonal sets make the conflict check O(1)?">
+
+Every square on the same top-left-to-bottom-right diagonal shares the value `row - col`; every square on the same anti-diagonal shares `row + col`. So instead of scanning the board, you just ask "is `row - col` already in the diag set, or `row + col` in the anti set?" Three constant-time set lookups (column, diagonal, anti-diagonal) replace an `O(n)` board scan on every placement.
+
+</Accordion>
+
+<Accordion title="Sudoku and N-Queens share a skeleton — what exactly differs between them?">
+
+Only two things: the **decision points** and the **consistency rule**. N-Queens iterates rows and tries columns; Sudoku iterates blank cells and tries digits `1-9`. N-Queens rejects on shared column or diagonal; Sudoku rejects on a repeat in the row, column, or 3x3 box. The place / check / recurse / undo control flow — and the early-rejection pruning that makes it fast — is byte-for-byte the same idea.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Constraint solving is backtracking with a **consistency check**: place → check → recurse → undo.
+- N-Queens and Sudoku are the *same* algorithm; only the decision points and the rejection rule change.
+- Cheap, early consistency checks (and smart variable ordering) prune the tree far below its `O(n!)` / `O(9^m)` worst case.
+
+<Cards>
+  <Card title="Backtracking" href="/docs/dsa/11-backtracking/01-backtracking-intro" description="The place / check / undo skeleton these solvers share." />
+  <Card title="Backtracking on Grids" href="/docs/dsa/11-backtracking/03-grid-backtracking" description="Searching boards with marks and dead ends." />
+  <Card title="What is Dynamic Programming" href="/docs/dsa/21-dynamic-programming/01-what-is-dp" description="When overlapping choices make DP beat brute-force search." />
+</Cards>

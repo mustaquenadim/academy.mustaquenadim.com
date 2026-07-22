@@ -1,0 +1,340 @@
+---
+title: "Designing Stacks"
+description: "A stack that returns its minimum in O(1), two stacks in one array — clever twists on the humble stack."
+extractedReferences:
+  - href: /docs/dsa/13-stack/01-stack-intro
+  - href: /docs/dsa/13-stack/02-expression-evaluation
+  - href: /docs/dsa/13-stack/04-monotonic-stack
+---
+
+## The problem
+
+You are building a live dashboard that streams prices onto a stack. Traders push new prices and pop old ones constantly, and beside every update they want one number: the **current minimum** across everything still on the stack. Not the minimum of the whole feed — just what is on the stack right now, which shrinks every time someone pops.
+
+The catch is speed. Pushes and pops already happen thousands of times a second. If reporting the minimum is slow, it drags the whole system down. You need `push`, `pop`, `top`, *and* `getMin` to each run in O(1). A plain stack gives you the first three for free. The minimum is the interesting part.
+
+## A first attempt
+
+The obvious move: keep a normal stack and, whenever someone asks for the minimum, scan all the elements. That is O(n) per query. On a busy feed that is a disaster — a hot loop doing a full scan on every tick.
+
+You might try caching a single `min` variable. Push is easy: update `min` if the new value is smaller. But **pop** breaks it. If you pop the current minimum, what is the new minimum? The cached number is gone and you have no idea what is underneath. You would have to rescan — back to O(n). One variable cannot remember the *history* of minimums.
+
+```python
+# min_so_far = 2 ... then we pop the 2. Now what?
+# The old minimum is lost; only a full scan can recover it.
+```
+
+## The insight
+
+Store the minimum *alongside every level of the stack*. Keep a second stack, `min_stack`, that runs in lockstep with the main one. When you push a value, also push "the smallest value seen up to and including this level." When you pop, pop both stacks together.
+
+Now the top of `min_stack` is always the minimum of everything currently present — because it was computed for exactly this configuration of the stack. Pop removes it cleanly and reveals the minimum that was valid one level down. No rescanning, no lost history. Every operation is O(1).
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Keep two stacks in lockstep
+
+`main` holds the actual values. `min_stack` holds, at each level, the minimum of `main` up to that level. They always have the same height.
+
+</Step>
+
+<Step>
+
+### Push records the running minimum
+
+Push the value onto `main`. Push `min(value, current top of min_stack)` onto `min_stack`. If `min_stack` is empty, just push the value.
+
+```text
+push 5   push 3   push 7
+main:  [5]   [5,3]   [5,3,7]
+min:   [5]   [5,3]   [5,3,3]  <- top is the live minimum
+```
+
+</Step>
+
+<Step>
+
+### Pop removes both tops
+
+Pop `main` and `min_stack` together. The new top of `min_stack` is automatically the correct minimum for the smaller stack.
+
+```text
+pop() -> 7
+main: [5,3]
+min:  [5,3]  <- minimum is 3 again
+```
+
+</Step>
+
+<Step>
+
+### getMin just peeks
+
+`getMin` returns the top of `min_stack` in O(1). No scan, ever.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class MinStack:
+    def __init__(self):
+        self._main = []
+        self._min = []
+
+    def push(self, value):
+        self._main.append(value)
+        smallest = value if not self._min else min(value, self._min[-1])
+        self._min.append(smallest)
+
+    def pop(self):
+        if not self._main:
+            raise IndexError("pop from empty stack")
+        self._min.pop()
+        return self._main.pop()
+
+    def top(self):
+        return self._main[-1]
+
+    def get_min(self):
+        return self._min[-1]
+
+
+s = MinStack()
+s.push(5); s.push(3); s.push(7)
+print(s.get_min())  # 3
+s.pop()
+print(s.get_min())  # 3
+s.pop()
+print(s.get_min())  # 5
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class MinStack {
+  private main: number[] = [];
+  private minStack: number[] = [];
+
+  push(value: number): void {
+    this.main.push(value);
+    const smallest =
+      this.minStack.length === 0
+        ? value
+        : Math.min(value, this.minStack[this.minStack.length - 1]);
+    this.minStack.push(smallest);
+  }
+
+  pop(): number {
+    if (this.main.length === 0) throw new Error("pop from empty stack");
+    this.minStack.pop();
+    return this.main.pop() as number;
+  }
+
+  top(): number {
+    return this.main[this.main.length - 1];
+  }
+
+  getMin(): number {
+    return this.minStack[this.minStack.length - 1];
+  }
+}
+
+const s = new MinStack();
+s.push(5); s.push(3); s.push(7);
+console.log(s.getMin()); // 3
+s.pop();
+console.log(s.getMin()); // 3
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+public class MinStack {
+    private final Deque<Integer> main = new ArrayDeque<>();
+    private final Deque<Integer> minStack = new ArrayDeque<>();
+
+    public void push(int value) {
+        main.push(value);
+        int smallest = minStack.isEmpty() ? value : Math.min(value, minStack.peek());
+        minStack.push(smallest);
+    }
+
+    public int pop() {
+        minStack.pop();
+        return main.pop();
+    }
+
+    public int top() {
+        return main.peek();
+    }
+
+    public int getMin() {
+        return minStack.peek();
+    }
+
+    public static void main(String[] args) {
+        MinStack s = new MinStack();
+        s.push(5); s.push(3); s.push(7);
+        System.out.println(s.getMin()); // 3
+        s.pop();
+        System.out.println(s.getMin()); // 3
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+#define CAPACITY 1000
+
+typedef struct {
+    int main[CAPACITY];
+    int min[CAPACITY];
+    int top; // -1 when empty
+} MinStack;
+
+void init(MinStack *s) { s->top = -1; }
+
+void push(MinStack *s, int value) {
+    s->top++;
+    s->main[s->top] = value;
+    if (s->top == 0)
+        s->min[s->top] = value;
+    else
+        s->min[s->top] = value < s->min[s->top - 1] ? value : s->min[s->top - 1];
+}
+
+int pop(MinStack *s)   { return s->main[s->top--]; }
+int top(MinStack *s)   { return s->main[s->top]; }
+int get_min(MinStack *s) { return s->min[s->top]; }
+
+int main(void) {
+    MinStack s;
+    init(&s);
+    push(&s, 5); push(&s, 3); push(&s, 7);
+    printf("%d\n", get_min(&s)); // 3
+    pop(&s);
+    printf("%d\n", get_min(&s)); // 3
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <stack>
+#include <algorithm>
+
+class MinStack {
+    std::stack<int> main_;
+    std::stack<int> min_;
+
+public:
+    void push(int value) {
+        main_.push(value);
+        int smallest = min_.empty() ? value : std::min(value, min_.top());
+        min_.push(smallest);
+    }
+
+    void pop() {
+        min_.pop();
+        main_.pop();
+    }
+
+    int top() const { return main_.top(); }
+    int getMin() const { return min_.top(); }
+};
+
+int main() {
+    MinStack s;
+    s.push(5); s.push(3); s.push(7);
+    std::cout << s.getMin() << "\n"; // 3
+    s.pop();
+    std::cout << s.getMin() << "\n"; // 3
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --------- | ---- | ----- |
+| push   | O(1) | O(1) extra per element |
+| pop    | O(1) | O(1) |
+| top    | O(1) | O(1) |
+| getMin | O(1) | O(1) |
+| Whole structure | — | O(n) |
+
+You trade O(n) extra memory (the second stack) for O(1) queries — a classic space-for-time deal.
+
+## When to use it
+
+<Callout type="idea" title="Auxiliary data that rides along with the stack">
+The min-stack trick generalizes: any answer you can maintain incrementally can ride a parallel stack — running max, running sum, or a count. If the values are large and duplicated, you can shrink the min-stack to only push when the new value is ≤ the current minimum (storing pairs of value and repeat count), saving memory. The two-stacks-in-one-array variant works similarly: one stack grows from index 0 upward, the other from the last index downward, and they meet in the middle.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How do you pack two stacks into a single fixed array without wasting space?">
+
+Grow the first stack from the left (top index starts at -1, moving up) and the second from the right (top index starts at n, moving down). Each uses space the other has not claimed. They collide only when the two top pointers meet, meaning the whole array is full — so no capacity is wasted on a fixed split down the middle.
+
+</Accordion>
+
+<Accordion title="Can you build a min-stack that stores no duplicate minimums to save space?">
+
+Yes. Only push to the min-stack when the new value is less than or equal to the current minimum. On pop, only pop the min-stack when the popped value equals its top. Store (value, count) pairs if you want to collapse long runs of equal minimums into one entry, trading a little bookkeeping for less memory.
+
+</Accordion>
+
+<Accordion title="Why must you use ≤ (not <) when deciding to pop the min-stack in the space-optimized version?">
+
+If duplicates of the minimum were pushed only when strictly less, you would record the minimum once but pop it while equal copies remain in the main stack, losing the minimum too early. Using ≤ on push (record every tie) and equality on pop keeps the counts aligned so the minimum survives until its last copy is removed.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A plain stack cannot recover its minimum after popping — one cached variable loses history.
+- Keep a **parallel min-stack** recording the running minimum at each level; pop both together.
+- All four operations become O(1), paid for with O(n) extra space.
+
+<Cards>
+  <Card title="Stacks" href="/docs/dsa/13-stack/01-stack-intro" description="The LIFO basics these designs extend." />
+  <Card title="Evaluating Expressions" href="/docs/dsa/13-stack/02-expression-evaluation" description="Another stack application: arithmetic with precedence." />
+  <Card title="The Monotonic Stack" href="/docs/dsa/13-stack/04-monotonic-stack" description="A stack whose ordering unlocks next-greater problems." />
+</Cards>

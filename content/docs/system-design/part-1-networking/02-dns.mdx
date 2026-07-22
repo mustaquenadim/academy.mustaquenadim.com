@@ -1,0 +1,142 @@
+---
+title: "DNS: The Internet’s Phone Book"
+description: "Computers talk in numbers, humans in names — DNS is the translator, and when it’s slow, everything feels slow."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/01-how-the-internet-carries-a-request
+  - href: /docs/system-design/part-1-networking/06-cdns
+  - href: /docs/system-design/part-1-networking/07-caching-fundamentals
+---
+
+## The problem
+
+You remember `github.com`, not `140.82.112.3`. But routers only move packets toward numeric IP addresses — they have never heard of a name. Something has to sit between the name you type and the number the network needs.
+
+And this translation happens *before every single connection*. Get it slow and every page on the site inherits the delay. Get it wrong and the site simply vanishes for users, even though the servers are perfectly healthy. DNS is quiet infrastructure that, when it hiccups, takes half the internet down with it.
+
+## A first attempt
+
+The obvious fix: ship one giant file — like the old `/etc/hosts` — mapping every name to its IP, and put a copy on every machine.
+
+That worked when the internet had a few hundred hosts. Today there are hundreds of millions of domains, changing constantly. A single file would be enormous, instantly stale, and impossible to update everywhere at once. Worse, one central authority editing one file becomes both a bottleneck and a single point of failure for the entire planet. A flat, centralized lookup does not scale — you need something distributed and hierarchical.
+
+## The insight
+
+Split the phone book into a **tree**, and let each level answer only for the part it owns.
+
+Nobody knows every name. Instead, responsibility is delegated: root servers know where to find the `.com` servers; the `.com` servers know where to find `github.com`'s servers; and *those* servers know the actual IP. Each node hands you off to the next. Layer **caching** on top — everyone remembers answers for a while (the TTL) — and most lookups never travel the full tree at all. Distribution solves scale; caching solves speed.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Ask the resolver
+
+Your machine asks a **recursive resolver** (usually run by your ISP, or a public one like `8.8.8.8`) to find `www.github.com`. The resolver does the legwork for you.
+
+</Step>
+
+<Step>
+
+### Walk the hierarchy
+
+If nothing is cached, the resolver asks a **root** server, which points it to the **`.com` TLD** servers, which point it to GitHub's **authoritative** name servers, which return the final IP. Three delegations, then an answer.
+
+</Step>
+
+<Step>
+
+### Cache the answer
+
+The record comes with a **TTL** (time to live), say 300 seconds. The resolver — and your OS, and your browser — remember it. For the next 5 minutes, the same lookup is answered instantly from memory, no tree walk.
+
+</Step>
+
+<Step>
+
+### Reuse or refresh
+
+Later requests hit the cache until the TTL expires. Then the resolver refreshes from the authoritative server. Short TTLs mean fast changes but more lookups; long TTLs mean fewer lookups but slow propagation.
+
+</Step>
+
+</Steps>
+
+The delegation chain, top to bottom:
+
+```
+   [ Your device ]
+         │  "IP for www.github.com?"
+         ▼
+   [ Recursive resolver ]  ◄── caches every answer (TTL)
+     │        │        │
+     │(1)     │(2)     │(3)
+     ▼        ▼        ▼
+  [ Root ]  [ .com ]  [ github.com ]
+  "ask      "ask      "it's
+   .com"    github"    140.82.112.3"
+```
+
+Common record types you will actually name in a design:
+
+- **A / AAAA** — name → IPv4 / IPv6 address.
+- **CNAME** — name → another name (alias, e.g. `www` → `github.com`).
+- **NS** — which name servers are authoritative for a zone.
+- **MX** — mail servers for the domain.
+
+## The numbers
+
+- **Cold lookup (full tree walk):** ~4 queries, often 50–200 ms total depending on distance to each server.
+- **Warm lookup (cached):** < 1 ms — served from the resolver or the OS.
+- **Cache hit rate** at a busy resolver is typically **90%+**, which is why DNS rarely dominates page load.
+- **TTL choices:** CDNs often use **30–60 s** TTLs so they can reroute traffic quickly; a stable corporate site might use **24 h** to cut lookup volume.
+- **Propagation:** after you change a record, old answers linger in caches worldwide for up to the *previous* TTL — plan changes by lowering TTL a day ahead.
+
+<Callout type="warn" title="The TTL trade-off">
+Low TTL = agility (you can fail over or shift traffic in seconds) but more lookups and more load on your authoritative servers. High TTL = fewer lookups and cheaper, but a bad or stale record haunts users for hours. There is no free lunch — pick the TTL that matches how fast you need to change that record.
+</Callout>
+
+<Callout type="idea" title="DNS is also a routing tool">
+Because you control the answer, DNS is not just translation — it is a load-balancing and failover lever. Return different IPs to different regions (geo-DNS), rotate IPs to spread load, or drop an unhealthy server's IP to route around an outage. This is how CDNs steer you to a nearby edge.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does a DNS lookup usually feel instant even though it can touch four servers?">
+
+Caching at every level. Your browser, your OS, and the recursive resolver all remember recent answers until the TTL expires, and popular domains sit in a resolver's cache almost permanently. The expensive full tree walk only happens on a cold miss — well over 90% of real-world lookups are cache hits served in under a millisecond.
+
+</Accordion>
+
+<Accordion title="You lowered your TTL to 60s and pointed the record at a new server, but some users still hit the old one. Why?">
+
+TTL only controls *future* caching. Resolvers that fetched the record while the TTL was still high (say 3600s) will keep serving the old IP until that older TTL expires. The fix is to lower the TTL *well before* the change, wait for the old TTL window to pass, and only then repoint. TTL changes propagate at the speed of the previous TTL.
+
+</Accordion>
+
+<Accordion title="Why is DNS a favorite target for causing (or debugging) large outages?">
+
+It sits in front of everything. If authoritative servers go down or return bad records, healthy application servers become unreachable because nobody can find their IP. Attackers DDoS DNS for the same reason. When debugging "the whole site is down but the servers are fine," DNS is one of the first suspects — resolve the name manually and compare.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- DNS is a **distributed, hierarchical** lookup: root → TLD → authoritative, each level delegating to the next.
+- **Caching with TTLs** makes it fast — most lookups never leave the resolver.
+- DNS doubles as a **routing and failover control**, but its TTL is a genuine agility-vs-load trade-off and a real single point of failure.
+
+<Cards>
+  <Card title="How a Request Travels the Internet" href="/docs/system-design/part-1-networking/01-how-the-internet-carries-a-request" description="Where the DNS step fits in the full journey." />
+  <Card title="Content Delivery Networks" href="/docs/system-design/part-1-networking/06-cdns" description="How DNS steers you to the nearest edge server." />
+  <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="TTLs and cache hits, generalized beyond DNS." />
+</Cards>
+
+<Callout type="idea" title="In an interview">
+If a design needs global failover or geo-routing, mention DNS as the first steering layer and immediately name the TTL trade-off — low for fast failover, high for fewer lookups. Interviewers love when you flag that DNS is both a routing tool and a single point of failure worth protecting.
+</Callout>

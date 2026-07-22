@@ -1,0 +1,10 @@
+{
+  "title": "Bit Manipulation",
+  "icon": "Binary",
+  "pages": [
+    "01-bitwise-basics",
+    "02-bit-tricks",
+    "03-bits-with-arrays",
+    "04-subsets-with-bits"
+  ]
+}

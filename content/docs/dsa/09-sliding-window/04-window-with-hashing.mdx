@@ -1,0 +1,379 @@
+---
+title: "Windows + Hashing"
+description: "Counting distinct characters or finding anagrams in a stream is a sliding window with a hash map riding along."
+extractedReferences:
+  - href: /docs/dsa/09-sliding-window/03-variable-window
+  - href: /docs/dsa/07-hashing/05-frequency-patterns
+  - href: /docs/dsa/07-hashing/02-hash-tables
+---
+
+## The problem
+
+You're moderating a chat app and want to flag messages that contain a **scrambled version of
+a banned word** anywhere inside them. The banned word is `cat`; the message `the actor...`
+hides `act` — an anagram of `cat` — in positions 4–6. You need to scan the message and, for
+every window the width of the banned word, ask: *are these exactly the same letters, in any
+order?*
+
+Comparing "same letters, any order" is where a plain window stalls. A running *sum* can't
+tell `act` from `cta`, and re-sorting every window to compare is slow. What you actually need
+to carry along the window isn't a number — it's a **tally of how many of each character** it
+currently holds.
+
+## A first attempt
+
+For every window, build a frequency count and compare it to the target's count.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import Counter
+
+def count_anagrams(s, pattern):
+    need = Counter(pattern)
+    k, found = len(pattern), 0
+    for start in range(len(s) - k + 1):
+        if Counter(s[start:start + k]) == need:   # rebuilds a Counter each window
+            found += 1
+    return found
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function countAnagrams(s: string, pattern: string): number {
+  const k = pattern.length;
+  const need = tally(pattern);
+  let found = 0;
+  for (let start = 0; start + k <= s.length; start++) {
+    if (sameTally(tally(s.slice(start, start + k)), need)) found++; // rebuilds
+  }
+  return found;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int countAnagrams(String s, String pattern) {
+    int k = pattern.length(), found = 0;
+    int[] need = new int[26];
+    for (char c : pattern.toCharArray()) need[c - 'a']++;
+    for (int start = 0; start + k <= s.length(); start++) {
+        int[] win = new int[26];
+        for (int j = start; j < start + k; j++) win[s.charAt(j) - 'a']++; // rebuilds
+        if (Arrays.equals(win, need)) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int countAnagrams(const char *s, const char *pattern) {
+    int need[26] = {0}, k = strlen(pattern), n = strlen(s), found = 0;
+    for (int i = 0; i < k; i++) need[pattern[i] - 'a']++;
+    for (int start = 0; start + k <= n; start++) {
+        int win[26] = {0};
+        for (int j = start; j < start + k; j++) win[s[j] - 'a']++; /* rebuilds */
+        if (memcmp(win, need, sizeof win) == 0) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int countAnagrams(const string& s, const string& pattern) {
+    int k = pattern.size(), found = 0;
+    array<int, 26> need{};
+    for (char c : pattern) need[c - 'a']++;
+    for (int start = 0; start + k <= (int)s.size(); start++) {
+        array<int, 26> win{};
+        for (int j = start; j < start + k; j++) win[s[j] - 'a']++; // rebuilds
+        if (win == need) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Each of the `n` windows rebuilds a count of `k` characters, so this is `O(n · k)`. The counts
+of neighboring windows differ by just two characters, though — exactly the overlap a window
+should exploit.
+
+## The insight
+
+Carry a **frequency hash map** along with the window. When the window slides, don't rebuild
+the map: **increment** the count of the character entering and **decrement** the count of the
+character leaving (dropping it to zero removes it). The map always reflects the current
+window's contents, updated in `O(1)` per step.
+
+Now "is this window an anagram of the pattern?" becomes "does my map match the pattern's map?"
+— and you can even track a single `matches` counter so the comparison itself is `O(1)`
+instead of scanning all 26 buckets.
+
+<Callout type="idea" title="A count map is a reversible aggregate">
+Unlike max or min, a frequency map *can* be undone: whatever a character did on the way in,
+you reverse on the way out. That reversibility is what lets the map ride along a sliding
+window in constant time per move.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build the target tally
+
+Count the characters of the pattern into `need`. Note `k = len(pattern)` and how many
+distinct characters must be satisfied.
+
+</Step>
+
+<Step>
+
+### Prime the first window
+
+Slide a `k`-wide window over the start of the string, incrementing each character's count in
+the window map.
+
+</Step>
+
+<Step>
+
+### Slide, one in and one out
+
+Move right by one: increment the entering character `s[right]`, decrement the leaving
+character `s[right - k]`. The map now describes the new window.
+
+</Step>
+
+<Step>
+
+### Compare in O(1)
+
+Keep a `matches` count of how many characters currently have the exact needed frequency.
+Update it as counts change; when `matches` covers every needed character, the window is an
+anagram — record it.
+
+</Step>
+
+</Steps>
+
+Sliding a `k = 3` window for pattern `cat` over `caact`:
+
+```text
+       c  a  a  c  t
+      [c  a  a]        window {c:1, a:2}      ≠ {c:1,a:1,t:1}
+       c [a  a  c]     drop c,a=1 add c → {a:1,c:1... } {a:2,c:1} ≠
+       c  a [a  c  t]  window {a:1, c:1, t:1} = {c:1,a:1,t:1}  ✓ anagram at index 2
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import Counter
+
+def count_anagrams(s, pattern):
+    k = len(pattern)
+    if k > len(s):
+        return 0
+    need = Counter(pattern)
+    window = Counter(s[:k])                 # prime first window
+    found = 1 if window == need else 0
+    for right in range(k, len(s)):
+        window[s[right]] += 1               # character entering
+        left = s[right - k]
+        window[left] -= 1                   # character leaving
+        if window[left] == 0:
+            del window[left]                # keep the map clean for ==
+        if window == need:
+            found += 1
+    return found
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function countAnagrams(s: string, pattern: string): number {
+  const k = pattern.length;
+  if (k > s.length) return 0;
+  const need = new Array(26).fill(0);
+  const win = new Array(26).fill(0);
+  const idx = (c: string) => c.charCodeAt(0) - 97;
+  for (const c of pattern) need[idx(c)]++;
+  for (let i = 0; i < k; i++) win[idx(s[i])]++; // prime first window
+  let found = same(win, need) ? 1 : 0;
+  for (let right = k; right < s.length; right++) {
+    win[idx(s[right])]++;        // entering
+    win[idx(s[right - k])]--;    // leaving
+    if (same(win, need)) found++;
+  }
+  return found;
+}
+
+function same(a: number[], b: number[]): boolean {
+  return a.every((v, i) => v === b[i]);
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int countAnagrams(String s, String pattern) {
+    int k = pattern.length();
+    if (k > s.length()) return 0;
+    int[] need = new int[26], win = new int[26];
+    for (char c : pattern.toCharArray()) need[c - 'a']++;
+    for (int i = 0; i < k; i++) win[s.charAt(i) - 'a']++; // prime
+    int found = Arrays.equals(win, need) ? 1 : 0;
+    for (int right = k; right < s.length(); right++) {
+        win[s.charAt(right) - 'a']++;        // entering
+        win[s.charAt(right - k) - 'a']--;    // leaving
+        if (Arrays.equals(win, need)) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int countAnagrams(const char *s, const char *pattern) {
+    int need[26] = {0}, win[26] = {0};
+    int k = strlen(pattern), n = strlen(s);
+    if (k > n) return 0;
+    for (int i = 0; i < k; i++) { need[pattern[i] - 'a']++; win[s[i] - 'a']++; }
+    int found = memcmp(win, need, sizeof win) == 0 ? 1 : 0;
+    for (int right = k; right < n; right++) {
+        win[s[right] - 'a']++;        /* entering */
+        win[s[right - k] - 'a']--;    /* leaving */
+        if (memcmp(win, need, sizeof win) == 0) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int countAnagrams(const string& s, const string& pattern) {
+    int k = pattern.size(), n = s.size();
+    if (k > n) return 0;
+    array<int, 26> need{}, win{};
+    for (char c : pattern) need[c - 'a']++;
+    for (int i = 0; i < k; i++) win[s[i] - 'a']++; // prime
+    int found = (win == need) ? 1 : 0;
+    for (int right = k; right < n; right++) {
+        win[s[right] - 'a']++;        // entering
+        win[s[right - k] - 'a']--;    // leaving
+        if (win == need) found++;
+    }
+    return found;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Comparing two 26-slot arrays each step is a constant, so the whole scan stays linear. To make
+even that comparison `O(1)`, keep a `matches` counter that tracks how many of the 26 buckets
+agree, updating it only for the two buckets that change per slide.
+
+## Complexity
+
+| Aspect | Cost   | Why                                                              |
+| ------ | ------ | ---------------------------------------------------------------- |
+| Time   | `O(n)` | one pass; each slide touches two buckets, compare is `O(1)`/`O(26)` |
+| Space  | `O(1)` | a fixed 26-slot tally (or `O(k)` distinct keys for a general map) |
+
+For a general alphabet the map holds at most `k` distinct keys, so space is `O(k)`; for a
+fixed small alphabet like `a`–`z` it's flat `O(1)`.
+
+## When to use it
+
+<Callout type="warning" title="Reset counts to zero, don't just leave them">
+The common bug is decrementing a count and forgetting that it can hit zero. With a real hash
+map, a lingering `key: 0` makes an equality check fail even when the window matches — delete
+the key when it reaches zero. With a fixed array you don't delete, but you must compare the
+*whole* array, since a zeroed slot is still meaningful.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is carrying a frequency map along the window O(n) when the naive count is O(n·k)?">
+
+The naive version rebuilds a `k`-character tally at every one of the `n` windows. The hashing
+version builds the tally *once*, then each slide changes exactly two entries — one increment
+for the entering character, one decrement for the leaving one. That's `O(1)` bookkeeping per
+step, so `n` steps give `O(n)`, dropping the `k` factor entirely.
+
+</Accordion>
+
+<Accordion title="How do you find the length of the longest substring with at most K distinct characters?">
+
+Switch to a **variable** window carrying a frequency map. Grow `right`, incrementing counts;
+when the map holds more than `K` distinct keys, shrink `left` — decrementing and removing keys
+that hit zero — until distinct keys drop back to `K`. Record `right - left + 1` each valid
+step. The map's *size* is your validity condition, and it's still `O(n)`.
+
+</Accordion>
+
+<Accordion title="For lowercase-only input, why prefer a 26-slot array over a hash map?">
+
+A fixed array of 26 ints gives `O(1)` indexing with no hashing overhead, and comparing two of
+them is a tight constant-time scan (or a single `memcmp`). A hash map is the right call when
+the alphabet is large or unknown — full Unicode, words instead of letters — where you can't
+pre-size an array. Same algorithm; the map is just the general-purpose container. More on the
+trade-off in [hash tables](/docs/dsa/07-hashing/02-hash-tables).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Some window questions need the window's **contents**, not a single number — carry a
+  frequency map (or fixed-size count array) alongside it.
+- A count map is reversible: increment the entering character, decrement the leaving one, and
+  the map tracks the current window in `O(1)` per slide, keeping the scan `O(n)`.
+- Watch the classic pitfall — delete keys that fall to zero so equality checks stay honest;
+  a `matches` counter turns the comparison itself into `O(1)`.
+
+<Cards>
+  <Card title="Variable-Size Windows" href="/docs/dsa/09-sliding-window/03-variable-window" description="Grow-and-shrink windows this pattern builds on." />
+  <Card title="Frequency Patterns" href="/docs/dsa/07-hashing/05-frequency-patterns" description="Counting with hash maps in depth." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="How the map underneath gives O(1) updates." />
+</Cards>

@@ -1,0 +1,248 @@
+---
+title: "String Matching"
+description: "Finding \"cat\" inside a huge document by re-checking every position wastes work — smarter algorithms never look twice."
+extractedReferences:
+  - href: /docs/dsa/24-string-matching/02-kmp
+  - href: /docs/dsa/24-string-matching/03-rabin-karp
+  - href: /docs/dsa/24-string-matching/04-z-algorithm
+---
+
+## The problem
+
+You open a 400-page book in a text editor and hit Ctrl-F to find the word "cat". The cursor jumps to the first match instantly. It feels like magic, but under the hood something is walking through the text, character by character, asking one question over and over: does the pattern start *here*?
+
+Now imagine the book is a genome with millions of letters, and you are searching for a DNA sequence hundreds of characters long. Suddenly *how* you ask that question matters. Ask it carelessly and the search crawls. Ask it well and it flies. String matching is the study of asking that question efficiently.
+
+## A first attempt
+
+The obvious idea: line the pattern up at position 0 of the text, compare left to right, and if every character matches, report a hit. If any character disagrees, slide the pattern one step to the right and try again.
+
+Let text be `T` of length `n` and pattern `P` of length `m`. You try `n - m + 1` starting positions, and at each one you might compare up to `m` characters. That is **O(n · m)** in the worst case.
+
+That worst case is not rare. Search for `AAAAB` inside `AAAAAAAAAAAA`. At every starting position you match four `A`s, hit the mismatch on the `B`, and throw all that work away. You keep re-reading the same `A`s.
+
+```text
+T: A A A A A A A A A A A A
+P: A A A A B                 <- 4 matches, then mismatch, slide by 1
+   . A A A A B               <- do it all again...
+```
+
+## The insight
+
+The naive scan forgets everything the moment it slides. But the characters it just matched are not random — they are part of the pattern, and the pattern is known in advance. Every fast algorithm in this module is a different answer to one question:
+
+> When a comparison fails, what did the characters I already saw tell me, so I never have to look at them again?
+
+- **KMP** studies the pattern's own repeats to know how far to jump on a mismatch.
+- **Rabin-Karp** turns each window into a number so a whole substring compares in one step.
+- **Z-algorithm** precomputes, for every position, how much of the start repeats there.
+
+For now, let's make the naive scan concrete — it's the baseline every other algorithm beats, and it's genuinely the right tool when the text is small.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Line the pattern up
+
+Place the pattern so its first character sits over text index `i`, starting at `i = 0`.
+
+</Step>
+
+<Step>
+
+### Compare left to right
+
+Walk `j` from `0` while `T[i + j] == P[j]`. Stop at the first mismatch or when `j` reaches `m`.
+
+</Step>
+
+<Step>
+
+### Report or slide
+
+If `j` reached `m`, every character matched — record a hit at `i`. Either way, increase `i` by one and repeat until `i > n - m`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def naive_search(text: str, pattern: str) -> list[int]:
+    n, m = len(text), len(pattern)
+    hits = []
+    if m == 0:
+        return list(range(n + 1))
+    for i in range(n - m + 1):
+        j = 0
+        while j < m and text[i + j] == pattern[j]:
+            j += 1
+        if j == m:
+            hits.append(i)
+    return hits
+
+
+print(naive_search("abxabcabcaby", "abcaby"))  # [6]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function naiveSearch(text: string, pattern: string): number[] {
+  const n = text.length;
+  const m = pattern.length;
+  const hits: number[] = [];
+  if (m === 0) return Array.from({ length: n + 1 }, (_, k) => k);
+  for (let i = 0; i <= n - m; i++) {
+    let j = 0;
+    while (j < m && text[i + j] === pattern[j]) j++;
+    if (j === m) hits.push(i);
+  }
+  return hits;
+}
+
+console.log(naiveSearch("abxabcabcaby", "abcaby")); // [6]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+public class NaiveSearch {
+    static List<Integer> search(String text, String pattern) {
+        int n = text.length(), m = pattern.length();
+        List<Integer> hits = new ArrayList<>();
+        for (int i = 0; i <= n - m; i++) {
+            int j = 0;
+            while (j < m && text.charAt(i + j) == pattern.charAt(j)) j++;
+            if (j == m) hits.add(i);
+        }
+        return hits;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(search("abxabcabcaby", "abcaby")); // [6]
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <string.h>
+
+void naive_search(const char *text, const char *pattern) {
+    int n = (int)strlen(text), m = (int)strlen(pattern);
+    for (int i = 0; i <= n - m; i++) {
+        int j = 0;
+        while (j < m && text[i + j] == pattern[j]) j++;
+        if (j == m) printf("%d ", i);
+    }
+    printf("\n");
+}
+
+int main(void) {
+    naive_search("abxabcabcaby", "abcaby"); /* 6 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <string>
+#include <vector>
+using namespace std;
+
+vector<int> naive_search(const string &text, const string &pattern) {
+    int n = (int)text.size(), m = (int)pattern.size();
+    vector<int> hits;
+    for (int i = 0; i <= n - m; i++) {
+        int j = 0;
+        while (j < m && text[i + j] == pattern[j]) j++;
+        if (j == m) hits.push_back(i);
+    }
+    return hits;
+}
+
+int main() {
+    for (int h : naive_search("abxabcabcaby", "abcaby")) cout << h << " "; // 6
+    cout << "\n";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Measure | Cost |
+| --- | --- |
+| Time (worst case) | O(n · m) |
+| Time (typical text) | ~O(n) — mismatches come early |
+| Space | O(1) extra |
+
+The typical case is fast because on random text the first character usually mismatches, so each position costs about one comparison. The `O(n · m)` blow-up needs a pattern that keeps *almost* matching, like `AAAAB` in a sea of `A`s.
+
+## When to use it
+
+<Callout type="info" title="Naive is not a dirty word">
+For short patterns, small inputs, or a one-off search, the naive scan is simple, allocation-free, and plenty fast. Reach for KMP, Rabin-Karp, or Z only when the text is large, the pattern is repetitive, or you must guarantee linear time. Most standard-library `indexOf`/`find` functions are tuned variants of naive matching for exactly this reason.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is the worst case O(n·m) and not O(n)?">
+
+At each of the `n - m + 1` starting positions you may compare up to `m` characters before failing. When the pattern nearly matches everywhere — `AAAAB` inside `AAAA…A` — you actually do `m` comparisons per position, giving `(n - m + 1) · m ≈ O(n · m)`. Nothing carries over between positions to prevent the repeated work.
+
+</Accordion>
+
+<Accordion title="How should an empty pattern be handled?">
+
+An empty pattern matches at every position, including the very end, so it has `n + 1` matches in a text of length `n`. Decide this convention up front; the code above returns every index `0..n` for the empty pattern to stay consistent with most library behavior.
+
+</Accordion>
+
+<Accordion title="What single piece of information would let you skip ahead on a mismatch?">
+
+Knowing how much of the pattern's beginning also appears as a suffix of the part you just matched. That "longest proper prefix that is also a suffix" is exactly the failure function KMP precomputes — it tells you how far you can slide without re-checking characters.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- String matching finds all occurrences of a pattern `P` in a text `T`.
+- The naive scan compares at every position and forgets everything on a mismatch, costing O(n · m) in the worst case.
+- Every fast algorithm reuses information from characters already seen — that is the thread through this whole module.
+
+<Cards>
+  <Card title="The KMP Algorithm" href="/docs/dsa/24-string-matching/02-kmp" description="Skip ahead on a mismatch using the pattern's own repeats." />
+  <Card title="Rabin-Karp" href="/docs/dsa/24-string-matching/03-rabin-karp" description="Compare a whole window in one step with a rolling hash." />
+  <Card title="The Z-Algorithm" href="/docs/dsa/24-string-matching/04-z-algorithm" description="Precompute prefix repeats and read matches straight off." />
+</Cards>

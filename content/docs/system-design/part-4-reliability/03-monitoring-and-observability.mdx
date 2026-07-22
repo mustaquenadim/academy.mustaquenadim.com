@@ -1,0 +1,148 @@
+---
+title: "Monitoring & Observability"
+description: "You can’t fix what you can’t see — when a system misbehaves at 3am, logs, metrics, and traces are your only witnesses."
+extractedReferences:
+  - href: /docs/system-design/part-4-reliability/01-availability-and-slas
+  - href: /docs/system-design/part-4-reliability/04-backpressure-and-circuit-breakers
+  - href: /docs/system-design/part-3-architecture/01-monolith-vs-microservices
+---
+
+## The problem
+
+A customer emails: "Checkout has been slow all morning." You open the app — it feels fine to you. You check the server; CPU looks normal. You have no idea if it's one user, one region, one endpoint, or everyone. So you start guessing, restarting things, and hoping. An hour later you still can't say whether the problem is real, where it lives, or whether your "fix" did anything.
+
+When a distributed system misbehaves, you can't attach a debugger and step through it. The request touched six services across three machines and it's already over. All you have left are the traces it left behind. If the system didn't record enough while it ran, the truth is simply gone.
+
+## A first attempt
+
+The classic first move is to `print` everything and grep the logs. Sprinkle log lines, ship them to a file, and when something breaks, search.
+
+Logs alone break down fast. They answer "what happened in this one request?" but not "is the *whole system* healthy right now?" You can't eyeball a million log lines to know your p99 latency doubled. And in a system of many services, a single user action is scattered across many log files with no thread tying them together — you can't reconstruct the one slow request out of the flood. Logs are necessary but they don't scale to system-level questions, and they don't tell you a request's *journey*.
+
+## The insight
+
+You need three different lenses, because "is it healthy?", "what exactly happened?", and "where did the time go?" are three different questions. These are the **three pillars of observability**:
+
+- **Metrics** — cheap numeric aggregates over time (request rate, error rate, p99 latency). Answer *"is something wrong, and when did it start?"*
+- **Logs** — discrete, detailed event records. Answer *"what exactly happened in this event?"*
+- **Traces** — the path of one request across every service it touched, with timing. Answer *"where did the time go?"*
+
+Monitoring is watching known signals for known problems. **Observability** is the richer property: having enough signal to ask *new* questions about failures you didn't anticipate — without shipping new code.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Emit metrics for the golden signals
+
+Instrument every service to count requests, errors, and latency, and expose them for scraping. The **four golden signals** — latency, traffic, errors, saturation — catch the vast majority of problems with a handful of numbers. Store them in a time-series database so you can graph and alert on them.
+
+</Step>
+
+<Step>
+
+### Write structured logs
+
+Log as JSON, not free text: `{"level":"error","user":123,"trace_id":"abc","msg":"..."}`. Structure lets you filter and aggregate. Crucially, stamp every log with a **trace ID** so you can pivot from a metric spike to the exact logs behind it.
+
+</Step>
+
+<Step>
+
+### Propagate a trace across services
+
+When a request enters, generate a trace ID and pass it through every downstream call (in a header). Each service records a *span* — its start, end, and metadata — under that shared ID. Stitched together, the spans reconstruct the request's full journey and show which hop was slow.
+
+</Step>
+
+<Step>
+
+### Alert on symptoms, not causes
+
+Page a human only when *users* are affected: error rate above the SLO, p99 past its threshold. Don't page on "CPU 80%" — high CPU may be perfectly fine. Alert on the symptom the customer feels, then use metrics/logs/traces to find the cause.
+
+</Step>
+
+<Step>
+
+### Build dashboards that tell a story
+
+Arrange panels top-down: overall SLO health, then per-service golden signals, then dependencies. The on-call engineer should read the failure story in 30 seconds, not hunt through 40 unlabeled graphs.
+
+</Step>
+
+</Steps>
+
+How the three pillars connect through a shared trace ID:
+
+```
+   request ──► API GW ──► Orders ──► Payments ──► DB
+      │  trace_id=abc     span      span         span
+      │
+      ├─ METRICS: p99 latency spikes at 09:14  ── "something is wrong, now"
+      │                       │
+      │                       ▼ pivot by time
+      ├─ TRACES:  abc → GW 5ms │ Orders 8ms │ Payments 900ms ◄─ the slow hop
+      │                                         │
+      │                                         ▼ pivot by trace_id
+      └─ LOGS:    {trace_id:abc, svc:payments, msg:"upstream timeout"}  ── the why
+```
+
+## Concrete numbers
+
+- **Metrics are cheap, logs are expensive.** A metric is a few bytes per data point; scraping 1,000 series every 15s is trivial. Logs at 10,000 req/s with 1KB each is **10 MB/s ≈ 864 GB/day** — storage and indexing costs dominate, so you sample.
+- **Sample traces.** Tracing every request at high QPS is costly, so sample — e.g. **1%** head-based, plus keep 100% of errors (tail-based). 1% of 10,000 req/s is still 100 traces/s, plenty to spot patterns.
+- **Retention tiers.** Metrics: keep 13 months at reducing resolution (cheap). Logs: 7–30 days hot, then archive. Traces: hours to days. Match retention to how far back you actually investigate.
+- **Alert budget.** If p99 must stay under 300ms and it's been over for **5 minutes**, page. Short windows cause false pages on transient blips; too-long windows burn your error budget before you react.
+
+## When to use it
+
+<Callout type="warn" title="Alert fatigue is a real outage risk">
+Every noisy, non-actionable alert trains the on-call to ignore the pager. When the real incident finally fires, it's buried under CPU warnings nobody reads anymore. Ruthlessly delete alerts that don't require human action. A page must mean "a human must do something now" — nothing less.
+</Callout>
+
+<Callout type="idea" title="Cardinality is the silent budget killer">
+Metrics are cheap until you tag them with high-cardinality labels like user ID or full URL. Each unique label combination is a *separate* time series; a `user_id` label can explode 1,000 metrics into millions and melt your monitoring bill. Keep metric labels low-cardinality (status code, region, endpoint template) — put the high-cardinality detail in logs and traces instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A metric shows p99 latency doubled at 09:14. What's your next step, and which pillar do you reach for?">
+
+Metrics told you *that* and *when* — now you need *where* and *why*. Pivot to **traces** filtered to that time window: find slow traces and read which span dominates the latency (say, the Payments service is now 900ms instead of 8ms). Then pivot to **logs** for that service and trace ID to read the actual error ("upstream timeout"). The workflow is always metrics → traces → logs: aggregate signal narrows to a request, request narrows to a line. This only works if every log and span carries a shared trace ID.
+
+</Accordion>
+
+<Accordion title="Why alert on error rate rather than on CPU usage?">
+
+Because CPU is a *cause-side* signal that's often a false alarm — a batch job or an efficient service can happily run at 90% CPU with users perfectly happy, and it can also be at 30% while users get errors from a downstream failure. Error rate (and latency) is a *symptom-side* signal: it directly reflects what the user experiences and maps straight to your SLO. Alert on symptoms so every page means real user pain; then use CPU and other resource metrics as clues while debugging, not as pager triggers.
+
+</Accordion>
+
+<Accordion title="What can observability tell you that a monitoring dashboard of pre-built graphs cannot?">
+
+A dashboard answers questions you *predicted* — you built a panel for each. Observability is about answering questions you *didn't* predict. When a novel failure hits ("only Android users in Brazil on API v2 are failing"), no pre-made graph exists. If your telemetry is rich and high-cardinality enough (structured logs, well-tagged traces), you can slice and group by those dimensions ad hoc and discover the pattern — without deploying new instrumentation. Monitoring watches the known; observability lets you interrogate the unknown.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Three pillars, three questions: **metrics** ("is it wrong, and when?"), **traces** ("where did the time go?"), **logs** ("what exactly happened?").
+- A shared **trace ID** stitched through metrics, traces, and logs is what lets you pivot from a spike to the exact failing line.
+- Alert on **symptoms** users feel (errors, latency), keep metric cardinality low, and delete noisy alerts before they cause alert fatigue.
+
+<Cards>
+  <Card title="Availability & SLAs" href="/docs/system-design/part-4-reliability/01-availability-and-slas" description="The SLIs and SLOs your metrics are built to measure." />
+  <Card title="Backpressure & Circuit Breakers" href="/docs/system-design/part-4-reliability/04-backpressure-and-circuit-breakers" description="Acting on the saturation and error signals you observe." />
+  <Card title="Monolith vs Microservices" href="/docs/system-design/part-3-architecture/01-monolith-vs-microservices" description="Why distributed systems make tracing indispensable." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+When they ask "how do you know the system is healthy?", name the three pillars and, more importantly, tie them to the SLO from the availability lesson: "I'd emit the four golden signals as metrics, alert when error rate or p99 breaches the SLO for 5 minutes, and use trace IDs to pivot into traces and logs to find the cause." Mentioning alert fatigue and metric cardinality signals you've actually operated a system, not just read about one.
+</Callout>

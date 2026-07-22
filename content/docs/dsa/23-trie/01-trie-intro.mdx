@@ -1,0 +1,411 @@
+---
+title: "Tries"
+description: "Autocomplete has to find every word starting with \"str\" out of millions — a trie makes prefix search almost free."
+extractedReferences:
+  - href: /docs/dsa/23-trie/02-trie-applications
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/24-string-matching/01-string-matching-intro
+---
+
+## The problem
+
+You type "str" into a search box and the app instantly offers "string", "stride", "structure", "strong". Behind that box sits a dictionary of a few million words. Every keystroke, it has to answer the same question: which words start with what I have typed so far?
+
+Do that naively and the box feels sticky. Each letter triggers a scan of millions of words, and the user is typing faster than you can scan. You need prefix lookups that stay fast no matter how big the dictionary grows.
+
+## A first attempt
+
+The obvious move is to keep every word in a list and, on each keystroke, walk the whole list keeping the ones that start with your prefix.
+
+```python
+def suggest(words, prefix):
+    return [w for w in words if w.startswith(prefix)]
+```
+
+For `n` words of length up to `L`, that is `O(n · L)` work on every single keystroke. With a few million words, one keystroke can touch tens of millions of characters. Sorting the list and binary-searching the prefix range helps — `O(L · log n)` — but you still compare against unrelated words, and you re-do all of it for the next letter. The waste is obvious: "str" and "stri" share the "str" prefix, yet you throw that work away each time.
+
+## The insight
+
+Words that share a prefix should share the *path* you walk to find them. Instead of storing whole words side by side, store them letter by letter in a tree, where each edge is one character. All words beginning with "str" hang below the single node you reach by walking s → t → r.
+
+Now a prefix lookup is just walking down that path — one step per character of the prefix, and *independent of how many words exist*. That tree is a **trie** (from re*trie*val, though everyone says "try").
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Give every node a map of children
+
+Each node holds a dictionary from a single character to a child node. The root represents the empty prefix. An edge labelled `c` means "append `c` to the prefix so far".
+
+</Step>
+
+<Step>
+
+### Insert by walking and creating
+
+To insert a word, start at the root and walk one character at a time. If the child for the next character is missing, create it. When the word ends, flag that node as the end of a complete word.
+
+```
+insert "str", "strong":
+
+        (root)
+          |
+          s
+          |
+          t
+          |
+          r  <- end of "str"
+          |
+          o
+          |
+          n
+          |
+          g  <- end of "strong"
+```
+
+</Step>
+
+<Step>
+
+### Search by walking without creating
+
+To check a word or prefix, walk the same path. If any character has no child, the prefix is not present. For a full-word lookup, also require the final node to be flagged as a word end.
+
+</Step>
+
+<Step>
+
+### Collect suggestions from the prefix node
+
+Walk to the node for "str", then depth-first collect every flagged descendant. Those are exactly the words that start with "str" — and you never looked at a word that did not.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class TrieNode:
+    def __init__(self):
+        self.children = {}
+        self.is_word = False
+
+
+class Trie:
+    def __init__(self):
+        self.root = TrieNode()
+
+    def insert(self, word):
+        node = self.root
+        for ch in word:
+            if ch not in node.children:
+                node.children[ch] = TrieNode()
+            node = node.children[ch]
+        node.is_word = True
+
+    def search(self, word):
+        node = self._walk(word)
+        return node is not None and node.is_word
+
+    def starts_with(self, prefix):
+        return self._walk(prefix) is not None
+
+    def _walk(self, s):
+        node = self.root
+        for ch in s:
+            if ch not in node.children:
+                return None
+            node = node.children[ch]
+        return node
+
+
+t = Trie()
+for w in ["string", "strong", "stride"]:
+    t.insert(w)
+print(t.search("strong"))    # True
+print(t.search("stron"))     # False
+print(t.starts_with("str"))  # True
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class TrieNode {
+  children: Map<string, TrieNode> = new Map();
+  isWord = false;
+}
+
+class Trie {
+  private root = new TrieNode();
+
+  insert(word: string): void {
+    let node = this.root;
+    for (const ch of word) {
+      if (!node.children.has(ch)) node.children.set(ch, new TrieNode());
+      node = node.children.get(ch)!;
+    }
+    node.isWord = true;
+  }
+
+  private walk(s: string): TrieNode | null {
+    let node = this.root;
+    for (const ch of s) {
+      const next = node.children.get(ch);
+      if (!next) return null;
+      node = next;
+    }
+    return node;
+  }
+
+  search(word: string): boolean {
+    const node = this.walk(word);
+    return node !== null && node.isWord;
+  }
+
+  startsWith(prefix: string): boolean {
+    return this.walk(prefix) !== null;
+  }
+}
+
+const t = new Trie();
+["string", "strong", "stride"].forEach((w) => t.insert(w));
+console.log(t.search("strong"));   // true
+console.log(t.search("stron"));    // false
+console.log(t.startsWith("str"));  // true
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+class Trie {
+    private static class Node {
+        Map<Character, Node> children = new HashMap<>();
+        boolean isWord = false;
+    }
+
+    private final Node root = new Node();
+
+    public void insert(String word) {
+        Node node = root;
+        for (char ch : word.toCharArray()) {
+            node = node.children.computeIfAbsent(ch, k -> new Node());
+        }
+        node.isWord = true;
+    }
+
+    private Node walk(String s) {
+        Node node = root;
+        for (char ch : s.toCharArray()) {
+            node = node.children.get(ch);
+            if (node == null) return null;
+        }
+        return node;
+    }
+
+    public boolean search(String word) {
+        Node node = walk(word);
+        return node != null && node.isWord;
+    }
+
+    public boolean startsWith(String prefix) {
+        return walk(prefix) != null;
+    }
+
+    public static void main(String[] args) {
+        Trie t = new Trie();
+        for (String w : new String[] {"string", "strong", "stride"}) t.insert(w);
+        System.out.println(t.search("strong"));   // true
+        System.out.println(t.search("stron"));    // false
+        System.out.println(t.startsWith("str"));  // true
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+#define ALPHABET 26
+
+typedef struct Node {
+    struct Node *children[ALPHABET];
+    bool is_word;
+} Node;
+
+Node *new_node(void) {
+    return calloc(1, sizeof(Node));  // children NULL, is_word false
+}
+
+void insert(Node *root, const char *word) {
+    Node *node = root;
+    for (const char *p = word; *p; p++) {
+        int i = *p - 'a';
+        if (!node->children[i]) node->children[i] = new_node();
+        node = node->children[i];
+    }
+    node->is_word = true;
+}
+
+Node *walk(Node *root, const char *s) {
+    Node *node = root;
+    for (const char *p = s; *p; p++) {
+        node = node->children[*p - 'a'];
+        if (!node) return NULL;
+    }
+    return node;
+}
+
+bool search(Node *root, const char *word) {
+    Node *node = walk(root, word);
+    return node && node->is_word;
+}
+
+bool starts_with(Node *root, const char *prefix) {
+    return walk(root, prefix) != NULL;
+}
+
+int main(void) {
+    Node *root = new_node();
+    insert(root, "string");
+    insert(root, "strong");
+    insert(root, "stride");
+    printf("%d\n", search(root, "strong"));    // 1
+    printf("%d\n", search(root, "stron"));     // 0
+    printf("%d\n", starts_with(root, "str"));  // 1
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <unordered_map>
+#include <string>
+
+class Trie {
+    struct Node {
+        std::unordered_map<char, Node*> children;
+        bool isWord = false;
+    };
+    Node* root = new Node();
+
+    Node* walk(const std::string& s) const {
+        Node* node = root;
+        for (char ch : s) {
+            auto it = node->children.find(ch);
+            if (it == node->children.end()) return nullptr;
+            node = it->second;
+        }
+        return node;
+    }
+
+public:
+    void insert(const std::string& word) {
+        Node* node = root;
+        for (char ch : word) {
+            if (!node->children.count(ch)) node->children[ch] = new Node();
+            node = node->children[ch];
+        }
+        node->isWord = true;
+    }
+
+    bool search(const std::string& word) const {
+        Node* node = walk(word);
+        return node && node->isWord;
+    }
+
+    bool startsWith(const std::string& prefix) const {
+        return walk(prefix) != nullptr;
+    }
+};
+
+int main() {
+    Trie t;
+    for (const std::string& w : {"string", "strong", "stride"}) t.insert(w);
+    std::cout << t.search("strong")   << "\n";  // 1
+    std::cout << t.search("stron")    << "\n";  // 0
+    std::cout << t.startsWith("str")  << "\n";  // 1
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+Let `L` be the length of the word or prefix, and `Σ` the alphabet size.
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Insert a word | O(L) | O(L · Σ) worst case for new nodes |
+| Search a word | O(L) | O(1) |
+| Prefix check | O(L) | O(1) |
+| Collect all words under a prefix | O(matches · L) | O(1) extra |
+
+The headline: every core operation costs `O(L)` and is *completely independent of `n`*, the number of words stored. That is why a trie beats scanning a list.
+
+## When to use it
+
+<Callout type="idea" title="Reach for a trie when prefixes matter">
+A trie shines for prefix queries: autocomplete, dictionary lookups, and routing where keys share leading characters. If you only ever need exact-key lookups with no prefix logic, a hash table is simpler and lighter. Watch the memory cost — a naive array-of-26 node uses space even for empty slots, so prefer a map of children when the alphabet is large or sparse.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is a trie lookup faster than binary search over a sorted word list?">
+
+Binary search is `O(L · log n)` because each of the `log n` comparisons can scan up to `L` characters, and it depends on `n`. A trie walk is `O(L)` — one step per character of the query, regardless of how many words are stored. As the dictionary grows, the trie's cost stays flat while binary search's grows with `log n`.
+
+</Accordion>
+
+<Accordion title="How do you delete a word from a trie without breaking other words?">
+
+Walk to the word's end node and clear its `is_word` flag. Then, walking back up, you may remove a node only if it has no children and is not itself a word end — otherwise other words still pass through it. In practice many implementations just unset the flag and leave the nodes, since the structure stays correct and future inserts can reuse the path.
+
+</Accordion>
+
+<Accordion title="When would a plain hash set of words beat a trie?">
+
+When you never do prefix queries. A hash set gives `O(L)` exact lookup with far less pointer overhead and better cache behaviour. The trie earns its extra memory only when you need "does any word start with this?" or "give me every word under this prefix" — questions a hash set cannot answer without scanning everything.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A trie stores strings by sharing common prefixes along tree paths, so all words under a prefix hang below one node.
+- Insert, search, and prefix checks are all `O(L)` and independent of the number of stored words.
+- The trade-off is memory: many small nodes, so use a child map for large or sparse alphabets and prefer a hash set when you never need prefixes.
+
+<Cards>
+  <Card title="Trie Applications" href="/docs/dsa/23-trie/02-trie-applications" description="Autocomplete, word search, and counting distinct substrings." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The exact-lookup structure a trie is often compared against." />
+  <Card title="String Matching" href="/docs/dsa/24-string-matching/01-string-matching-intro" description="Where tries meet pattern search on text." />
+</Cards>

@@ -1,0 +1,341 @@
+---
+title: "Range Queries"
+description: "Equilibrium points, 2D region sums — precomputed prefixes turn repeated range questions into O(1) lookups."
+extractedReferences:
+  - href: /docs/dsa/10-prefix-sum/01-prefix-sum-intro
+  - href: /docs/dsa/10-prefix-sum/03-difference-array
+  - href: /docs/dsa/25-range-query/01-segment-tree-intro
+---
+
+## The problem
+
+Your analytics team hands you a heatmap: a grid of pixels where each cell holds a click count.
+They want to know the total clicks inside any rectangle a user draws — the top-left corner, the
+bottom-right corner, sum everything between. And they want it live, as the user drags the
+selection box across a thousand-by-thousand grid.
+
+There is a one-dimensional version of the same headache. Given a row of numbers, find an
+"equilibrium point": an index where the sum of everything to its left equals the sum of
+everything to its right. Both problems are the same shape — repeated questions about the total
+inside a region of fixed data.
+
+## A first attempt
+
+For the rectangle, loop over every cell inside it and add. For the equilibrium point, for each
+index recompute the left sum and the right sum from scratch.
+
+```python
+def equilibrium(nums):
+    for i in range(len(nums)):
+        left = sum(nums[:i])
+        right = sum(nums[i + 1:])
+        if left == right:
+            return i
+    return -1
+```
+
+The 2D scan costs **O(rows·cols)** per rectangle. The equilibrium scan recomputes sums inside
+the loop, so it is **O(n²)**. Drag the selection box and the page stutters; grow the grid and it
+falls over. Same disease as before: re-summing values that never move.
+
+## The insight
+
+Prefixes generalize. In 1D, a running total lets you split an array at any point in O(1) — so an
+equilibrium check is just "left prefix equals total minus left prefix minus the element itself."
+
+In 2D, precompute `P[i][j]` = the sum of the whole rectangle from the origin `(0, 0)` to
+`(i-1, j-1)`. Then any sub-rectangle is four corner lookups combined by **inclusion–exclusion**:
+take the big block, subtract the strip above, subtract the strip to the left, and add back the
+top-left corner you subtracted twice.
+
+```
+sum(r1..r2, c1..c2) = P[r2+1][c2+1] - P[r1][c2+1] - P[r2+1][c1] + P[r1][c1]
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### One dimension: split with a running total
+
+Keep a running `left` sum as you walk. At index `i`, the right side is
+`total - left - nums[i]`. When `left == right`, you found an equilibrium point — all in a single
+O(n) pass, no inner loop.
+
+</Step>
+
+<Step>
+
+### Two dimensions: build a padded prefix grid
+
+Make `P` with an extra row and column of zeros. Each cell adds the value to the block above and
+the block left, then subtracts the overlap counted twice:
+`P[i+1][j+1] = grid[i][j] + P[i][j+1] + P[i+1][j] - P[i][j]`.
+
+</Step>
+
+<Step>
+
+### Answer a rectangle with four lookups
+
+Inclusion–exclusion turns any query rectangle into O(1). Picture the corners:
+
+```
+        c1        c2
+      +----+-------------+
+  r1  |  A |      B      |
+      +----+-------------+
+  r2  |  C |   TARGET    |
+      +----+-------------+
+
+TARGET = Whole - B(top) - C(left) + A(corner)
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def equilibrium(nums):
+    total = sum(nums)
+    left = 0
+    for i, x in enumerate(nums):
+        right = total - left - x
+        if left == right:
+            return i
+        left += x
+    return -1
+
+def build_2d(grid):
+    rows, cols = len(grid), len(grid[0])
+    P = [[0] * (cols + 1) for _ in range(rows + 1)]
+    for i in range(rows):
+        for j in range(cols):
+            P[i + 1][j + 1] = grid[i][j] + P[i][j + 1] + P[i + 1][j] - P[i][j]
+    return P
+
+def region_sum(P, r1, c1, r2, c2):
+    return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1]
+
+print(equilibrium([1, 7, 3, 6, 5, 6]))  # 3
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function equilibrium(nums: number[]): number {
+  const total = nums.reduce((a, b) => a + b, 0);
+  let left = 0;
+  for (let i = 0; i < nums.length; i++) {
+    const right = total - left - nums[i];
+    if (left === right) return i;
+    left += nums[i];
+  }
+  return -1;
+}
+
+function build2D(grid: number[][]): number[][] {
+  const rows = grid.length, cols = grid[0].length;
+  const P = Array.from({ length: rows + 1 }, () =>
+    new Array<number>(cols + 1).fill(0)
+  );
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      P[i + 1][j + 1] = grid[i][j] + P[i][j + 1] + P[i + 1][j] - P[i][j];
+    }
+  }
+  return P;
+}
+
+function regionSum(P: number[][], r1: number, c1: number, r2: number, c2: number): number {
+  return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1];
+}
+
+console.log(equilibrium([1, 7, 3, 6, 5, 6])); // 3
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+public class RangeQueries {
+    static int equilibrium(int[] nums) {
+        int total = 0;
+        for (int x : nums) total += x;
+        int left = 0;
+        for (int i = 0; i < nums.length; i++) {
+            int right = total - left - nums[i];
+            if (left == right) return i;
+            left += nums[i];
+        }
+        return -1;
+    }
+
+    static int[][] build2D(int[][] grid) {
+        int rows = grid.length, cols = grid[0].length;
+        int[][] P = new int[rows + 1][cols + 1];
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                P[i + 1][j + 1] = grid[i][j] + P[i][j + 1] + P[i + 1][j] - P[i][j];
+            }
+        }
+        return P;
+    }
+
+    static int regionSum(int[][] P, int r1, int c1, int r2, int c2) {
+        return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1];
+    }
+
+    public static void main(String[] args) {
+        System.out.println(equilibrium(new int[]{1, 7, 3, 6, 5, 6})); // 3
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int equilibrium(const int *nums, int n) {
+    int total = 0;
+    for (int i = 0; i < n; i++) total += nums[i];
+    int left = 0;
+    for (int i = 0; i < n; i++) {
+        int right = total - left - nums[i];
+        if (left == right) return i;
+        left += nums[i];
+    }
+    return -1;
+}
+
+/* region_sum via inclusion-exclusion on a padded prefix grid */
+int region_sum(int P[][8], int r1, int c1, int r2, int c2) {
+    return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1];
+}
+
+int main(void) {
+    int nums[] = {1, 7, 3, 6, 5, 6};
+    printf("%d\n", equilibrium(nums, 6)); /* 3 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <numeric>
+using namespace std;
+
+int equilibrium(const vector<int>& nums) {
+    int total = accumulate(nums.begin(), nums.end(), 0);
+    int left = 0;
+    for (size_t i = 0; i < nums.size(); i++) {
+        int right = total - left - nums[i];
+        if (left == right) return (int)i;
+        left += nums[i];
+    }
+    return -1;
+}
+
+vector<vector<int>> build2D(const vector<vector<int>>& grid) {
+    int rows = grid.size(), cols = grid[0].size();
+    vector<vector<int>> P(rows + 1, vector<int>(cols + 1, 0));
+    for (int i = 0; i < rows; i++)
+        for (int j = 0; j < cols; j++)
+            P[i + 1][j + 1] = grid[i][j] + P[i][j + 1] + P[i + 1][j] - P[i][j];
+    return P;
+}
+
+int regionSum(const vector<vector<int>>& P, int r1, int c1, int r2, int c2) {
+    return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1];
+}
+
+int main() {
+    cout << equilibrium({1, 7, 3, 6, 5, 6}) << endl; // 3
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Equilibrium point (1D) | O(n) | O(1) |
+| Build 2D prefix grid | O(rows·cols) | O(rows·cols) |
+| One rectangle query | O(1) | O(1) |
+
+## When to use it
+
+<Callout type="idea" title="Four corners, any rectangle">
+The 2D prefix grid answers every rectangle in exactly four array reads, no matter how large the
+region. It pays off the moment you have many queries against a static grid — image integrals,
+heatmaps, and submatrix-sum problems all rely on it.
+</Callout>
+
+The catch is the same as in 1D: it assumes the grid does not change. Rebuilding after an update
+is O(rows·cols). For a live-updating grid you would move to a 2D Fenwick tree. Watch the padding
+indices carefully — off-by-one errors on the `+1` offsets are the most common bug here.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why add back P[r1][c1] in the rectangle formula?">
+
+When you subtract the top strip and the left strip, the top-left corner block `A` gets removed
+twice — once by each subtraction. Inclusion–exclusion adds it back once so it is counted exactly
+zero times outside the target and correctly inside it.
+
+</Accordion>
+
+<Accordion title="An array has no equilibrium point. What does the 1D scan return, and why is it still O(n)?">
+
+It returns `-1` after checking every index. Because the left and right sums are maintained
+incrementally (`left += nums[i]` each step, `right` derived by subtraction), no index costs more
+than O(1), so the full scan stays O(n) even in the no-answer case.
+
+</Accordion>
+
+<Accordion title="How would you extend the 2D prefix to answer 'max value in a rectangle'?">
+
+You cannot — prefix sums only work for operations with an inverse (subtraction undoes addition).
+Maximum has no inverse, so you cannot cancel out the region you do not want. For range-max you
+need a sparse table or a segment tree instead.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- 1D prefixes split an array at any point in O(1), which cracks equilibrium problems in one pass.
+- 2D prefixes answer any rectangle with four corner lookups via inclusion–exclusion.
+- Prefix tricks require an invertible operation and a static dataset.
+
+<Cards>
+  <Card title="The Prefix Sum" href="/docs/dsa/10-prefix-sum/01-prefix-sum-intro" description="Where the running-total idea starts." />
+  <Card title="The Difference Array" href="/docs/dsa/10-prefix-sum/03-difference-array" description="The inverse trick: many range updates, one read." />
+  <Card title="Segment Tree" href="/docs/dsa/25-range-query/01-segment-tree-intro" description="Range queries that survive updates." />
+</Cards>

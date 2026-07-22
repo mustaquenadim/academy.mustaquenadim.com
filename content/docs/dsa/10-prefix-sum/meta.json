@@ -1,0 +1,10 @@
+{
+  "title": "Prefix Sum",
+  "icon": "Sigma",
+  "pages": [
+    "01-prefix-sum-intro",
+    "02-range-queries",
+    "03-difference-array",
+    "04-prefix-with-hashing"
+  ]
+}

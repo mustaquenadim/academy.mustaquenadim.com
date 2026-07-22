@@ -1,0 +1,12 @@
+{
+  "title": "Recursion & Math",
+  "icon": "Repeat",
+  "pages": [
+    "01-recursion",
+    "02-analysis-of-recursion",
+    "03-recursion-patterns",
+    "04-number-basics",
+    "05-primes-and-factors",
+    "06-classic-recursion"
+  ]
+}

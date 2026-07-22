@@ -1,0 +1,9 @@
+{
+  "title": "Two Pointers",
+  "icon": "MoveHorizontal",
+  "pages": [
+    "01-two-pointer-intro",
+    "02-opposite-ends",
+    "03-triplets-and-quads"
+  ]
+}

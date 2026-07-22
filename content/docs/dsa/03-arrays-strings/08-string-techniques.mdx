@@ -1,0 +1,247 @@
+---
+title: "String Techniques"
+description: "Palindromes, subsequences, anagrams — the recurring patterns behind most string problems."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/02-strings
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+  - href: /docs/dsa/09-sliding-window/01-sliding-window-intro
+---
+
+## The problem
+
+You're adding a "clever title" checker to a writing app. It should flag when a title reads
+the same forwards and backwards — `"level"`, `"noon"`, `"race car"` (ignoring spaces). Next
+sprint, the product owner wants more: detect when two words are **anagrams** of each other,
+and highlight when one word appears as a **subsequence** of another.
+
+Three different-sounding features. But squint and they're the same handful of moves on an
+array of characters, reused. Learn the moves and the whole category of string problems opens
+up.
+
+## A first attempt
+
+For the palindrome check, the tempting move is to reverse the whole string and compare:
+
+```python
+def is_palindrome_naive(s):
+    return s == s[::-1]      # build a full reversed copy, then compare
+```
+
+Correct, but it allocates a second string as long as the first — `O(n)` extra memory — and
+compares all `n` characters even when the very first and last already disagree. On short
+titles nobody cares; the point is there's a leaner move that needs no copy at all.
+
+## The insight
+
+Most string questions are answered by one of three cheap patterns:
+
+- **Two pointers from the ends** — for palindromes and reversals: walk one index in from the
+  left and one from the right, comparing as you go. `O(1)` space, and you can bail the
+  instant they disagree.
+- **Frequency counting** — for anagrams: two words are anagrams exactly when they use the
+  same letters the same number of times. Count letters, compare the counts.
+- **Two pointers same direction** — for subsequences: one pointer scans the big string, one
+  tracks how much of the pattern you've matched.
+
+They all lean on the fact from [Strings](/docs/dsa/03-arrays-strings/02-strings): a string is
+just a character array.
+
+## How it works
+
+Here's the palindrome check with the two-pointer pattern.
+
+<Steps>
+
+<Step>
+
+### Put a pointer at each end
+
+`i` at the first character, `j` at the last. These mark the pair you're currently comparing.
+
+</Step>
+
+<Step>
+
+### Compare, then step inward
+
+If `s[i] != s[j]`, it can't be a palindrome — return `false` immediately. Otherwise move `i`
+right and `j` left.
+
+</Step>
+
+<Step>
+
+### Stop when the pointers meet
+
+Once `i` and `j` cross, every mirrored pair matched — it's a palindrome. No copy was ever
+made.
+
+</Step>
+
+</Steps>
+
+```text
+"level"    l  e  v  e  l
+           i           j    l == l  ✓
+              i     j       e == e  ✓
+                 ij         pointers meet -> palindrome
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def is_palindrome(s):
+    i, j = 0, len(s) - 1
+    while i < j:
+        if s[i] != s[j]:
+            return False
+        i += 1
+        j -= 1
+    return True
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function isPalindrome(s: string): boolean {
+  let i = 0, j = s.length - 1;
+  while (i < j) {
+    if (s[i] !== s[j]) return false;
+    i++;
+    j--;
+  }
+  return true;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+boolean isPalindrome(String s) {
+    int i = 0, j = s.length() - 1;
+    while (i < j) {
+        if (s.charAt(i) != s.charAt(j)) return false;
+        i++;
+        j--;
+    }
+    return true;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+#include <stdbool.h>
+
+bool is_palindrome(const char *s) {
+    int i = 0, j = (int)strlen(s) - 1;
+    while (i < j) {
+        if (s[i] != s[j]) return false;
+        i++;
+        j--;
+    }
+    return true;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+using namespace std;
+
+bool isPalindrome(const string& s) {
+    int i = 0, j = (int)s.size() - 1;
+    while (i < j) {
+        if (s[i] != s[j]) return false;
+        i++;
+        j--;
+    }
+    return true;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Technique                | Time     | Space  | Note                                        |
+| ------------------------ | -------- | ------ | ------------------------------------------- |
+| Palindrome (two pointer) | `O(n)`   | `O(1)` | bails early on the first mismatch           |
+| Anagram (letter counts)  | `O(n)`   | `O(1)` | fixed 26/256-size count array               |
+| Subsequence (two pointer)| `O(n)`   | `O(1)` | one scan of the longer string               |
+
+The anagram count is `O(1)` space because the alphabet is fixed-size — 26 for lowercase
+letters, 256 for bytes — no matter how long the strings get.
+
+## When to use it
+
+<Callout type="idea" title="Match the pattern to the question">
+Symmetry question (reads the same both ways, reverse)? Two pointers from the ends. "Same
+letters?" question (anagram, permutation)? Count frequencies. "Appears in order?" question
+(subsequence)? Two pointers same direction. Naming the pattern first turns most string
+problems into a few lines.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How do you check if two strings are anagrams in O(n) without sorting?">
+
+Sorting both and comparing is `O(n log n)`. Instead, count letters: make a fixed-size array
+(26 for lowercase), add one for each character of the first string and subtract one for each
+character of the second. If every count ends at zero, they're anagrams. One pass each, and
+the count array is constant size — `O(n)` time, `O(1)` space.
+
+</Accordion>
+
+<Accordion title="Is `ace` a subsequence of `abcde`? How would you check it in one pass?">
+
+Yes. Use two pointers moving the same direction: `p` over the pattern `ace`, `t` over the
+text `abcde`. Each time `text[t]` equals `pattern[p]`, advance `p`. Always advance `t`. If
+`p` reaches the end of the pattern, every pattern character was matched in order —
+subsequence confirmed. That's `O(len(text))`, no extra memory.
+
+</Accordion>
+
+<Accordion title="How would you ignore spaces, case, and punctuation in a palindrome like 'A man, a plan, a canal: Panama'?">
+
+Keep the two-pointer sweep but make each pointer **skip** non-alphanumeric characters before
+comparing, and compare in a single case (lowercase both sides). `i` advances past anything
+that isn't a letter or digit, `j` retreats past the same, then you compare. Still `O(n)`
+time and `O(1)` space — you just filter on the fly instead of building a cleaned copy.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Most string problems reduce to three reusable patterns: two pointers from the ends
+  (symmetry), frequency counting (anagrams), and two pointers same direction (subsequence).
+- The palindrome check runs in `O(n)` time and `O(1)` space and bails at the first mismatch
+  — no reversed copy needed.
+- Frequency counting is `O(1)` space because the alphabet is a fixed size regardless of
+  input length.
+
+<Cards>
+  <Card title="Strings" href="/docs/dsa/03-arrays-strings/02-strings" description="Why a string is really a character array." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="The end-to-end sweep behind palindromes." />
+  <Card title="Sliding Window" href="/docs/dsa/09-sliding-window/01-sliding-window-intro" description="For substring and anagram-window problems." />
+</Cards>

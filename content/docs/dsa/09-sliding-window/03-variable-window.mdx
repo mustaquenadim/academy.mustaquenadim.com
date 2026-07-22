@@ -1,0 +1,361 @@
+---
+title: "Variable-Size Windows"
+description: "The longest substring without repeats needs a window that grows and shrinks as the data demands."
+extractedReferences:
+  - href: /docs/dsa/09-sliding-window/02-fixed-window
+  - href: /docs/dsa/09-sliding-window/04-window-with-hashing
+  - href: /docs/dsa/08-two-pointer/02-opposite-ends
+---
+
+## The problem
+
+You're writing the logic for a password strength meter, and one rule is: find the longest
+run of characters the user typed with **no repeated character**. Type `abcabcbb` and the best
+clean run is `abc`, length 3. Type `pwwkew` and it's `wke`, length 3. The window you care
+about has no fixed size — it's as long as it can be while staying valid.
+
+That "as long as it can be" is the catch. A fixed window of size `k` doesn't fit, because you
+don't know `k` in advance — it's the answer. You need a window that **stretches** when things
+are going well and **contracts** the moment a rule is broken.
+
+## A first attempt
+
+Check every possible substring, and for each one test whether it has duplicates.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def longest_unique(s):
+    best = 0
+    for i in range(len(s)):
+        for j in range(i, len(s)):
+            if len(set(s[i:j + 1])) == j - i + 1:   # rebuilds the set each time
+                best = max(best, j - i + 1)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function longestUnique(s: string): number {
+  let best = 0;
+  for (let i = 0; i < s.length; i++) {
+    for (let j = i; j < s.length; j++) {
+      const seen = new Set(s.slice(i, j + 1)); // rebuilds each time
+      if (seen.size === j - i + 1) best = Math.max(best, j - i + 1);
+    }
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int longestUnique(String s) {
+    int best = 0;
+    for (int i = 0; i < s.length(); i++) {
+        for (int j = i; j < s.length(); j++) {
+            Set<Character> seen = new HashSet<>();
+            for (int x = i; x <= j; x++) seen.add(s.charAt(x)); // rebuilds
+            if (seen.size() == j - i + 1) best = Math.max(best, j - i + 1);
+        }
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int longestUnique(const char *s) {
+    int best = 0, n = strlen(s);
+    for (int i = 0; i < n; i++) {
+        int seen[256] = {0}, ok = 1;
+        for (int j = i; j < n; j++) {
+            unsigned char c = s[j];
+            if (seen[c]) { ok = 0; }        /* duplicate breaks this start */
+            seen[c] = 1;
+            if (ok && j - i + 1 > best) best = j - i + 1;
+        }
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int longestUnique(const string& s) {
+    int best = 0;
+    for (int i = 0; i < (int)s.size(); i++) {
+        for (int j = i; j < (int)s.size(); j++) {
+            set<char> seen(s.begin() + i, s.begin() + j + 1); // rebuilds
+            if ((int)seen.size() == j - i + 1) best = max(best, j - i + 1);
+        }
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Two nested loops over positions, and the validity check adds more work — `O(n²)` at best,
+`O(n³)` if you rebuild the set from scratch each time. Every restart throws away what the
+previous window already learned.
+
+## The insight
+
+Keep **two independent edges**, `left` and `right`. March `right` forward one step at a time,
+absorbing each new character into the window. As long as the window stays valid, it grows and
+you record its length. The instant it becomes invalid — a duplicate appears — advance `left`,
+shrinking from the front, until the window is valid again.
+
+The magic is that `left` only ever moves *forward*. It never rewinds. So across the whole
+scan, `right` advances `n` times and `left` advances at most `n` times — `2n` moves total.
+The nested loop collapses into a single linear sweep.
+
+<Callout type="idea" title="Grow greedily, shrink only when forced">
+Expand the right edge every step. Shrink the left edge only enough to restore validity, never
+more. Because neither pointer ever moves backward, each element enters and leaves the window
+at most once — that's what makes it `O(n)`.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start empty
+
+`left = 0`, `right = 0`, and an empty record of what's currently in the window (here, the set
+of characters present).
+
+</Step>
+
+<Step>
+
+### Grow from the right
+
+Read `s[right]`. If it isn't already in the window, add it — the window just got one longer.
+
+</Step>
+
+<Step>
+
+### Shrink from the left when invalid
+
+If `s[right]` is a duplicate, remove `s[left]` from the window and advance `left`, repeating
+until the duplicate is gone. Now the window is valid again.
+
+</Step>
+
+<Step>
+
+### Record and advance
+
+The window `[left, right]` is valid, so update the best length with `right - left + 1`, then
+move `right` forward and repeat to the end.
+
+</Step>
+
+</Steps>
+
+Watch the two edges chase across `abcabcbb`:
+
+```text
+       a  b  c  a  b  c  b  b
+      [a] b  c ...                 window "a"     len 1
+      [a  b] c ...                 window "ab"    len 2
+      [a  b  c] a ...              window "abc"   len 3  ← best
+       a [b  c  a] b ...           'a' repeats → drop left → "bca"  len 3
+       a  b [c  a  b] c ...        'b' repeats → drop left → "cab"  len 3
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def longest_unique(s):
+    seen = set()
+    left = best = 0
+    for right, ch in enumerate(s):
+        while ch in seen:               # shrink until ch is free to add
+            seen.remove(s[left])
+            left += 1
+        seen.add(ch)
+        best = max(best, right - left + 1)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function longestUnique(s: string): number {
+  const seen = new Set<string>();
+  let left = 0, best = 0;
+  for (let right = 0; right < s.length; right++) {
+    const ch = s[right];
+    while (seen.has(ch)) {              // shrink until ch is free
+      seen.delete(s[left]);
+      left++;
+    }
+    seen.add(ch);
+    best = Math.max(best, right - left + 1);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int longestUnique(String s) {
+    Set<Character> seen = new HashSet<>();
+    int left = 0, best = 0;
+    for (int right = 0; right < s.length(); right++) {
+        char ch = s.charAt(right);
+        while (seen.contains(ch)) {     // shrink until ch is free
+            seen.remove(s.charAt(left));
+            left++;
+        }
+        seen.add(ch);
+        best = Math.max(best, right - left + 1);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int longestUnique(const char *s) {
+    int inWindow[256] = {0};
+    int left = 0, best = 0, n = strlen(s);
+    for (int right = 0; right < n; right++) {
+        unsigned char ch = s[right];
+        while (inWindow[ch]) {          /* shrink until ch is free */
+            inWindow[(unsigned char)s[left]] = 0;
+            left++;
+        }
+        inWindow[ch] = 1;
+        int len = right - left + 1;
+        if (len > best) best = len;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int longestUnique(const string& s) {
+    unordered_set<char> seen;
+    int left = 0, best = 0;
+    for (int right = 0; right < (int)s.size(); right++) {
+        char ch = s[right];
+        while (seen.count(ch)) {        // shrink until ch is free
+            seen.erase(s[left]);
+            left++;
+        }
+        seen.insert(ch);
+        best = max(best, right - left + 1);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                                            |
+| ------ | ------ | -------------------------------------------------------------- |
+| Time   | `O(n)` | `right` and `left` each advance at most `n` times, `2n` total |
+| Space  | `O(k)` | the window record holds at most `k` distinct elements         |
+
+Here `k` is the alphabet size — for lowercase ASCII, `O(k)` is effectively `O(1)`.
+
+## When to use it
+
+<Callout type="info" title="Variable window = 'longest/shortest run satisfying a condition'">
+Reach for a variable window when the question is *how long* (or *how short*) a contiguous run
+can be while some property holds: no repeats, sum ≤ target, at most `k` distinct values. The
+condition must be **monotonic** — once the window is invalid, growing it further keeps it
+invalid until you shrink — otherwise "only move `left` forward" breaks down.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is this O(n) when there's a while-loop nested inside the for-loop?">
+
+Nested loops *look* quadratic, but `left` only ever increases and never exceeds `right`.
+Across the entire run the inner `while` can advance `left` a grand total of `n` times, no
+matter how the iterations are distributed. So the combined work is `right`'s `n` steps plus
+`left`'s `n` steps — `O(n)`, not `O(n²)`. This amortized argument is the heart of the
+technique.
+
+</Accordion>
+
+<Accordion title="How would you adapt this to 'longest subarray with sum at most target'?">
+
+Same skeleton, different condition. Keep a running `sum`; when adding `arr[right]` pushes
+`sum > target`, shrink from the left (subtract `arr[left]`, advance `left`) until it fits
+again, then record `right - left + 1`. Works cleanly for non-negative numbers, where growing
+the window only ever increases the sum — that's the monotonicity the shrink relies on.
+
+</Accordion>
+
+<Accordion title="Instead of a set, could you store each character's last index to shrink faster?">
+
+Yes. Map each character to its most recent index; on a duplicate, jump `left` directly to
+`lastIndex + 1` instead of stepping one at a time. It's still `O(n)` but skips the inner loop
+entirely. That last-seen-index variant leans on a hash map, which is exactly the topic of the
+[next lesson](/docs/dsa/09-sliding-window/04-window-with-hashing).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A variable-size window uses two forward-only edges: grow `right` greedily, shrink `left`
+  only enough to restore validity.
+- Because neither pointer rewinds, each element enters and leaves once — an `O(n)` scan even
+  though a `while` sits inside the `for`.
+- It fits "longest/shortest contiguous run satisfying a monotonic condition"; the running
+  record of the window's contents is what you check validity against.
+
+<Cards>
+  <Card title="Fixed-Size Windows" href="/docs/dsa/09-sliding-window/02-fixed-window" description="When the window width is known and constant." />
+  <Card title="Windows + Hashing" href="/docs/dsa/09-sliding-window/04-window-with-hashing" description="Track counts and last-seen indices as the window moves." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/02-opposite-ends" description="The broader family of coordinated-index scans." />
+</Cards>

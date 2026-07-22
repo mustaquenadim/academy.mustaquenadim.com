@@ -1,0 +1,304 @@
+---
+title: "Stacks"
+description: "The undo button, the back button, matching brackets — they all share one rule: last in, first out."
+extractedReferences:
+  - href: /docs/dsa/13-stack/02-expression-evaluation
+  - href: /docs/dsa/13-stack/04-monotonic-stack
+  - href: /docs/dsa/12-linked-list/01-linked-list-intro
+---
+
+## The problem
+
+You are typing an essay. You paste a paragraph, fix a typo, bold a word, then change your mind. You hit undo. The bold goes away. Undo again — the typo comes back. Undo again — the paragraph vanishes. Each press peels off the *most recent* change, in reverse order, like removing plates from the top of a stack.
+
+Now look at your editor's brackets: `([{ }])`. Every opener needs a matching closer, and they have to close in the *opposite* order they opened. The last bracket you opened is the first one you must close. That "last thing first" rhythm shows up everywhere — the browser back button, function calls, the redo history. They all want the same tool.
+
+## A first attempt
+
+Suppose you track undo history in a plain list and always remove from the front. To undo, you take element `0`; to record a new action, you also want the newest at index `0`.
+
+Removing from the front of an array means every other element shifts down one slot. For a history of `n` actions, one undo costs O(n). Do a hundred undos on a long history and you are doing tens of thousands of shifts for nothing.
+
+```python
+history = []
+history.insert(0, "type")      # O(n): shift everything right
+history.insert(0, "bold")      # O(n) again
+last = history.pop(0)          # O(n): shift everything left
+```
+
+The work is real but wasted. We only ever touch *one end* — so why pay to reshuffle the other end?
+
+## The insight
+
+If every operation happens at the **same end**, you never shift anything. Add to the top, remove from the top. That is a **stack**: a **Last In, First Out (LIFO)** collection with two core moves — **push** (add to top) and **pop** (remove top) — both O(1).
+
+An ordinary dynamic array already appends and removes at its tail in O(1) amortized. So a stack is not a new data structure so much as a *discipline*: only ever touch the end.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick the top
+
+Keep a pointer (or just the array's length) marking the top of the stack. An empty stack has nothing on top.
+
+</Step>
+
+<Step>
+
+### Push adds on top
+
+To push, write the new value just past the current top and advance the top marker. Nothing else moves.
+
+```text
+push(A)   push(B)   push(C)
+ [A]       [A]       [A]
+           [B]       [B]
+                     [C]  <- top
+```
+
+</Step>
+
+<Step>
+
+### Pop removes the top
+
+To pop, read the top value and move the marker back one. The item below becomes the new top.
+
+```text
+pop() -> C     pop() -> B
+ [A]            [A]  <- top
+ [B]  <- top
+```
+
+</Step>
+
+<Step>
+
+### Peek and empty checks
+
+`peek` reads the top without removing it. Always check `isEmpty` before popping, or you will read past the bottom.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Stack:
+    def __init__(self):
+        self._items = []
+
+    def push(self, value):
+        self._items.append(value)          # O(1) amortized
+
+    def pop(self):
+        if self.is_empty():
+            raise IndexError("pop from empty stack")
+        return self._items.pop()           # O(1)
+
+    def peek(self):
+        if self.is_empty():
+            raise IndexError("peek from empty stack")
+        return self._items[-1]
+
+    def is_empty(self):
+        return len(self._items) == 0
+
+    def __len__(self):
+        return len(self._items)
+
+
+s = Stack()
+s.push(1)
+s.push(2)
+print(s.pop())    # 2
+print(s.peek())   # 1
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Stack<T> {
+  private items: T[] = [];
+
+  push(value: T): void {
+    this.items.push(value); // O(1)
+  }
+
+  pop(): T {
+    if (this.isEmpty()) throw new Error("pop from empty stack");
+    return this.items.pop() as T;
+  }
+
+  peek(): T {
+    if (this.isEmpty()) throw new Error("peek from empty stack");
+    return this.items[this.items.length - 1];
+  }
+
+  isEmpty(): boolean {
+    return this.items.length === 0;
+  }
+
+  get size(): number {
+    return this.items.length;
+  }
+}
+
+const s = new Stack<number>();
+s.push(1);
+s.push(2);
+console.log(s.pop());  // 2
+console.log(s.peek()); // 1
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+public class StackDemo {
+    // ArrayDeque is the recommended stack in Java (faster than java.util.Stack).
+    public static void main(String[] args) {
+        Deque<Integer> stack = new ArrayDeque<>();
+
+        stack.push(1);   // add to top
+        stack.push(2);
+
+        System.out.println(stack.pop());   // 2 (remove top)
+        System.out.println(stack.peek());  // 1 (read top)
+        System.out.println(stack.isEmpty()); // false
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+#define CAPACITY 100
+
+typedef struct {
+    int data[CAPACITY];
+    int top; // index of the top element; -1 when empty
+} Stack;
+
+void init(Stack *s) { s->top = -1; }
+int is_empty(Stack *s) { return s->top == -1; }
+
+void push(Stack *s, int value) {
+    if (s->top == CAPACITY - 1) { fprintf(stderr, "overflow\n"); return; }
+    s->data[++s->top] = value;
+}
+
+int pop(Stack *s) {
+    if (is_empty(s)) { fprintf(stderr, "underflow\n"); exit(1); }
+    return s->data[s->top--];
+}
+
+int peek(Stack *s) { return s->data[s->top]; }
+
+int main(void) {
+    Stack s;
+    init(&s);
+    push(&s, 1);
+    push(&s, 2);
+    printf("%d\n", pop(&s));   // 2
+    printf("%d\n", peek(&s));  // 1
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <stack>
+
+int main() {
+    std::stack<int> s; // LIFO container adapter
+
+    s.push(1);
+    s.push(2);
+
+    std::cout << s.top() << "\n"; // 2 (peek)
+    s.pop();                      // remove top; pop() returns void in C++
+    std::cout << s.top() << "\n"; // 1
+    std::cout << std::boolalpha << s.empty() << "\n"; // false
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --------- | ---- | ----- |
+| push      | O(1) amortized | O(1) |
+| pop       | O(1) | O(1) |
+| peek      | O(1) | O(1) |
+| isEmpty   | O(1) | O(1) |
+| Whole stack | — | O(n) |
+
+## When to use it
+
+<Callout type="idea" title="Reach for a stack when order reverses">
+Use a stack whenever the last thing added is the first thing you need back: undo/redo, browser history, bracket matching, backtracking, and the call stack itself. The pitfall is popping an empty stack — always guard with `isEmpty`. If instead you need *first in, first out*, you want a queue, not a stack.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Given a string of brackets like ([{}]), how do you check it is balanced?">
+
+Push every opening bracket. On a closing bracket, pop the top and check it matches the correct opener; if the stack is empty or the pair mismatches, the string is invalid. At the end the stack must be empty. This works because the most recent unclosed bracket is exactly the one a closer must match — LIFO order.
+
+</Accordion>
+
+<Accordion title="You have only push and pop. How do you find the bottom element without losing the stack?">
+
+Pop items into a temporary stack until the original is empty; the last one popped is the bottom. Then push everything back from the temporary stack to restore order. It costs O(n) time and O(n) extra space, since a stack only exposes its top.
+
+</Accordion>
+
+<Accordion title="Why is a dynamic array's push O(1) amortized rather than plain O(1)?">
+
+Most pushes just write to the next slot in O(1). Occasionally the array is full and must double its capacity, copying all n elements — an O(n) event. But doubling happens rarely enough that the copies average out to a constant per push, so the amortized cost is O(1).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A stack is a **LIFO** collection: push and pop both happen at one end in O(1).
+- It is a *discipline* over a dynamic array — only ever touch the top.
+- Reach for it whenever order must reverse: undo, matching, backtracking, recursion.
+
+<Cards>
+  <Card title="Evaluating Expressions" href="/docs/dsa/13-stack/02-expression-evaluation" description="Use a stack to compute 3 + 4 × 2 with correct precedence." />
+  <Card title="The Monotonic Stack" href="/docs/dsa/13-stack/04-monotonic-stack" description="A stack that grows one direction to answer next-greater questions." />
+  <Card title="Linked Lists" href="/docs/dsa/12-linked-list/01-linked-list-intro" description="Another way to build a stack — with nodes instead of an array." />
+</Cards>

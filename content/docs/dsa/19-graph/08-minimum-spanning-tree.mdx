@@ -1,0 +1,349 @@
+---
+title: "Minimum Spanning Trees"
+description: "Connect every town with cable using the least total wire — an MST is the cheapest way to link everything."
+extractedReferences:
+  - href: /docs/dsa/19-graph/09-union-find
+  - href: /docs/dsa/19-graph/06-shortest-paths
+  - href: /docs/dsa/18-heap/01-heap-intro
+---
+
+## The problem
+
+You're wiring fiber to a cluster of towns. You know the cost to lay cable between each pair
+of towns (some pairs are cheap, some cross a mountain). You must connect *every* town — any
+town can reach any other through the network — while spending the **least total** on cable.
+No town left out, no money wasted.
+
+The towns and possible cables form a weighted, undirected
+[graph](/docs/dsa/19-graph/01-graph-representations). You want a subset of edges that (1)
+keeps everything connected and (2) minimizes total weight. Connecting `n` towns needs exactly
+`n − 1` cables and must contain no redundant loop — that structure is a **tree**, and the
+cheapest such tree spanning every town is a **minimum spanning tree**.
+
+## A first attempt
+
+You might grab cheap cables greedily but carelessly, or worse, try every possible set of
+`n − 1` edges and keep the cheapest connected one. The number of spanning trees grows
+astronomically (`n^(n−2)` for a complete graph by Cayley's formula), so brute force is
+hopeless past a handful of towns.
+
+Even a naive greedy has a trap: pick the cheapest cable, then the next cheapest, and so on —
+but if a cable would form a **loop** among towns already connected, it's pure waste; it adds
+cost without connecting anything new. The whole difficulty is choosing cheap edges *while
+avoiding redundant cycles*.
+
+## The insight
+
+Two greedy strategies both provably build an MST.
+
+**Kruskal's — cheapest edge globally:** sort all edges by weight and add them one by one,
+*skipping any edge that would form a cycle*. To test "would this create a cycle?" instantly,
+use [Union-Find](/docs/dsa/19-graph/09-union-find): if the edge's endpoints already share a
+component, it's a loop — skip it; otherwise union them and keep it. Stop at `n − 1` edges.
+
+**Prim's — grow one tree outward:** start from any town and repeatedly add the **cheapest
+edge that connects the tree to a town not yet in it**, using a
+[min-heap](/docs/dsa/18-heap/01-heap-intro) to pick that edge fast. The tree grows like
+Dijkstra, but keyed by edge weight rather than path distance.
+
+<Callout type="idea" title="Why greedy is safe here — the cut property">
+For any way you split the towns into two groups, the **single cheapest edge crossing the
+split** is safe to include in some MST. Kruskal's and Prim's are just two schedules for
+repeatedly applying this cut property, which is why both reach a provably minimum tree.
+</Callout>
+
+## How it works
+
+Kruskal's algorithm:
+
+<Steps>
+
+<Step>
+
+### Sort edges by weight
+
+Order every candidate cable from cheapest to most expensive. This dominates the running time.
+
+</Step>
+
+<Step>
+
+### Initialize Union-Find
+
+Each town starts as its own component. Union-Find will track which towns are already linked.
+
+</Step>
+
+<Step>
+
+### Add edges that connect new components
+
+Walk the sorted edges. For each `(u, v, w)`: if `find(u) != find(v)`, the edge joins two
+separate components — add it to the MST and `union` them. If they're already connected, skip
+it (it would make a cycle).
+
+</Step>
+
+<Step>
+
+### Stop at n − 1 edges
+
+Once you've added `n − 1` edges, every town is connected and the tree is complete. The sum of
+their weights is the minimum.
+
+</Step>
+
+</Steps>
+
+Kruskal's on five towns; edges added in cost order, one skipped for making a loop:
+
+```text
+edges sorted:  A-B 1 | B-C 2 | A-C 3(skip: A,B,C linked) | C-D 4 | D-E 5
+
+    A --1-- B
+     \      |
+      3     2         MST edges: A-B, B-C, C-D, D-E   total = 1+2+4+5 = 12
+     (skip) |
+            C --4-- D --5-- E
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def kruskal(n, edges):
+    # edges = list of (w, u, v)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    total, used = 0, 0
+    for w, u, v in sorted(edges):
+        ru, rv = find(u), find(v)
+        if ru != rv:                 # no cycle -> take the edge
+            parent[ru] = rv
+            total += w
+            used += 1
+            if used == n - 1:
+                break
+    return total
+
+
+import heapq
+
+def prim(adj, n):
+    # adj[u] = list of (v, w)
+    visited = [False] * n
+    heap = [(0, 0)]                  # (weight, start vertex)
+    total = 0
+    while heap:
+        w, u = heapq.heappop(heap)
+        if visited[u]:
+            continue
+        visited[u] = True
+        total += w
+        for v, wt in adj[u]:
+            if not visited[v]:
+                heapq.heappush(heap, (wt, v))
+    return total
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function kruskal(n: number, edges: [number, number, number][]): number {
+  // edges = [w, u, v]
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  };
+
+  edges.sort((a, b) => a[0] - b[0]);
+  let total = 0, used = 0;
+  for (const [w, u, v] of edges) {
+    const ru = find(u), rv = find(v);
+    if (ru !== rv) {
+      parent[ru] = rv;
+      total += w;
+      if (++used === n - 1) break;
+    }
+  }
+  return total;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int kruskal(int n, int[][] edges) { // edges[i] = {w, u, v}
+    int[] parent = new int[n];
+    for (int i = 0; i < n; i++) parent[i] = i;
+    Arrays.sort(edges, (a, b) -> a[0] - b[0]);
+
+    int total = 0, used = 0;
+    for (int[] e : edges) {
+        int ru = find(parent, e[1]), rv = find(parent, e[2]);
+        if (ru != rv) {
+            parent[ru] = rv;
+            total += e[0];
+            if (++used == n - 1) break;
+        }
+    }
+    return total;
+}
+
+int find(int[] parent, int x) {
+    while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int parent[100000];
+int find(int x) {
+    while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+
+/* edges as parallel arrays, pre-sorted by weight w[] ascending */
+long kruskal(int n, int m, int w[], int u[], int v[]) {
+    for (int i = 0; i < n; i++) parent[i] = i;
+    long total = 0; int used = 0;
+    for (int i = 0; i < m && used < n - 1; i++) {
+        int ru = find(u[i]), rv = find(v[i]);
+        if (ru != rv) { parent[ru] = rv; total += w[i]; used++; }
+    }
+    return total;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+#include <numeric>
+using namespace std;
+
+int find(vector<int>& parent, int x) {
+    while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+}
+
+long long kruskal(int n, vector<array<int,3>>& edges) { // {w, u, v}
+    vector<int> parent(n);
+    iota(parent.begin(), parent.end(), 0);
+    sort(edges.begin(), edges.end());
+
+    long long total = 0; int used = 0;
+    for (auto& e : edges) {
+        int ru = find(parent, e[1]), rv = find(parent, e[2]);
+        if (ru != rv) {
+            parent[ru] = rv;
+            total += e[0];
+            if (++used == n - 1) break;
+        }
+    }
+    return total;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="MST is not shortest paths">
+An MST minimizes the *total* weight of the whole tree, not the distance between any two
+specific towns. The path between two nodes *in* the MST can be far longer than their true
+shortest path. If you want cheapest routes between points, that's
+[Dijkstra](/docs/dsa/19-graph/06-shortest-paths), a different problem.
+</Callout>
+
+## Complexity
+
+| Algorithm | Time              | Space    | Best when                          |
+| --------- | ----------------- | -------- | ---------------------------------- |
+| Kruskal   | `O(m log m)`      | `O(n)`   | sparse graphs; edges easy to sort  |
+| Prim (heap)| `O(m log n)`     | `O(n + m)`| dense graphs; adjacency list ready |
+
+Kruskal's cost is dominated by sorting the `m` edges; the Union-Find work is near-linear.
+Prim's cost comes from the heap operations. For most graphs the two are comparable.
+
+## When to use it
+
+<Callout type="info" title="Where MSTs show up">
+Reach for an MST to **connect everything at minimum cost**: network/cable/road layout,
+clustering (cut the `k − 1` most expensive MST edges to get `k` clusters), circuit design,
+and approximation algorithms for the traveling salesman. Pick **Kruskal's** when edges are
+few or already sortable, **Prim's** when the graph is dense and stored as an adjacency list.
+Both need an **undirected, connected, weighted** graph.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="In Kruskal's, why does skipping an edge whose endpoints are already connected guarantee no cycle — and why is that safe to skip?">
+
+If `find(u) == find(v)`, then `u` and `v` are already joined by earlier, *cheaper* edges. A
+new edge between them would create a second path between the same two nodes — a cycle — which
+a tree forbids. And it's safe to skip because every edge we already added was no more
+expensive, so this one can't improve connectivity; it only adds cost. Union-Find makes the
+check `O(α(n))`.
+
+</Accordion>
+
+<Accordion title="Prim's and Dijkstra's look almost identical. What is the one key difference?">
+
+Both grow a set via a min-heap, but they key on different quantities. Dijkstra's heap priority
+is the **total distance from the source** (`dist[u] + w`), because it minimizes path length.
+Prim's priority is just the **single edge weight** `w` connecting a new vertex to the tree,
+because it minimizes the tree's total edge cost, not any path. Same skeleton, different key.
+
+</Accordion>
+
+<Accordion title="Can a graph have more than one minimum spanning tree, and when?">
+
+Yes — whenever some edge weights are equal. If two edges of the same weight could each connect
+the same pair of components, choosing either yields a different tree with the same total cost.
+The MST *weight* is always unique, but the *set of edges* need not be. If all edge weights are
+distinct, the MST is unique.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- An MST is the **cheapest set of `n − 1` edges** that connects every vertex with no cycle.
+- **Kruskal's** sorts edges and adds the cheapest that doesn't form a cycle (Union-Find);
+  **Prim's** grows one tree via a min-heap. Both are greedy and provably optimal.
+- MST minimizes **total** weight — it is *not* the same as shortest paths between vertices.
+
+<Cards>
+  <Card title="Union-Find" href="/docs/dsa/19-graph/09-union-find" description="The cycle check that powers Kruskal's." />
+  <Card title="Shortest Paths" href="/docs/dsa/19-graph/06-shortest-paths" description="Prim's cousin — minimizing paths, not the tree." />
+  <Card title="Heaps" href="/docs/dsa/18-heap/01-heap-intro" description="The priority queue Prim's grows with." />
+</Cards>

@@ -1,0 +1,287 @@
+---
+title: "Bits Meet Arrays"
+description: "Find the one number that appears once among pairs, or the missing value — XOR makes these vanish into a single pass."
+extractedReferences:
+  - href: /docs/dsa/06-bit-manipulation/02-bit-tricks
+  - href: /docs/dsa/06-bit-manipulation/01-bitwise-basics
+---
+
+## The problem
+
+A warehouse scanner logs every item as it enters and leaves. In a perfect day each item's ID
+appears exactly twice — once in, once out. But one item got scanned in and never scanned out.
+Given the full log of scans, you need the ID that appears an odd number of times. The log has
+millions of entries and you would rather not build a giant tally.
+
+A cousin of this shows up constantly: you have the numbers `0..n` with exactly one missing,
+and you must find the gap. Both problems beg for a hash map or a sort. Both have a far leaner
+answer, and it is the same idea underneath.
+
+## A first attempt
+
+The obvious tool is a frequency map: count everything, then scan for the odd one out.
+
+```python
+from collections import Counter
+
+def find_single(nums):
+    counts = Counter(nums)
+    for num, c in counts.items():
+        if c == 1:
+            return num
+```
+
+This is O(n) time — fine — but it is also O(n) *space*, because the map grows with the input.
+Sorting instead is O(n log n) time and rearranges your data. For a stream of millions, an
+extra structure the size of the input is exactly what you were trying to avoid.
+
+## The insight
+
+Recall two XOR identities: `x ^ x = 0` and `x ^ 0 = x`, and that XOR is commutative and
+associative — order does not matter. So if you XOR *every* number in the array together, each
+value that appears twice cancels itself to `0`, and the lone value survives untouched.
+
+```
+nums = [4, 1, 2, 1, 2]
+4 ^ 1 ^ 2 ^ 1 ^ 2
+= 4 ^ (1 ^ 1) ^ (2 ^ 2)
+= 4 ^ 0 ^ 0
+= 4
+```
+
+No map, no sort, no extra memory — a single accumulator. **This XOR-cancellation trick is the
+whole point of pairing bits with arrays**: duplicates annihilate in pairs, leaving only what
+is unpaired. The same idea nails the missing-number problem: XOR all the indices `0..n`
+together with all the values, and every present number cancels, leaving the absent one.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Single number: fold the whole array with XOR
+
+Start an accumulator at `0`. XOR each element into it. Paired values cancel; the unique value
+is all that remains.
+
+</Step>
+
+<Step>
+
+### Missing number: XOR the indices and the values together
+
+For an array of length `n` holding a permutation of `0..n` with one gone, XOR the numbers
+`0, 1, ..., n` and also XOR every array element. Every number that is present appears once as
+an index and once as a value, so it cancels. Only the missing number is left.
+
+```
+n = 3, nums = [0, 1, 3]   (2 is missing)
+(0^1^2^3) ^ (0^1^3)
+= 2 ^ (0^0) ^ (1^1) ^ (3^3)
+= 2
+```
+
+</Step>
+
+<Step>
+
+### One pass, one variable
+
+Both variants read each element exactly once and hold a single integer. Nothing scales with
+the input except the loop itself.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def single_number(nums):
+    acc = 0
+    for x in nums:
+        acc ^= x
+    return acc
+
+def missing_number(nums):
+    acc = len(nums)          # start with n
+    for i, x in enumerate(nums):
+        acc ^= i ^ x
+    return acc
+
+print(single_number([4, 1, 2, 1, 2]))  # 4
+print(missing_number([0, 1, 3]))       # 2
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function singleNumber(nums: number[]): number {
+    let acc = 0;
+    for (const x of nums) acc ^= x;
+    return acc;
+}
+
+function missingNumber(nums: number[]): number {
+    let acc = nums.length;   // start with n
+    for (let i = 0; i < nums.length; i++) acc ^= i ^ nums[i];
+    return acc;
+}
+
+console.log(singleNumber([4, 1, 2, 1, 2]));  // 4
+console.log(missingNumber([0, 1, 3]));       // 2
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class ArrayBits {
+    static int singleNumber(int[] nums) {
+        int acc = 0;
+        for (int x : nums) acc ^= x;
+        return acc;
+    }
+
+    static int missingNumber(int[] nums) {
+        int acc = nums.length;   // start with n
+        for (int i = 0; i < nums.length; i++) acc ^= i ^ nums[i];
+        return acc;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(singleNumber(new int[]{4, 1, 2, 1, 2})); // 4
+        System.out.println(missingNumber(new int[]{0, 1, 3}));      // 2
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int single_number(const int *nums, int n) {
+    int acc = 0;
+    for (int i = 0; i < n; i++) acc ^= nums[i];
+    return acc;
+}
+
+int missing_number(const int *nums, int n) {
+    int acc = n;                 /* start with n */
+    for (int i = 0; i < n; i++) acc ^= i ^ nums[i];
+    return acc;
+}
+
+int main(void) {
+    int a[] = {4, 1, 2, 1, 2};
+    int b[] = {0, 1, 3};
+    printf("%d\n", single_number(a, 5));  /* 4 */
+    printf("%d\n", missing_number(b, 3)); /* 2 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+
+int singleNumber(const std::vector<int> &nums) {
+    int acc = 0;
+    for (int x : nums) acc ^= x;
+    return acc;
+}
+
+int missingNumber(const std::vector<int> &nums) {
+    int acc = nums.size();       // start with n
+    for (int i = 0; i < (int)nums.size(); i++) acc ^= i ^ nums[i];
+    return acc;
+}
+
+int main() {
+    std::cout << singleNumber({4, 1, 2, 1, 2}) << "\n"; // 4
+    std::cout << missingNumber({0, 1, 3}) << "\n";      // 2
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Hash-map tally | O(n) | O(n) |
+| Sort then scan | O(n log n) | O(1) or O(n) |
+| XOR fold | O(n) | O(1) |
+
+The XOR fold matches the best possible time while cutting extra space to a single integer.
+
+## When to use it
+
+<Callout type="idea" title="XOR cancels pairs — use it when everything else comes in twos">
+The XOR fold works precisely because the "noise" cancels: duplicates in pairs, or present
+numbers matched to their index. If elements can repeat an *even* number of times other than
+two, or the odd-one-out itself appears more than once, the guarantee breaks — you then need
+bit-counting per position or a hash map. For the classic "every element twice except one" and
+"one missing from 0..n," XOR is the textbook optimal answer.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does XOR-folding an array leave exactly the element that appears an odd number of times?">
+
+XOR is associative and commutative, so you can regroup the fold freely. Any value XOR-ed with
+itself an even number of times collapses to `0` (`x ^ x = 0`, and pairs of pairs still cancel).
+A value appearing an odd number of times leaves one copy of itself surviving, since the extra
+`x ^ 0 = x`. With all others canceled, that survivor is the answer.
+
+</Accordion>
+
+<Accordion title="Two numbers appear once and the rest appear twice. Can XOR still find both?">
+
+Yes, with a twist. XOR everything to get `a ^ b`. That result has at least one set bit where
+`a` and `b` differ; isolate the lowest set bit with `d = x & -x`. Partition the array by
+whether each number has that bit set and XOR each group separately — one group folds to `a`,
+the other to `b`.
+
+</Accordion>
+
+<Accordion title="How could you also find the missing number using a sum instead of XOR, and why might XOR be safer?">
+
+Sum `0..n` with the Gauss formula `n*(n+1)/2` and subtract the array sum; the difference is the
+missing value. It works, but the intermediate sum can overflow a fixed-width integer for large
+`n`. XOR never grows beyond the word width, so it cannot overflow.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- XOR cancels equal values in pairs, so folding an array leaves only the unpaired element.
+- The same trick finds a missing number by XOR-ing indices `0..n` against the values.
+- It runs in O(n) time and O(1) space with no overflow risk — better than a map or a sort.
+
+<Cards>
+  <Card title="Bit Tricks" href="/docs/dsa/06-bit-manipulation/02-bit-tricks" description="The XOR swap and other self-inverse sleight-of-hand." />
+  <Card title="Subsets with Bitmasks" href="/docs/dsa/06-bit-manipulation/04-subsets-with-bits" description="Let integers enumerate every subset for you." />
+</Cards>

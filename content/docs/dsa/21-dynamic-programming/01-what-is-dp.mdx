@@ -1,0 +1,264 @@
+---
+title: "What Is Dynamic Programming?"
+description: "Computing the 50th Fibonacci naively makes billions of repeated calls — DP is the art of never solving a subproblem twice."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/02-memoization-vs-tabulation
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/02-recursion-math/01-recursion
+---
+
+## The problem
+
+You write the textbook definition of Fibonacci: `fib(n) = fib(n-1) + fib(n-2)`. It reads
+beautifully. You ask for `fib(50)` and go make coffee. You come back, and it is *still
+running*. You bump it to `fib(60)` and now you could go on vacation.
+
+Something is deeply wrong. The formula is correct, the code matches the formula, yet a
+laptop that does billions of operations a second chokes on the 50th number in a sequence a
+child can extend by hand. Where is all that time going?
+
+## A first attempt
+
+Here is the naive recursion, exactly as the definition suggests.
+
+```python
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+```
+
+Draw the call tree for `fib(5)` and the problem jumps out:
+
+```
+                    fib(5)
+              /                \
+          fib(4)              fib(3)
+         /      \            /      \
+     fib(3)    fib(2)    fib(2)    fib(1)
+     /    \    /    \    /    \
+  fib(2) f(1) f(1) f(0) f(1) f(0)
+```
+
+`fib(3)` is computed twice. `fib(2)` three times. As `n` grows, the same subproblems get
+recomputed an exploding number of times. The tree has about `fib(n)` leaves, so the running
+time is **O(φⁿ)** — exponential, where φ ≈ 1.618. That is why `fib(50)` never finishes: it
+makes over a billion calls to compute only 50 distinct answers.
+
+## The insight
+
+Look again at that tree. There are only *n distinct subproblems* — `fib(0)` through
+`fib(n)`. Everything else is a repeat. So the fix is almost embarrassingly simple:
+
+> Solve each subproblem once, write the answer down, and reuse it forever after.
+
+That is the whole idea of **dynamic programming**. It applies whenever a problem has two
+properties:
+
+- **Overlapping subproblems** — the same smaller problems recur again and again.
+- **Optimal substructure** — the answer to the big problem is built from answers to smaller
+  ones.
+
+When both hold, you trade a little memory for an enormous amount of time.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Define the subproblem
+
+Give a name to "the answer for size `i`". For Fibonacci, `dp[i]` is the i-th Fibonacci
+number. Being able to state this in one sentence is half the battle.
+
+</Step>
+
+<Step>
+
+### Write the recurrence
+
+Express `dp[i]` in terms of smaller entries: `dp[i] = dp[i-1] + dp[i-2]`. This is just the
+original definition — DP does not change the math, only how many times you evaluate it.
+
+</Step>
+
+<Step>
+
+### Set the base cases
+
+The smallest inputs you already know: `dp[0] = 0` and `dp[1] = 1`. Every recurrence must
+bottom out somewhere.
+
+</Step>
+
+<Step>
+
+### Fill in order
+
+Compute `dp[2]`, then `dp[3]`, and so on up to `dp[n]`. Each entry needs only entries that
+already exist, so a single left-to-right pass finishes the job in `n` steps.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def fib(n):
+    if n < 2:
+        return n
+    dp = [0] * (n + 1)
+    dp[1] = 1
+    for i in range(2, n + 1):
+        dp[i] = dp[i - 1] + dp[i - 2]
+    return dp[n]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function fib(n: number): number {
+  if (n < 2) return n;
+  const dp = new Array<number>(n + 1).fill(0);
+  dp[1] = 1;
+  for (let i = 2; i <= n; i++) {
+    dp[i] = dp[i - 1] + dp[i - 2];
+  }
+  return dp[n];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    long fib(int n) {
+        if (n < 2) return n;
+        long[] dp = new long[n + 1];
+        dp[1] = 1;
+        for (int i = 2; i <= n; i++) {
+            dp[i] = dp[i - 1] + dp[i - 2];
+        }
+        return dp[n];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+long long fib(int n) {
+    if (n < 2) return n;
+    long long dp[n + 1];
+    dp[0] = 0;
+    dp[1] = 1;
+    for (int i = 2; i <= n; i++) {
+        dp[i] = dp[i - 1] + dp[i - 2];
+    }
+    return dp[n];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+long long fib(int n) {
+    if (n < 2) return n;
+    vector<long long> dp(n + 1, 0);
+    dp[1] = 1;
+    for (int i = 2; i <= n; i++) {
+        dp[i] = dp[i - 1] + dp[i - 2];
+    }
+    return dp[n];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | O(φⁿ) | O(n) stack |
+| DP table | O(n) | O(n) |
+| DP with two variables | O(n) | O(1) |
+
+You only ever read the last two entries, so you can throw the whole array away and keep two
+rolling variables — dropping space to O(1) without changing the answer.
+
+## When to use it
+
+<Callout type="idea" title="The DP smell test">
+Reach for DP when a recursive solution keeps re-solving the same subproblems and the answer
+is built from smaller answers. If subproblems never repeat, plain recursion or divide and
+conquer is already optimal — DP would just add overhead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How many distinct subproblems does fib(n) actually have, and why does that number set the DP running time?">
+
+Exactly `n + 1` distinct subproblems: `fib(0)` through `fib(n)`. DP solves each once and
+stores it, so the total work is the number of distinct subproblems times the cost to combine
+them — here `O(n) × O(1) = O(n)`. The naive version revisits those same subproblems
+exponentially many times.
+
+</Accordion>
+
+<Accordion title="Can you compute fib(n) using only two variables instead of an array?">
+
+Yes. Each new value depends only on the previous two, so you never need the older history:
+
+```python
+def fib(n):
+    a, b = 0, 1
+    for _ in range(n):
+        a, b = b, a + b
+    return a
+```
+
+This runs in O(n) time and O(1) space.
+
+</Accordion>
+
+<Accordion title="What two properties must a problem have for DP to apply?">
+
+**Overlapping subproblems** (the same smaller problems recur, so caching pays off) and
+**optimal substructure** (the optimal answer is composed from optimal answers to
+subproblems). Miss either and DP is the wrong tool.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- DP kills the exponential blowup of naive recursion by solving each subproblem **once** and
+  reusing the result.
+- It works when a problem has **overlapping subproblems** and **optimal substructure**.
+- The recipe is always the same: define the subproblem, write the recurrence, set base
+  cases, fill in order.
+
+<Cards>
+  <Card title="Memoization vs Tabulation" href="/docs/dsa/21-dynamic-programming/02-memoization-vs-tabulation" description="The two ways to cache subproblems: top-down and bottom-up." />
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="Your first family of real DP problems on a single array." />
+  <Card title="Recursion" href="/docs/dsa/02-recursion-math/01-recursion" description="The foundation DP is built on." />
+</Cards>

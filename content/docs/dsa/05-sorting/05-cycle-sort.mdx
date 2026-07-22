@@ -1,0 +1,273 @@
+---
+title: "Cycle Sort"
+description: "When your numbers are a shuffled 1..n, you can sort them with the minimum possible writes — and spot the missing one for free."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/04-quick-sort
+  - href: /docs/dsa/05-sorting/01-sorting-intro
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+---
+
+## The problem
+
+A common interview setup: you're handed an array holding the numbers `1` to `n` (or `0` to
+`n-1`), shuffled. Sometimes one is missing and a duplicate takes its place, and you must find
+the culprit. You *could* reach for [quicksort](/docs/dsa/05-sorting/04-quick-sort) — but a
+general-purpose sort ignores a gift sitting in plain sight.
+
+The gift is this: you already know *exactly where every value belongs*. The number `1` goes
+at index `0`, the number `7` goes at index `6`. There's no comparing needed — the value **is**
+its own address. A sort that exploits this can run in linear time and, remarkably, with the
+fewest memory writes any sort can possibly make.
+
+## A first attempt
+
+Sort it normally in `O(n log n)`, then loop to find which index `i` doesn't hold `i+1`.
+Correct, but wasteful on two fronts: you're doing comparison-based work on data that needs no
+comparisons, and you're moving elements around far more than necessary.
+
+That "far more than necessary" part matters in the real world. If each write is expensive —
+think flash memory with limited write cycles, or auditing every mutation — you want to touch
+each slot as few times as you can. Comparison sorts don't optimize for that at all.
+
+## The insight
+
+Because value `v` belongs at index `v-1`, misplaced elements form **cycles**: `v` is sitting
+where `u` should go, `u` is sitting where `w` should go, and eventually the chain loops back.
+If you rotate each cycle once, putting every element home in a single motion, you write each
+element **at most once**. That's provably the minimum number of writes possible — you can't
+place a misplaced element without writing it at least once.
+
+So instead of comparing, you *follow the value to its home*, evict whatever lives there, and
+follow that evicted value onward, closing the loop. Sorting becomes navigation.
+
+<Callout type="idea" title="Why it's write-optimal">
+Cycle sort performs the theoretical minimum number of writes to memory. Every element that's
+already correct is never written; every misplaced element is written exactly once when it
+lands home. No other sort can beat that count.
+</Callout>
+
+## How it works
+
+For an array of `1..n` living at indices `0..n-1`, the home of value `v` is index `v - 1`.
+
+<Steps>
+
+<Step>
+
+### Walk to a starting slot
+
+Move an index `i` from left to right. Treat `nums[i]` as the item you're currently holding.
+
+</Step>
+
+<Step>
+
+### Find where it belongs
+
+Its correct index is `nums[i] - 1`. If it's already there, move on — no write needed.
+
+</Step>
+
+<Step>
+
+### Swap it home, and repeat
+
+Otherwise swap it to its correct index. Now you're holding whatever *used to* live there.
+Find *that* value's home and swap again. Keep going until the value you're holding belongs at
+`i`. You've just closed one cycle.
+
+</Step>
+
+<Step>
+
+### Detect anomalies (optional)
+
+If a slot already holds the value that wants to be there but you arrived with a *different*
+copy, you've found a **duplicate** — and the index that never gets its correct value is the
+**missing** number.
+
+</Step>
+
+</Steps>
+
+Sorting `[3, 1, 2]` (values `1..3`, home of `v` is index `v-1`):
+
+```text
+i=0: hold 3 → home is index 2, swap    [2  1  3]   now holding 2
+     hold 2 → home is index 1, swap    [1  2  3]   now holding 1
+     hold 1 → home is index 0 = i, stop. cycle closed.
+i=1: nums[1]=2 already home, skip
+i=2: nums[2]=3 already home, skip → sorted
+```
+
+## The code
+
+This variant sorts values `1..n` in place. (For `0..n-1`, the home index is simply
+`nums[i]`.)
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def cycle_sort(nums):
+    i = 0
+    while i < len(nums):
+        home = nums[i] - 1              # where nums[i] belongs
+        if nums[i] != nums[home]:       # not yet in place
+            nums[i], nums[home] = nums[home], nums[i]
+        else:
+            i += 1                      # this slot is settled
+    return nums
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function cycleSort(nums: number[]): number[] {
+  let i = 0;
+  while (i < nums.length) {
+    const home = nums[i] - 1; // where nums[i] belongs
+    if (nums[i] !== nums[home]) {
+      [nums[i], nums[home]] = [nums[home], nums[i]];
+    } else {
+      i++; // this slot is settled
+    }
+  }
+  return nums;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void cycleSort(int[] nums) {
+    int i = 0;
+    while (i < nums.length) {
+        int home = nums[i] - 1;          // where nums[i] belongs
+        if (nums[i] != nums[home]) {
+            int t = nums[i]; nums[i] = nums[home]; nums[home] = t;
+        } else {
+            i++;                         // this slot is settled
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void cycle_sort(int *nums, int n) {
+    int i = 0;
+    while (i < n) {
+        int home = nums[i] - 1;          /* where nums[i] belongs */
+        if (nums[i] != nums[home]) {
+            int t = nums[i]; nums[i] = nums[home]; nums[home] = t;
+        } else {
+            i++;                         /* this slot is settled */
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <utility>
+using namespace std;
+
+void cycleSort(vector<int> &nums) {
+    int i = 0, n = (int)nums.size();
+    while (i < n) {
+        int home = nums[i] - 1;          // where nums[i] belongs
+        if (nums[i] != nums[home]) {
+            swap(nums[i], nums[home]);
+        } else {
+            i++;                         // this slot is settled
+        }
+    }
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                                        |
+| ------ | ------ | ---------------------------------------------------------- |
+| Time   | `O(n)` | each element reaches its home in a bounded number of swaps  |
+| Space  | `O(1)` | sorts in place, no extra array                             |
+| Writes | `O(n)` | the theoretical minimum — each element written at most once |
+
+This linear time is possible only because we sort by **known position**, not by comparison —
+sidestepping the `O(n log n)` comparison lower bound from the
+[intro lesson](/docs/dsa/05-sorting/01-sorting-intro).
+
+## When to use it
+
+<Callout type="warn" title="Only for values in a known dense range">
+Cycle sort is a specialist, not a general sort. It requires values to be a **known, bounded
+range mappable to indices** (like `1..n`). Given that, it's unbeatable for **finding
+missing/duplicate/misplaced numbers in place** — a whole family of interview problems ("find
+all duplicates", "first missing positive", "set mismatch"). Outside that setting, or with
+arbitrary values, use quicksort or merge sort. And beware: if a value can fall outside
+`1..n`, guard the index before using it as a home.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="After sorting 1..n with cycle sort, how do you report the first missing positive number?">
+
+Run cycle sort placing each value `v` (with `1 ≤ v ≤ n`) at index `v-1`, ignoring values out
+of range. Then scan left to right: the **first** index `i` where `nums[i] != i + 1` means
+`i + 1` is missing. If every slot matches, the answer is `n + 1`. This is the optimal
+`O(n)` time, `O(1)` space solution to the classic "first missing positive."
+
+</Accordion>
+
+<Accordion title="An array of size n holds values 1..n but one is duplicated and one is missing. How does cycle placement expose both?">
+
+Place each value at its home index. The duplicate is whatever value you're *holding* when its
+home slot already contains an identical copy — you can't place it. The missing value is the
+one whose slot never receives it: after placement, the index `i` where `nums[i] != i + 1`
+gives missing = `i + 1` and the current occupant is the duplicate.
+
+</Accordion>
+
+<Accordion title="Why can cycle sort beat the O(n log n) comparison lower bound?">
+
+That lower bound only applies to sorts that decide order by **comparing** elements. Cycle
+sort never compares to decide placement — it computes each value's destination directly from
+the value itself (`v → index v-1`). By using the values as addresses rather than comparing
+them, it belongs to the non-comparison family (like counting and radix sort) and runs in
+`O(n)`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Cycle sort exploits that value `v` has a known home index, forming cycles it rotates to
+  place every element in `O(n)` with the **minimum possible writes**.
+- It only works on values in a dense, index-mappable range like `1..n` — not general data.
+- It's the go-to for in-place "find the missing / duplicate / misplaced number" problems.
+
+<Cards>
+  <Card title="Quick Sort" href="/docs/dsa/05-sorting/04-quick-sort" description="The general-purpose in-place sort for arbitrary values." />
+  <Card title="Why Sorting Matters" href="/docs/dsa/05-sorting/01-sorting-intro" description="Where the O(n log n) comparison limit comes from." />
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="More index-as-information techniques on arrays." />
+</Cards>

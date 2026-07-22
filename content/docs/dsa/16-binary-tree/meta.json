@@ -1,0 +1,13 @@
+{
+  "title": "Binary Tree",
+  "icon": "Network",
+  "pages": [
+    "01-binary-tree-intro",
+    "02-traversals",
+    "03-iterative-traversals-and-morris",
+    "04-views-and-boundaries",
+    "05-tree-properties",
+    "06-construction",
+    "07-lca-and-paths"
+  ]
+}

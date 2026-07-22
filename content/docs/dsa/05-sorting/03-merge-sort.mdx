@@ -1,0 +1,308 @@
+---
+title: "Merge Sort"
+description: "Sorting a huge pile is hard, but merging two sorted piles is easy — so split until sorting is trivial, then merge back up."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/02-elementary-sorts
+  - href: /docs/dsa/05-sorting/04-quick-sort
+  - href: /docs/dsa/02-recursion-math/02-analysis-of-recursion
+---
+
+## The problem
+
+You and a friend each have a sorted stack of graded exams, and you need one combined sorted
+stack. This is *easy*: compare the top of each pile, take the smaller, repeat. You never
+flip back through the piles — one clean pass and they're merged. It feels almost free.
+
+Now compare that to sorting one giant unsorted stack of 500 exams alone. Suddenly it's slow
+and error-prone. So here's the tension: merging sorted things is trivial, but *producing*
+the sorted things in the first place is the hard part. What if you could turn the hard job
+into nothing but a pile of easy merges?
+
+## A first attempt
+
+The elementary sorts from the [last lesson](/docs/dsa/05-sorting/02-elementary-sorts) would
+grind through the 500-exam stack in `O(n²)` — 250,000 comparisons. Their problem is that
+they treat sorting as one monolithic task, redoing comparisons across the whole array again
+and again.
+
+But you already noticed merging is cheap. The missing piece is: *where do the two sorted
+piles come from?* If only you had a way to hand yourself sorted halves for free...
+
+## The insight
+
+Split the array in half. To sort each half — split *those* in half. Keep splitting until
+each piece has a single element, and a single element is *already sorted* by definition.
+Now you have a mountain of trivially-sorted pieces, and merging them back up pairwise
+reassembles the whole thing in order.
+
+That's the whole trick: **divide until the problem is trivial, then combine cheaply.** The
+splitting creates `log n` levels; each level's merges together touch all `n` elements once.
+`n` work across `log n` levels is `O(n log n)` — a massive win over `O(n²)`.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Divide
+
+Split the array into two halves at the midpoint. No comparing, no rearranging — just cut.
+
+</Step>
+
+<Step>
+
+### Recurse until trivial
+
+Recursively sort each half the same way. The recursion bottoms out at length-1 (or empty)
+slices, which are already sorted.
+
+</Step>
+
+<Step>
+
+### Merge two sorted halves
+
+Walk both halves with a pointer each. Repeatedly copy the smaller front element into the
+output, advancing that pointer. When one half empties, copy the rest of the other.
+
+</Step>
+
+<Step>
+
+### Bubble the sorted results upward
+
+Each merge produces a larger sorted run, which becomes an input to the merge one level up,
+until the entire array is a single sorted run.
+
+</Step>
+
+</Steps>
+
+Splitting on the way down, merging on the way up:
+
+```text
+            [ 5  2  4  1  3 ]
+             /            \
+        [ 5  2 ]        [ 4  1  3 ]         divide
+         /   \           /     \
+      [5]   [2]       [4]    [1  3]
+                              /   \
+                            [1]   [3]
+         \   /           \     /
+        [2  5]          [1  3  4]           merge sorted runs
+             \            /
+            [ 1  2  3  4  5 ]
+```
+
+## The code
+
+`merge` combines two sorted lists; `merge_sort` divides and calls it on the way back up.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def merge_sort(nums):
+    if len(nums) <= 1:
+        return nums
+    mid = len(nums) // 2
+    left = merge_sort(nums[:mid])
+    right = merge_sort(nums[mid:])
+    return merge(left, right)
+
+def merge(left, right):
+    result = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:   # <= keeps it stable
+            result.append(left[i]); i += 1
+        else:
+            result.append(right[j]); j += 1
+    result.extend(left[i:])
+    result.extend(right[j:])
+    return result
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function mergeSort(nums: number[]): number[] {
+  if (nums.length <= 1) return nums;
+  const mid = Math.floor(nums.length / 2);
+  const left = mergeSort(nums.slice(0, mid));
+  const right = mergeSort(nums.slice(mid));
+  return merge(left, right);
+}
+
+function merge(left: number[], right: number[]): number[] {
+  const result: number[] = [];
+  let i = 0, j = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] <= right[j]) result.push(left[i++]); // <= keeps it stable
+    else result.push(right[j++]);
+  }
+  while (i < left.length) result.push(left[i++]);
+  while (j < right.length) result.push(right[j++]);
+  return result;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int[] mergeSort(int[] nums) {
+    if (nums.length <= 1) return nums;
+    int mid = nums.length / 2;
+    int[] left = mergeSort(java.util.Arrays.copyOfRange(nums, 0, mid));
+    int[] right = mergeSort(java.util.Arrays.copyOfRange(nums, mid, nums.length));
+    return merge(left, right);
+}
+
+int[] merge(int[] left, int[] right) {
+    int[] result = new int[left.length + right.length];
+    int i = 0, j = 0, k = 0;
+    while (i < left.length && j < right.length) {
+        if (left[i] <= right[j]) result[k++] = left[i++]; // stable
+        else result[k++] = right[j++];
+    }
+    while (i < left.length) result[k++] = left[i++];
+    while (j < right.length) result[k++] = right[j++];
+    return result;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+
+void merge(int *a, int lo, int mid, int hi, int *tmp) {
+    int i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (a[i] <= a[j]) tmp[k++] = a[i++];  /* stable */
+        else              tmp[k++] = a[j++];
+    }
+    while (i < mid) tmp[k++] = a[i++];
+    while (j < hi)  tmp[k++] = a[j++];
+    memcpy(a + lo, tmp + lo, (hi - lo) * sizeof(int));
+}
+
+/* sorts a[lo, hi) using scratch buffer tmp of the same length */
+void merge_sort(int *a, int lo, int hi, int *tmp) {
+    if (hi - lo <= 1) return;
+    int mid = lo + (hi - lo) / 2;
+    merge_sort(a, lo, mid, tmp);
+    merge_sort(a, mid, hi, tmp);
+    merge(a, lo, mid, hi, tmp);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+void merge(vector<int> &a, int lo, int mid, int hi, vector<int> &tmp) {
+    int i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (a[i] <= a[j]) tmp[k++] = a[i++]; // stable
+        else              tmp[k++] = a[j++];
+    }
+    while (i < mid) tmp[k++] = a[i++];
+    while (j < hi)  tmp[k++] = a[j++];
+    for (int t = lo; t < hi; t++) a[t] = tmp[t];
+}
+
+void mergeSort(vector<int> &a, int lo, int hi, vector<int> &tmp) {
+    if (hi - lo <= 1) return;
+    int mid = lo + (hi - lo) / 2;
+    mergeSort(a, lo, mid, tmp);
+    mergeSort(a, mid, hi, tmp);
+    merge(a, lo, mid, hi, tmp);
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost         | Why                                                  |
+| ------ | ------------ | ---------------------------------------------------- |
+| Time   | `O(n log n)` | `log n` levels of splitting, `O(n)` merging per level |
+| Space  | `O(n)`       | needs a scratch buffer to merge into                  |
+
+The time is `O(n log n)` in the **best, average, and worst case** alike — merge sort never
+degrades, unlike quicksort. Its cost is that `O(n)` extra memory. See
+[analysis of recursion](/docs/dsa/02-recursion-math/02-analysis-of-recursion) for where the
+`log n` levels come from.
+
+## When to use it
+
+<Callout type="idea" title="When guarantees and stability matter">
+Merge sort is the safe choice when you need a **guaranteed** `O(n log n)` (no bad-input
+surprises) and **stability** (equal elements keep their order). It also shines on data too
+big for memory (external sort) and on **linked lists**, where merging needs no extra array —
+just pointer rewiring. The catch is the `O(n)` auxiliary space, which is why in-memory
+array sorting often prefers quicksort's `O(1)` extra space instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the merge step use `<=` instead of `<` when comparing the two halves?">
+
+To preserve **stability**. When the fronts of the two halves are equal, taking from the
+*left* half first means the element that appeared earlier in the original array is emitted
+first. Switching to `<` would take the right one first and swap equal elements' relative
+order — breaking stability for no benefit.
+
+</Accordion>
+
+<Accordion title="Merge sort is O(n log n) even in the worst case. So why isn't it always preferred over quicksort?">
+
+Because of the constant factors and the `O(n)` extra memory. Quicksort sorts *in place* with
+better cache behaviour and smaller constants, so on typical in-memory arrays it's usually
+faster in wall-clock time despite its `O(n²)` worst case. Merge sort wins when you need the
+worst-case guarantee, stability, or you're sorting linked lists or on-disk data.
+
+</Accordion>
+
+<Accordion title="How would you use merge sort's merge step to count how many pairs (i, j) with i < j have nums[i] > nums[j]?">
+
+That count is the number of **inversions**. During the merge, whenever you take an element
+from the *right* half while `left[i]` elements still remain, every one of those remaining
+left elements forms an inversion with it — so add `len(left) - i` to a running total. Merge
+sort counts all inversions in `O(n log n)`, a classic interview twist.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Merge sort divides the array to trivially-sorted single elements, then merges sorted runs
+  back up — divide and conquer in its purest form.
+- It's `O(n log n)` in every case and **stable**, at the cost of `O(n)` extra space.
+- Use it when you need guarantees, stability, linked-list sorting, or external sorts too big
+  for memory.
+
+<Cards>
+  <Card title="The Simple (Slow) Sorts" href="/docs/dsa/05-sorting/02-elementary-sorts" description="The O(n²) sorts merge sort leaves behind." />
+  <Card title="Quick Sort" href="/docs/dsa/05-sorting/04-quick-sort" description="The other O(n log n) divide-and-conquer sort — in place." />
+  <Card title="Analysis of Recursion" href="/docs/dsa/02-recursion-math/02-analysis-of-recursion" description="Where the log n levels of recursion come from." />
+</Cards>

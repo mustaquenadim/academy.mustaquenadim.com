@@ -1,0 +1,288 @@
+---
+title: "The Prefix Sum"
+description: "You keep being asked for the sum of a range, over and over — precompute once and every query becomes a subtraction."
+extractedReferences:
+  - href: /docs/dsa/10-prefix-sum/02-range-queries
+  - href: /docs/dsa/10-prefix-sum/04-prefix-with-hashing
+---
+
+## The problem
+
+You are building a sales dashboard. Every product has a row of daily revenue, and your users
+love to ask questions like "how much did we make from day 40 to day 90?" — then immediately,
+"okay, now day 91 to day 200?" The numbers never change, but the questions never stop.
+
+Each question is a sum over a slice of the same array. One user clicks around and fires off a
+few hundred of these in a session. The array has a hundred thousand days of history. Something
+that felt instant on your laptop starts to crawl in production.
+
+## A first attempt
+
+The obvious thing works: to sum the range from `l` to `r`, loop over those elements and add
+them up.
+
+```python
+def range_sum(nums, l, r):
+    total = 0
+    for i in range(l, r + 1):
+        total += nums[i]
+    return total
+```
+
+This is correct, and for one query it is fine. But each query touches up to `n` elements, so
+`q` queries cost **O(n·q)**. With `n = 100,000` and `q = 1,000` that is a hundred million
+additions — for questions about numbers that never changed. You are re-adding the same values
+again and again.
+
+## The insight
+
+Here is the trick. Suppose you knew the sum of *every* prefix ahead of time — the sum from the
+start up to each index. Call that array `prefix`, where `prefix[i]` is the sum of the first `i`
+elements.
+
+Then the sum of any range `[l, r]` is just the big prefix minus the small one:
+
+```
+sum(l..r) = prefix[r + 1] - prefix[l]
+```
+
+Everything before `l` cancels out. You did all the adding **once**, up front. After that, every
+question is a single subtraction — **O(1)** — no matter how wide the range.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build a prefix array with a leading zero
+
+Make `prefix` one element longer than `nums`, and set `prefix[0] = 0`. That leading zero is
+what lets the formula work cleanly even when the range starts at index 0.
+
+</Step>
+
+<Step>
+
+### Fill it with a running total
+
+Walk left to right. Each cell is the previous cell plus the current element:
+`prefix[i + 1] = prefix[i] + nums[i]`. One pass, O(n).
+
+```
+nums    =    3    1    4    1    5
+prefix  = 0  3    4    8    9   14
+index     0  1    2    3    4    5
+```
+
+</Step>
+
+<Step>
+
+### Answer any range as a subtraction
+
+For range `[l, r]`, return `prefix[r + 1] - prefix[l]`. For `[1, 3]` above that is
+`prefix[4] - prefix[1] = 9 - 3 = 6`, which is `1 + 4 + 1`. Correct, in one step.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def build_prefix(nums):
+    prefix = [0] * (len(nums) + 1)
+    for i in range(len(nums)):
+        prefix[i + 1] = prefix[i] + nums[i]
+    return prefix
+
+def range_sum(prefix, l, r):
+    # inclusive sum of nums[l..r]
+    return prefix[r + 1] - prefix[l]
+
+nums = [3, 1, 4, 1, 5]
+prefix = build_prefix(nums)
+print(range_sum(prefix, 1, 3))  # 6
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function buildPrefix(nums: number[]): number[] {
+  const prefix = new Array<number>(nums.length + 1).fill(0);
+  for (let i = 0; i < nums.length; i++) {
+    prefix[i + 1] = prefix[i] + nums[i];
+  }
+  return prefix;
+}
+
+function rangeSum(prefix: number[], l: number, r: number): number {
+  // inclusive sum of nums[l..r]
+  return prefix[r + 1] - prefix[l];
+}
+
+const nums = [3, 1, 4, 1, 5];
+const prefix = buildPrefix(nums);
+console.log(rangeSum(prefix, 1, 3)); // 6
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+public class PrefixSum {
+    static int[] buildPrefix(int[] nums) {
+        int[] prefix = new int[nums.length + 1];
+        for (int i = 0; i < nums.length; i++) {
+            prefix[i + 1] = prefix[i] + nums[i];
+        }
+        return prefix;
+    }
+
+    static int rangeSum(int[] prefix, int l, int r) {
+        // inclusive sum of nums[l..r]
+        return prefix[r + 1] - prefix[l];
+    }
+
+    public static void main(String[] args) {
+        int[] nums = {3, 1, 4, 1, 5};
+        int[] prefix = buildPrefix(nums);
+        System.out.println(rangeSum(prefix, 1, 3)); // 6
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+int *build_prefix(const int *nums, int n) {
+    int *prefix = calloc(n + 1, sizeof(int));
+    for (int i = 0; i < n; i++) {
+        prefix[i + 1] = prefix[i] + nums[i];
+    }
+    return prefix;
+}
+
+int range_sum(const int *prefix, int l, int r) {
+    /* inclusive sum of nums[l..r] */
+    return prefix[r + 1] - prefix[l];
+}
+
+int main(void) {
+    int nums[] = {3, 1, 4, 1, 5};
+    int *prefix = build_prefix(nums, 5);
+    printf("%d\n", range_sum(prefix, 1, 3)); /* 6 */
+    free(prefix);
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <vector>
+using namespace std;
+
+vector<int> buildPrefix(const vector<int>& nums) {
+    vector<int> prefix(nums.size() + 1, 0);
+    for (size_t i = 0; i < nums.size(); i++) {
+        prefix[i + 1] = prefix[i] + nums[i];
+    }
+    return prefix;
+}
+
+int rangeSum(const vector<int>& prefix, int l, int r) {
+    // inclusive sum of nums[l..r]
+    return prefix[r + 1] - prefix[l];
+}
+
+int main() {
+    vector<int> nums = {3, 1, 4, 1, 5};
+    vector<int> prefix = buildPrefix(nums);
+    cout << rangeSum(prefix, 1, 3) << endl; // 6
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Build prefix array | O(n) | O(n) |
+| One range-sum query | O(1) | O(1) |
+| `q` queries total | O(n + q) | O(n) |
+
+The naive approach was O(n·q). Prefixing trades a one-time O(n) build for O(1) queries forever.
+
+## When to use it
+
+<Callout type="idea" title="Precompute when the data is static">
+Prefix sums shine when the array does not change between queries. If values are updated
+frequently, each update forces a rebuild in O(n) — at that point a Fenwick or segment tree,
+which supports O(log n) updates and queries, is the better tool.
+</Callout>
+
+Watch the integer sizes: a long array of large values can overflow 32-bit sums. Use 64-bit
+types (`long` / `int64`) when totals can get big. The same idea extends to products, XOR, and
+2D grids — anything with an inverse operation.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does prefix need a leading zero and length n + 1?">
+
+The leading zero represents "the sum of nothing." Without it, a range that starts at index 0
+would need a special case, because there is no `prefix[-1]` to subtract. With `prefix[0] = 0`,
+the formula `prefix[r + 1] - prefix[l]` works uniformly for every range, including `[0, r]`.
+
+</Accordion>
+
+<Accordion title="How would you answer 'is the sum of nums[l..r] even?' in O(1)?">
+
+Build the prefix array once, then for each query compute `prefix[r + 1] - prefix[l]` and check
+`% 2 == 0`. The subtraction is O(1), so each parity check is O(1) after the O(n) build.
+
+</Accordion>
+
+<Accordion title="You must also support single-element updates. Is a prefix array still ideal?">
+
+No. An update to `nums[i]` invalidates every `prefix[j]` for `j > i`, costing O(n) to repair.
+When updates and queries are interleaved, reach for a Fenwick (binary indexed) tree, which does
+both in O(log n).
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A prefix array stores running totals so any range sum becomes one subtraction.
+- Build is O(n) once; every query afterward is O(1).
+- Best for static data — for frequent updates, use a Fenwick or segment tree.
+
+<Cards>
+  <Card title="Range Queries" href="/docs/dsa/10-prefix-sum/02-range-queries" description="Equilibrium points and 2D region sums built on prefixes." />
+  <Card title="Prefix Sums + Hashing" href="/docs/dsa/10-prefix-sum/04-prefix-with-hashing" description="Counting subarrays with a target sum in one pass." />
+  <Card title="Fenwick Tree" href="/docs/dsa/25-range-query/04-fenwick-tree" description="Range sums that also support fast updates." />
+</Cards>

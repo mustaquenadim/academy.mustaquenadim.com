@@ -1,0 +1,289 @@
+---
+title: "Interval Problems"
+description: "Merging overlapping meetings or finding a free room is really a sorting problem in disguise."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/01-sorting-intro
+  - href: /docs/dsa/05-sorting/03-merge-sort
+  - href: /docs/dsa/20-greedy/02-activity-and-intervals
+---
+
+## The problem
+
+Your calendar app shows a wall of meeting blocks: `9:00–10:30`, `10:00–11:00`, `13:00–14:00`,
+`10:45–12:00`. You want one clean view — the stretches of the day where you're busy at all —
+so `9:00–10:30` and `10:00–11:00` should fuse into a single `9:00–11:00` block because they
+overlap. Do it by eye with four meetings; do it by hand with four hundred and you'll give up.
+
+Underneath, an "interval" is just a pair `[start, end]`, and the questions are always the
+same shape: *do these overlap? merge the ones that do; how many rooms do I need at once?*
+The blocks arrive in whatever order they were created — total chaos. And chaos is exactly the
+thing sorting fixes.
+
+## A first attempt
+
+To merge overlaps, the obvious move is to compare every interval against every other,
+fusing any pair that overlaps and repeating until nothing changes. But overlaps chain:
+`A` overlaps `B`, `B` overlaps `C`, yet `A` and `C` might not touch directly. So you loop
+again and again until stable — an `O(n²)` scan (or worse) with fiddly bookkeeping about what
+already merged with what.
+
+The mess comes from intervals being in random order. When a late-day meeting sits next to an
+early one in the list, you can never be sure you've seen everything relevant. There's no
+notion of "the next one to worry about."
+
+## The insight
+
+**Sort the intervals by start time.** Now scan once, left to right. Because starts only ever
+increase, any interval that overlaps the block you're currently building *must* start before
+that block ends — and you'll meet it immediately next. There's no reaching backward. Two
+cases at each step:
+
+- The next interval starts **before** the current block ends → they overlap, so extend the
+  block's end to the later of the two ends.
+- It starts **after** → there's a gap, so close the current block and start a fresh one.
+
+Sorting turns a tangled all-pairs problem into a single clean pass. It's the
+[intro lesson's](/docs/dsa/05-sorting/01-sorting-intro) "sort, then exploit adjacency" motif,
+applied to pairs.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Sort by start time
+
+Order all intervals by their `start`. This is the `O(n log n)` setup that makes everything
+after it linear.
+
+</Step>
+
+<Step>
+
+### Seed the first block
+
+Take the earliest interval as the current merged block you're building.
+
+</Step>
+
+<Step>
+
+### For each next interval, overlap or gap?
+
+If its `start` is `<=` the current block's `end`, they overlap — extend the block's `end` to
+`max(end, this.end)`. Otherwise there's a gap.
+
+</Step>
+
+<Step>
+
+### On a gap, commit and restart
+
+Push the finished block to the results and make this interval the new current block. After
+the last interval, commit whatever block you're holding.
+
+</Step>
+
+</Steps>
+
+Merging `[[1,3], [2,6], [8,10], [9,11]]` after sorting by start:
+
+```text
+sorted:  [1,3] [2,6] [8,10] [9,11]
+
+block=[1,3]
+ [2,6]:  2 <= 3  overlap → block=[1,6]
+ [8,10]: 8 >  6  gap     → commit [1,6], block=[8,10]
+ [9,11]: 9 <= 10 overlap → block=[8,11]
+end:                       commit [8,11]
+
+result:  [1,6] [8,11]
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def merge_intervals(intervals):
+    intervals.sort(key=lambda iv: iv[0])   # sort by start, O(n log n)
+    merged = []
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:   # overlap
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return merged
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function mergeIntervals(intervals: number[][]): number[][] {
+  intervals.sort((a, b) => a[0] - b[0]); // sort by start
+  const merged: number[][] = [];
+  for (const [start, end] of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && start <= last[1]) {
+      last[1] = Math.max(last[1], end); // overlap → extend
+    } else {
+      merged.push([start, end]);
+    }
+  }
+  return merged;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int[][] mergeIntervals(int[][] intervals) {
+    Arrays.sort(intervals, (a, b) -> Integer.compare(a[0], b[0]));
+    List<int[]> merged = new ArrayList<>();
+    for (int[] iv : intervals) {
+        int n = merged.size();
+        if (n > 0 && iv[0] <= merged.get(n - 1)[1]) {
+            merged.get(n - 1)[1] = Math.max(merged.get(n - 1)[1], iv[1]);
+        } else {
+            merged.add(new int[]{iv[0], iv[1]});
+        }
+    }
+    return merged.toArray(new int[0][]);
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+int cmp(const void *a, const void *b) {
+    int as = (*(int (*)[2])a)[0], bs = (*(int (*)[2])b)[0];
+    return (as > bs) - (as < bs);   /* by start */
+}
+
+/* intervals: n rows of {start, end}; writes merged rows, returns count */
+int merge_intervals(int intervals[][2], int n, int out[][2]) {
+    qsort(intervals, n, sizeof(intervals[0]), cmp);
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        if (k > 0 && intervals[i][0] <= out[k - 1][1]) {
+            if (intervals[i][1] > out[k - 1][1]) out[k - 1][1] = intervals[i][1];
+        } else {
+            out[k][0] = intervals[i][0];
+            out[k][1] = intervals[i][1];
+            k++;
+        }
+    }
+    return k;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+vector<vector<int>> mergeIntervals(vector<vector<int>> intervals) {
+    sort(intervals.begin(), intervals.end()); // by start (then end)
+    vector<vector<int>> merged;
+    for (auto &iv : intervals) {
+        if (!merged.empty() && iv[0] <= merged.back()[1]) {
+            merged.back()[1] = max(merged.back()[1], iv[1]); // overlap
+        } else {
+            merged.push_back(iv);
+        }
+    }
+    return merged;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost         | Why                                          |
+| ------ | ------------ | -------------------------------------------- |
+| Time   | `O(n log n)` | the sort dominates; the merge pass is `O(n)`  |
+| Space  | `O(n)`       | for the output list (`O(log n)` sort stack)   |
+
+Without sorting you're stuck at `O(n²)`. The sort is the entire reason this collapses to near
+linear — the pass itself never looks backward.
+
+## When to use it
+
+<Callout type="idea" title="Sort by start to merge, sort by end to schedule">
+"Sort first, then sweep" is the master key for almost every interval problem: **merge
+intervals**, **insert an interval**, **can a person attend all meetings** (any overlap?), and
+**minimum meeting rooms** (sweep starts and ends together, or use a min-heap of end times).
+A useful rule: sort by **start** when you're *merging or detecting overlap*; sort by **end**
+when you're *greedily keeping the most non-overlapping intervals* (activity selection). Pick
+the key that makes the greedy choice obvious.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Should the overlap test be `start <= end` or `start < end`? Does touching count as overlapping?">
+
+It depends on whether intervals are treated as **closed** (`[1,2]` and `[2,3]` touch at 2) or
+**half-open**. If touching should merge, use `start <= end` so `[1,2]` and `[2,3]` fuse into
+`[1,3]`. If endpoints are exclusive and touching is *not* a conflict, use `start < end`. Most
+"merge intervals" problems want `<=`; always confirm this boundary — it's the classic
+off-by-one here.
+
+</Accordion>
+
+<Accordion title="How do you find the minimum number of meeting rooms needed for a set of meetings?">
+
+Think of it as the peak number of simultaneously-active intervals. Separate all starts and
+ends, sort both. Sweep in time order: `+1` room on a start, `−1` on an end, tracking the
+running maximum. (When a start and end tie, process the end first so a room can be reused.)
+That maximum is the answer — `O(n log n)` from the sort. A min-heap of end times gives the
+same result.
+
+</Accordion>
+
+<Accordion title="Why sort by start time specifically, rather than by end time, for merging?">
+
+Sorting by start guarantees that when you're building a merged block, every interval that
+could overlap it appears *next* in the scan — nothing that overlaps can be hiding earlier in
+the list. That's what lets a single forward pass be correct with no backtracking. Sorting by
+end would make you look both directions to catch overlaps, defeating the one-pass structure.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Interval problems look like all-pairs comparisons but become a single linear sweep once you
+  **sort by start time** — the "sort, then exploit adjacency" pattern for pairs.
+- Merge when the next interval starts at or before the current block's end; otherwise commit a
+  block and start fresh. Watch the `<=` vs `<` boundary.
+- The same sort-then-sweep skeleton solves insert, overlap-detection, and room-scheduling
+  variants; choose start-key or end-key by the greedy goal.
+
+<Cards>
+  <Card title="Why Sorting Matters" href="/docs/dsa/05-sorting/01-sorting-intro" description="The sort-then-exploit-adjacency pattern this builds on." />
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="The O(n log n) engine behind the setup step." />
+  <Card title="Activity Selection & Intervals" href="/docs/dsa/20-greedy/02-activity-and-intervals" description="Greedy interval scheduling — sorting by end time." />
+</Cards>

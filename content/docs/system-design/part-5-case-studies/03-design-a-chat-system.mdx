@@ -1,0 +1,152 @@
+---
+title: "Design a Chat System"
+description: "Messages that arrive instantly, in order, even when a phone drops off the network — real-time chat is deceptively deep."
+extractedReferences:
+  - href: /docs/system-design/part-1-networking/03-http-and-apis
+  - href: /docs/system-design/part-3-architecture/04-pub-sub
+  - href: /docs/system-design/part-5-case-studies/02-design-a-news-feed
+---
+
+## The problem
+
+You type "on my way", hit send, and it lands on your friend's phone before your thumb leaves the screen. They're on a train, so their phone flickers between towers, drops off the network for ten seconds, and reconnects — and the message is still there, in order, exactly once. That reliability is the product.
+
+The naive version — the client polls the server every few seconds asking "any new messages?" — technically works and is technically terrible. It's slow (up to a full poll interval of delay), wasteful (millions of empty "nope" responses), and it can't feel instant. Real-time chat forces you to invert the flow: the server must *push* to the client.
+
+## Requirements
+
+**Functional**
+
+- One-to-one messaging, delivered in near real time.
+- Message ordering within a conversation.
+- Delivery status: sent, delivered, read.
+- Online/offline presence.
+- Group chat and offline delivery.
+
+**Non-functional**
+
+- Low latency (< 100 ms end to end when both are online).
+- Reliable: exactly-once delivery, no lost messages.
+- Highly available and horizontally scalable to hundreds of millions of connections.
+
+## A scale estimate
+
+- **500 M** daily users, **50 M** concurrently connected.
+- **40 B** messages/day → ~460 K messages/sec average, **~1 M/sec** peak.
+- Each connection is a long-lived socket → 50 M open sockets. At ~65 K ports per IP and memory per connection, you need thousands of gateway servers just to hold connections open.
+- Messages are small (~200 bytes) but numerous — storage grows ~8 TB/day.
+
+## The insight
+
+HTTP request/response is pull-shaped — the client asks, the server answers (see [HTTP and APIs](/docs/system-design/part-1-networking/03-http-and-apis)). Chat needs the opposite: a **persistent connection** the server can push down at any moment. That's a **WebSocket**. Once you accept that every online user holds an open socket to some server, the whole design reorganizes around one question: *when A sends to B, how does A's server find B's socket?*
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Hold a persistent connection
+
+Each client opens a WebSocket to a **chat gateway** server and keeps it open. The gateway tracks which users it holds sockets for. A heartbeat (ping every ~30 s) detects dead connections and drives presence.
+
+</Step>
+
+<Step>
+
+### Route a message to the right gateway
+
+When A sends a message, A's gateway needs to reach B's gateway. A **presence/session service** maps `user → gateway`. A's gateway looks up B, then hands the message to B's gateway — often via an internal [pub/sub](/docs/system-design/part-3-architecture/04-pub-sub) bus so gateways stay decoupled.
+
+</Step>
+
+<Step>
+
+### Persist before delivering
+
+Write the message to durable storage first, then push. If B is online, B's gateway sends it down the socket instantly. If B is offline, the stored message waits and is delivered when B reconnects.
+
+</Step>
+
+<Step>
+
+### Confirm delivery
+
+B's client sends an ack up its socket → the server marks the message *delivered* and notifies A. When B opens the chat, a *read* receipt flows the same way. These statuses are just more small messages riding the same pipes.
+
+</Step>
+
+</Steps>
+
+```
+  A ═socket═▶ Gateway-1 ──┐
+                          │ lookup B → Gateway-2
+                          ▼
+     presence: user→gateway     ┌─ persist (message store)
+                          │      │
+                          └─▶ pub/sub ─▶ Gateway-2 ═socket═▶ B
+                                          (or queue if B offline)
+```
+
+## Message ordering
+
+Within a single conversation, order must be stable. Don't trust client clocks. Assign each message a **monotonic sequence number per conversation** (from the conversation's storage partition or a sequencer). Clients render by sequence, not arrival time, so even out-of-order network delivery displays correctly. Across conversations, global order doesn't matter — which lets you shard by conversation.
+
+## Key decisions and trade-offs
+
+<Callout type="idea" title="WebSocket over polling or long-polling">
+Long-polling can fake push but wastes a connection per pending request and adds latency. A WebSocket is a single full-duplex connection that either side can write to at will — the natural fit. The cost: sockets are stateful, so your gateway layer is stateful, which complicates load balancing and deploys.
+</Callout>
+
+<Callout type="warn" title="Stateful gateways change how you scale">
+Because a user is pinned to a specific gateway holding their socket, you can't blindly round-robin. You need the presence service to route to the right box, sticky-ish load balancing on connect, and graceful connection draining on deploy so you don't drop 50 M sockets at once.
+</Callout>
+
+Store messages in a store optimized for the access pattern — "fetch recent messages in a conversation, ordered" — which is a wide-column store (Cassandra-style) partitioned by conversation ID, clustered by sequence number.
+
+## Bottlenecks and how to scale
+
+- **Connection capacity:** add gateway servers; each holds a slice of the 50 M sockets. Presence service is the routing brain and must be fast and replicated.
+- **Message fan-out in groups:** a 1,000-member group turns one send into 1,000 deliveries. This is the same **fan-out** problem as the [news feed](/docs/system-design/part-5-case-studies/02-design-a-news-feed) — deliver to online members via their gateways, queue for offline ones.
+- **Offline delivery:** an inbox/queue per user holds undelivered messages; on reconnect the client syncs everything after its last-seen sequence number.
+- **Exactly-once:** clients attach a client-generated message ID; the server dedupes on it, so a retry after a flaky network doesn't create a duplicate.
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why not just have clients poll every second? Quantify the cost.">
+
+At 50 M concurrent users polling once per second, that's 50 M requests/sec of mostly-empty responses — you'd pay full HTTP overhead (connection setup, headers) for "no new messages" the vast majority of the time. Latency is also bounded below by the poll interval, so nothing feels instant. A WebSocket replaces all of that with one idle connection per user that costs almost nothing until there's actually something to send, and delivers in milliseconds.
+
+</Accordion>
+
+<Accordion title="A user is offline for an hour, then reconnects. How do they get everything they missed, in order, exactly once?">
+
+Every message they should have received was persisted to their conversations (and/or an offline inbox) with a per-conversation sequence number. On reconnect, the client sends its last-seen sequence number per conversation; the server streams everything after it, in order. Because ordering is by stored sequence — not arrival time — a burst of catch-up messages still renders correctly. Client-supplied message IDs let the server skip anything the client somehow already has, preserving exactly-once.
+
+</Accordion>
+
+<Accordion title="How does presence (online/offline) work without hammering a database?">
+
+Presence rides the heartbeat you already have. While a socket is open and pinging, the user is online; the gateway holds that state in memory and publishes changes to a presence service. If the heartbeat stops (missed pings), the gateway marks them offline. You only write presence changes on transitions, not continuously, and subscribers (their contacts) get notified via pub/sub. It's cheap because it reuses the connection's own liveness signal.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Chat inverts HTTP's pull model: hold a **WebSocket** and let the server **push**.
+- A **presence/session service** routes `user → gateway`; messages are **persisted before delivery** and queued when the recipient is offline.
+- Order with a **per-conversation sequence number**, dedupe with **client message IDs**, and treat group delivery as a fan-out problem.
+
+<Cards>
+  <Card title="HTTP and APIs" href="/docs/system-design/part-1-networking/03-http-and-apis" description="The pull model that chat has to escape." />
+  <Card title="Pub/Sub" href="/docs/system-design/part-3-architecture/04-pub-sub" description="Decoupling gateways so any server can reach any user." />
+  <Card title="Design a News Feed" href="/docs/system-design/part-5-case-studies/02-design-a-news-feed" description="The fan-out pattern that group delivery reuses." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+Start by killing polling — explain why the server must push, then introduce WebSockets. The moment you say "each user holds a socket to a gateway," ask yourself aloud "so how does one user's server reach another's?" — deriving the presence/routing service in front of the interviewer is exactly the reasoning they're testing. Save ordering, offline delivery, and exactly-once for the deep-dive.
+</Callout>

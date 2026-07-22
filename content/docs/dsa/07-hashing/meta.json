@@ -1,0 +1,11 @@
+{
+  "title": "Hashing",
+  "icon": "Hash",
+  "pages": [
+    "01-hash-functions",
+    "02-hash-tables",
+    "03-collision-handling",
+    "04-sets-and-maps",
+    "05-frequency-patterns"
+  ]
+}

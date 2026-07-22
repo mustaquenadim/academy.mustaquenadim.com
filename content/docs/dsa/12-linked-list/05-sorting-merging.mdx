@@ -1,0 +1,364 @@
+---
+title: "Sorting & Merging Lists"
+description: "Merging k sorted lists or adding two numbers stored as digits — list problems that are really merge problems."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/04-fast-slow-pointer
+  - href: /docs/dsa/05-sorting/03-merge-sort
+  - href: /docs/dsa/18-heap/01-heap-intro
+---
+
+## The problem
+
+You run a log aggregator. Each server streams its events already sorted by timestamp, as a
+linked list. To show one unified timeline you must weave `k` of these sorted streams into a
+single sorted list — and there are millions of events, so you cannot afford to dump
+everything into one big array and re-sort from scratch.
+
+A neighboring task from the same codebase: two very large integers arrive as linked lists of
+digits, and you have to add them. Both problems look different on the surface, but both are
+really about walking sorted (or aligned) chains and stitching a new one as you go.
+
+## A first attempt
+
+The lazy merge of `k` lists: collect every value, sort, rebuild.
+
+```python
+vals = [v for lst in lists for v in iter_values(lst)]
+vals.sort()                      # O(N log N) over all N nodes
+# rebuild a list from vals ...
+```
+
+Correct, but it ignores the gift you were given — the inputs are *already sorted*. Re-sorting
+all `N` elements is **O(N log N)** and needs an array the size of every input. Merging should
+exploit the existing order and rewire the original nodes, no bulk copy.
+
+## The insight
+
+Merging two sorted lists is a zipper: compare the two front nodes, splice the smaller one
+onto your result, advance that list, repeat. No comparisons are wasted because each side is
+already ordered. That is **O(n + m)** and uses only pointer rewiring.
+
+Scale to `k` lists by always splicing the *global* smallest front node. A min-heap of the `k`
+heads gives that in `O(log k)` per node, for **O(N log k)** total. The addition problem is the
+same pattern with a twist: walk both digit lists together, summing with a carry, building the
+result node by node.
+
+```text
+1→4→5      merge      1→1→2→3→4→4→5→6
+1→3→4  ───────────▶   (splice smaller head each step)
+2→6
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Use a dummy head
+
+Start the result with a throwaway `dummy` node and a `tail` pointer at it. Splicing onto
+`tail.next` avoids special-casing the very first node — a classic list simplifier.
+
+</Step>
+
+<Step>
+
+### Zipper two sorted lists
+
+While both lists have nodes, attach the smaller head to `tail.next`, advance that list and
+`tail`. When one runs out, attach the entire remainder of the other — it is already sorted.
+
+</Step>
+
+<Step>
+
+### Scale to k with a heap
+
+Push all `k` heads into a min-heap keyed by value. Pop the smallest, splice it, and if it has
+a `next`, push that. Each of the `N` nodes enters and leaves the heap once: `O(N log k)`.
+
+</Step>
+
+<Step>
+
+### Add digit lists with a carry
+
+Walk both lists together. At each step sum the two digits plus the carry, create a result
+node with `sum % 10`, and carry `sum // 10`. Continue while either list has digits or a carry
+remains — one leftover carry can add a final node.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value, next=None):
+        self.value = value
+        self.next = next
+
+def merge_two(a, b):                 # O(n + m)
+    dummy = Node(0)
+    tail = dummy
+    while a and b:
+        if a.value <= b.value:
+            tail.next, a = a, a.next
+        else:
+            tail.next, b = b, b.next
+        tail = tail.next
+    tail.next = a if a else b
+    return dummy.next
+
+def add_numbers(a, b):               # digits in forward order, LSB first
+    dummy = Node(0)
+    tail, carry = dummy, 0
+    while a or b or carry:
+        s = carry + (a.value if a else 0) + (b.value if b else 0)
+        carry, digit = divmod(s, 10)
+        tail.next = Node(digit)
+        tail = tail.next
+        a = a.next if a else None
+        b = b.next if b else None
+    return dummy.next
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class ListNode {
+  value: number;
+  next: ListNode | null;
+  constructor(value: number, next: ListNode | null = null) {
+    this.value = value;
+    this.next = next;
+  }
+}
+
+function mergeTwo(a: ListNode | null, b: ListNode | null): ListNode | null {
+  const dummy = new ListNode(0);
+  let tail = dummy;
+  while (a && b) {
+    if (a.value <= b.value) { tail.next = a; a = a.next; }
+    else                    { tail.next = b; b = b.next; }
+    tail = tail.next;
+  }
+  tail.next = a ?? b;
+  return dummy.next;
+}
+
+function addNumbers(a: ListNode | null, b: ListNode | null): ListNode | null {
+  const dummy = new ListNode(0);
+  let tail = dummy, carry = 0;
+  while (a || b || carry) {
+    const s = carry + (a?.value ?? 0) + (b?.value ?? 0);
+    carry = Math.floor(s / 10);
+    tail.next = new ListNode(s % 10);
+    tail = tail.next;
+    a = a?.next ?? null;
+    b = b?.next ?? null;
+  }
+  return dummy.next;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int value;
+    Node next;
+    Node(int value) { this.value = value; }
+}
+
+Node mergeTwo(Node a, Node b) {      // O(n + m)
+    Node dummy = new Node(0), tail = dummy;
+    while (a != null && b != null) {
+        if (a.value <= b.value) { tail.next = a; a = a.next; }
+        else                    { tail.next = b; b = b.next; }
+        tail = tail.next;
+    }
+    tail.next = (a != null) ? a : b;
+    return dummy.next;
+}
+
+Node addNumbers(Node a, Node b) {    // LSB first
+    Node dummy = new Node(0), tail = dummy;
+    int carry = 0;
+    while (a != null || b != null || carry != 0) {
+        int s = carry + (a != null ? a.value : 0) + (b != null ? b.value : 0);
+        carry = s / 10;
+        tail.next = new Node(s % 10);
+        tail = tail.next;
+        if (a != null) a = a.next;
+        if (b != null) b = b.next;
+    }
+    return dummy.next;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next;
+} Node;
+
+static Node *new_node(int v) {
+    Node *n = malloc(sizeof(Node));
+    n->value = v; n->next = NULL;
+    return n;
+}
+
+Node *merge_two(Node *a, Node *b) {        /* O(n + m) */
+    Node dummy = {0, NULL};
+    Node *tail = &dummy;
+    while (a && b) {
+        if (a->value <= b->value) { tail->next = a; a = a->next; }
+        else                      { tail->next = b; b = b->next; }
+        tail = tail->next;
+    }
+    tail->next = a ? a : b;
+    return dummy.next;
+}
+
+Node *add_numbers(Node *a, Node *b) {      /* LSB first */
+    Node dummy = {0, NULL};
+    Node *tail = &dummy;
+    int carry = 0;
+    while (a || b || carry) {
+        int s = carry + (a ? a->value : 0) + (b ? b->value : 0);
+        carry = s / 10;
+        tail->next = new_node(s % 10);
+        tail = tail->next;
+        if (a) a = a->next;
+        if (b) b = b->next;
+    }
+    return dummy.next;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct Node {
+    int value;
+    Node *next;
+    Node(int v, Node *n = nullptr) : value(v), next(n) {}
+};
+
+Node *merge_two(Node *a, Node *b) {        // O(n + m)
+    Node dummy(0);
+    Node *tail = &dummy;
+    while (a && b) {
+        if (a->value <= b->value) { tail->next = a; a = a->next; }
+        else                      { tail->next = b; b = b->next; }
+        tail = tail->next;
+    }
+    tail->next = a ? a : b;
+    return dummy.next;
+}
+
+Node *add_numbers(Node *a, Node *b) {      // LSB first
+    Node dummy(0);
+    Node *tail = &dummy;
+    int carry = 0;
+    while (a || b || carry) {
+        int s = carry + (a ? a->value : 0) + (b ? b->value : 0);
+        carry = s / 10;
+        tail->next = new Node(s % 10);
+        tail = tail->next;
+        if (a) a = a->next;
+        if (b) b = b->next;
+    }
+    return dummy.next;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Task                       | Approach            | Time        | Space    |
+| -------------------------- | ------------------- | ----------- | -------- |
+| Merge two sorted lists     | Zipper splice       | O(n + m)    | O(1)     |
+| Merge k sorted lists       | Collect + sort      | O(N log N)  | O(N)     |
+| Merge k sorted lists       | Min-heap of heads   | O(N log k)  | O(k)     |
+| Sort a single list         | Merge sort in place | O(n log n)  | O(log n)\* |
+| Add two number lists       | Digit walk + carry  | O(n + m)    | O(1)\*\* |
+
+\*Stack depth from recursion. \*\*Excluding the output list.
+
+## When to use it
+
+<Callout type="idea" title="Merge sort is a list's natural sort">
+Linked lists cannot do array quicksort's random-access partitioning, but they are *perfect*
+for merge sort: split with the fast/slow middle finder, sort each half, and zipper them — no
+extra array, stable, O(n log n). For k streams, a heap of the current heads beats re-sorting
+whenever k is small relative to N. Always use a dummy head to dodge first-node edge cases.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is merge sort preferred over quicksort for linked lists?">
+
+Quicksort leans on O(1) random access to pick pivots and partition around them — exactly what
+a linked list lacks. Merge sort only ever needs sequential access: split the list in half with
+the fast/slow pointer, recursively sort, and merge with the zipper. It is stable and needs no
+auxiliary array (just recursion stack), making it the natural fit for lists.
+
+</Accordion>
+
+<Accordion title="For merging k lists, when would you pick the heap over divide-and-conquer pairwise merging?">
+
+Both are O(N log k). Pairwise divide-and-conquer merges lists in a tournament of log k rounds;
+the heap keeps a running min over the k heads. The heap wins when lists arrive as a stream or
+have wildly uneven lengths, and when you want steady O(log k) per node without recursion.
+Pairwise is simpler when all k lists are in hand at once.
+
+</Accordion>
+
+<Accordion title="In add-two-numbers, why does the loop condition include `carry`?">
+
+Because the final addition can produce a carry with no digits left — e.g. 5 + 5 = 10, where
+both lists are exhausted but you still owe a leading `1`. Looping while `a || b || carry`
+guarantees that trailing carry becomes its own result node instead of being dropped.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Merging sorted lists is a zipper: splice the smaller head, advance, repeat — O(n + m), O(1).
+- For k lists, a min-heap of the heads gives O(N log k) without ever bulk-copying to an array.
+- Adding digit lists is the same walk with a running carry; loop while any input or carry remains.
+
+<Cards>
+  <Card title="Fast & Slow Pointers" href="/docs/dsa/12-linked-list/04-fast-slow-pointer" description="Split a list at its middle to drive merge sort." />
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="The divide-and-conquer sort the list version mirrors." />
+  <Card title="Heaps" href="/docs/dsa/18-heap/01-heap-intro" description="The priority queue that merges k streams in O(N log k)." />
+</Cards>

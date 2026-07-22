@@ -1,0 +1,455 @@
+---
+title: "Segment Trees"
+description: "You need the sum (or min, or max) of any range in a constantly-changing array — a segment tree answers and updates in log time."
+extractedReferences:
+  - href: /docs/dsa/25-range-query/02-segment-tree-queries
+  - href: /docs/dsa/25-range-query/03-lazy-propagation
+  - href: /docs/dsa/25-range-query/04-fenwick-tree
+---
+
+## The problem
+
+You are building the leaderboard for a game. Scores sit in an array, one slot per
+player, and the dashboard keeps asking two questions all day long: "what's the total
+score of players 40 through 90?" and "player 57 just scored, bump their value." Both
+happen thousands of times a second.
+
+If you had to pick one thing to make fast, you couldn't — the reads and the writes are
+tangled together. Make lookups instant and every write pays for it. Make writes instant
+and every lookup crawls. You need both cheap at once.
+
+## A first attempt
+
+The obvious approach: keep the plain array. A range sum is just a loop.
+
+```python
+def range_sum(a, l, r):
+    return sum(a[l:r + 1])   # O(n)
+
+def update(a, i, value):
+    a[i] = value             # O(1)
+```
+
+Updates are perfect — O(1). But every range sum walks up to `n` elements, so a query is
+**O(n)**. With thousands of queries over a large array, the dashboard stalls.
+
+"Fine," you say, "I'll precompute prefix sums." Now `range_sum` is O(1)... but a single
+update forces you to rebuild every prefix after it — **O(n) per write**. You just moved
+the pain. One structure is fast to read, the other fast to write. You want one that is
+good at both.
+
+## The insight
+
+Stop treating the array as flat. **Cache the answer for chunks of it, arranged as a
+binary tree.**
+
+The root stores the sum of the whole array. Its two children store the sums of the left
+half and the right half. Their children split again, and so on until each leaf holds a
+single element. Any range you ask about can be assembled from a handful of these
+pre-summed chunks — never more than about `2 log n` of them. And when one element
+changes, only the chunks that *contain* it need fixing: exactly the path from that leaf
+to the root, again `log n` nodes.
+
+That is a **segment tree**: reads and writes both become O(log n).
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Lay the tree over the array
+
+Node `1` covers the whole range `[0, n-1]`. A node covering `[lo, hi]` splits at
+`mid = (lo + hi) / 2`: its left child (index `2*node`) covers `[lo, mid]`, its right child
+(`2*node+1`) covers `[mid+1, hi]`. Leaves cover a single index.
+
+```text
+             [0..7]=36
+          /            \
+    [0..3]=10        [4..7]=26
+     /     \          /      \
+ [0..1]   [2..3]   [4..5]   [6..7]
+   3        7        11       15
+  / \      / \      / \      / \
+ 1   2    3   4    5   6    7   8
+```
+
+</Step>
+
+<Step>
+
+### Build from the bottom up
+
+Recurse to the leaves, write each element, then on the way back up set every internal
+node to the sum of its two children. One pass, O(n).
+
+</Step>
+
+<Step>
+
+### Point update walks one path
+
+To change index `i`, recurse toward the leaf that owns it, overwrite the leaf, and
+re-sum each ancestor as you unwind. Only the nodes on that root-to-leaf path change — O(log n).
+
+</Step>
+
+<Step>
+
+### Range query stitches chunks together
+
+To sum `[l, r]`, visit from the root. If a node's range is fully inside `[l, r]`, return
+its stored sum whole. If it's fully outside, return the identity (`0`). Otherwise split
+and combine both halves. The query touches O(log n) nodes.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class SegmentTree:
+    def __init__(self, data):
+        self.n = len(data)
+        self.tree = [0] * (4 * self.n)
+        if self.n:
+            self._build(data, 1, 0, self.n - 1)
+
+    def _build(self, data, node, lo, hi):
+        if lo == hi:
+            self.tree[node] = data[lo]
+            return
+        mid = (lo + hi) // 2
+        self._build(data, 2 * node, lo, mid)
+        self._build(data, 2 * node + 1, mid + 1, hi)
+        self.tree[node] = self.tree[2 * node] + self.tree[2 * node + 1]
+
+    def update(self, i, value):
+        self._update(1, 0, self.n - 1, i, value)
+
+    def _update(self, node, lo, hi, i, value):
+        if lo == hi:
+            self.tree[node] = value
+            return
+        mid = (lo + hi) // 2
+        if i <= mid:
+            self._update(2 * node, lo, mid, i, value)
+        else:
+            self._update(2 * node + 1, mid + 1, hi, i, value)
+        self.tree[node] = self.tree[2 * node] + self.tree[2 * node + 1]
+
+    def query(self, l, r):  # inclusive sum over [l, r]
+        return self._query(1, 0, self.n - 1, l, r)
+
+    def _query(self, node, lo, hi, l, r):
+        if r < lo or hi < l:
+            return 0
+        if l <= lo and hi <= r:
+            return self.tree[node]
+        mid = (lo + hi) // 2
+        return (self._query(2 * node, lo, mid, l, r)
+                + self._query(2 * node + 1, mid + 1, hi, l, r))
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class SegmentTree {
+  private n: number;
+  private tree: number[];
+
+  constructor(data: number[]) {
+    this.n = data.length;
+    this.tree = new Array(4 * this.n).fill(0);
+    if (this.n > 0) this.build(data, 1, 0, this.n - 1);
+  }
+
+  private build(data: number[], node: number, lo: number, hi: number): void {
+    if (lo === hi) {
+      this.tree[node] = data[lo];
+      return;
+    }
+    const mid = (lo + hi) >> 1;
+    this.build(data, 2 * node, lo, mid);
+    this.build(data, 2 * node + 1, mid + 1, hi);
+    this.tree[node] = this.tree[2 * node] + this.tree[2 * node + 1];
+  }
+
+  update(i: number, value: number): void {
+    this.updateNode(1, 0, this.n - 1, i, value);
+  }
+
+  private updateNode(node: number, lo: number, hi: number, i: number, value: number): void {
+    if (lo === hi) {
+      this.tree[node] = value;
+      return;
+    }
+    const mid = (lo + hi) >> 1;
+    if (i <= mid) this.updateNode(2 * node, lo, mid, i, value);
+    else this.updateNode(2 * node + 1, mid + 1, hi, i, value);
+    this.tree[node] = this.tree[2 * node] + this.tree[2 * node + 1];
+  }
+
+  query(l: number, r: number): number {
+    return this.queryNode(1, 0, this.n - 1, l, r);
+  }
+
+  private queryNode(node: number, lo: number, hi: number, l: number, r: number): number {
+    if (r < lo || hi < l) return 0;
+    if (l <= lo && hi <= r) return this.tree[node];
+    const mid = (lo + hi) >> 1;
+    return (
+      this.queryNode(2 * node, lo, mid, l, r) +
+      this.queryNode(2 * node + 1, mid + 1, hi, l, r)
+    );
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class SegmentTree {
+    private final int n;
+    private final long[] tree;
+
+    SegmentTree(int[] data) {
+        n = data.length;
+        tree = new long[4 * Math.max(1, n)];
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    private void build(int[] data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) >>> 1;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    void update(int i, int value) {
+        update(1, 0, n - 1, i, value);
+    }
+
+    private void update(int node, int lo, int hi, int i, int value) {
+        if (lo == hi) {
+            tree[node] = value;
+            return;
+        }
+        int mid = (lo + hi) >>> 1;
+        if (i <= mid) update(2 * node, lo, mid, i, value);
+        else update(2 * node + 1, mid + 1, hi, i, value);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    long query(int l, int r) {
+        return query(1, 0, n - 1, l, r);
+    }
+
+    private long query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return 0;
+        if (l <= lo && hi <= r) return tree[node];
+        int mid = (lo + hi) >>> 1;
+        return query(2 * node, lo, mid, l, r) + query(2 * node + 1, mid + 1, hi, l, r);
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct {
+    int n;
+    long long *tree;
+} SegTree;
+
+static void build(SegTree *st, const int *data, int node, int lo, int hi) {
+    if (lo == hi) {
+        st->tree[node] = data[lo];
+        return;
+    }
+    int mid = (lo + hi) / 2;
+    build(st, data, 2 * node, lo, mid);
+    build(st, data, 2 * node + 1, mid + 1, hi);
+    st->tree[node] = st->tree[2 * node] + st->tree[2 * node + 1];
+}
+
+SegTree *seg_create(const int *data, int n) {
+    SegTree *st = malloc(sizeof(SegTree));
+    st->n = n;
+    st->tree = calloc(4 * n, sizeof(long long));
+    if (n > 0) build(st, data, 1, 0, n - 1);
+    return st;
+}
+
+static void seg_set(SegTree *st, int node, int lo, int hi, int i, int value) {
+    if (lo == hi) {
+        st->tree[node] = value;
+        return;
+    }
+    int mid = (lo + hi) / 2;
+    if (i <= mid) seg_set(st, 2 * node, lo, mid, i, value);
+    else seg_set(st, 2 * node + 1, mid + 1, hi, i, value);
+    st->tree[node] = st->tree[2 * node] + st->tree[2 * node + 1];
+}
+
+void seg_update(SegTree *st, int i, int value) {
+    seg_set(st, 1, 0, st->n - 1, i, value);
+}
+
+static long long seg_sum(SegTree *st, int node, int lo, int hi, int l, int r) {
+    if (r < lo || hi < l) return 0;
+    if (l <= lo && hi <= r) return st->tree[node];
+    int mid = (lo + hi) / 2;
+    return seg_sum(st, 2 * node, lo, mid, l, r)
+         + seg_sum(st, 2 * node + 1, mid + 1, hi, l, r);
+}
+
+long long seg_query(SegTree *st, int l, int r) {
+    return seg_sum(st, 1, 0, st->n - 1, l, r);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+class SegmentTree {
+    int n;
+    vector<long long> tree;
+
+    void build(const vector<int> &data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) / 2;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    void update(int node, int lo, int hi, int i, int value) {
+        if (lo == hi) {
+            tree[node] = value;
+            return;
+        }
+        int mid = (lo + hi) / 2;
+        if (i <= mid) update(2 * node, lo, mid, i, value);
+        else update(2 * node + 1, mid + 1, hi, i, value);
+        tree[node] = tree[2 * node] + tree[2 * node + 1];
+    }
+
+    long long query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return 0;
+        if (l <= lo && hi <= r) return tree[node];
+        int mid = (lo + hi) / 2;
+        return query(2 * node, lo, mid, l, r)
+             + query(2 * node + 1, mid + 1, hi, l, r);
+    }
+
+public:
+    SegmentTree(const vector<int> &data) : n(data.size()), tree(4 * data.size()) {
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    void update(int i, int value) { update(1, 0, n - 1, i, value); }
+
+    long long query(int l, int r) { return query(1, 0, n - 1, l, r); }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Build | O(n) | O(n) |
+| Point update | O(log n) | O(1) |
+| Range query | O(log n) | O(log n) recursion |
+
+The tree uses `4n` slots — a safe upper bound that guarantees room for every node even
+when `n` is not a power of two.
+
+## When to use it
+
+<Callout type="idea" title="Reach for a segment tree when reads and writes are both frequent">
+If the array is static, prefix sums (O(1) query, O(n) build) win — a segment tree is
+overkill. The moment you need frequent point updates *and* frequent range queries on the
+same data, the segment tree's O(log n) on both sides is what makes it shine. Watch the `4n`
+memory and prefer the iterative bottom-up form if you're memory-bound.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why allocate 4n nodes instead of 2n?">
+
+A perfectly balanced tree over `n` leaves needs about `2n` nodes. But when `n` isn't a
+power of two, the recursion can descend one level deeper than a balanced tree on some
+branches, and the simple `2*node` indexing skips slots. `4n` is the smallest bound that is
+always safe regardless of `n`. Compute the exact size (`2 * 2^ceil(log2 n)`) only if memory
+is tight.
+
+</Accordion>
+
+<Accordion title="How would you change this from range sum to range maximum?">
+
+Swap two things: the combine step and the identity. Replace `tree[2*node] + tree[2*node+1]`
+with `max(tree[2*node], tree[2*node+1])` everywhere it appears (build, update, query), and
+return negative infinity instead of `0` for the "fully outside" case. The tree structure and
+traversal are identical — only the merge operation changes. The next lesson makes this
+generalization explicit.
+
+</Accordion>
+
+<Accordion title="A query asks for range [3, 3] — a single element. What happens?">
+
+The traversal descends until it finds nodes fully inside `[3, 3]`. The leaf covering index
+`3` is fully contained and returns its value; every sibling branch is fully outside and
+returns `0`. You get `data[3]` back after touching O(log n) nodes — correct, if slightly
+slower than a direct array read.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A segment tree caches range answers in a binary tree so both point updates and range
+  queries run in **O(log n)**.
+- Each node owns a sub-range; internal nodes combine their children with an associative
+  operation (sum, min, max, …).
+- Build is O(n), the tree uses `4n` slots, and a query stitches together O(log n)
+  pre-computed chunks.
+
+<Cards>
+  <Card title="Segment Tree Queries" href="/docs/dsa/25-range-query/02-segment-tree-queries" description="Generalize the merge to answer min, max, XOR, and GCD queries." />
+  <Card title="Lazy Propagation" href="/docs/dsa/25-range-query/03-lazy-propagation" description="Update an entire range in O(log n) by deferring the work." />
+  <Card title="Fenwick Trees" href="/docs/dsa/25-range-query/04-fenwick-tree" description="A lighter structure for prefix sums with far less code." />
+</Cards>

@@ -1,0 +1,356 @@
+---
+title: "Advanced List Problems"
+description: "Cloning a list whose nodes point to random others, or flattening a list of lists, pushes pointer juggling to its limit."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/03-reversal-patterns
+  - href: /docs/dsa/12-linked-list/06-design-with-lists
+  - href: /docs/dsa/07-hashing/02-hash-tables
+---
+
+## The problem
+
+You need to deep-copy a data structure before handing it to an untrusted plugin. It is a
+linked list, but each node has *two* pointers: the usual `next`, and a `random` pointer that
+may point to any node in the list — or to null. Copy `next` naively and you get a fresh chain
+whose `random` pointers still reference the *original* nodes. The clone is entangled with the
+source; mutating one corrupts the other.
+
+The difficulty is a chicken-and-egg bind: to set a new node's `random`, you need the *copy*
+of whatever the original pointed at — but that copy might not exist yet when you reach it.
+You cannot resolve the arrows in a single forward pass the way you normally would.
+
+## A first attempt
+
+Walk the list, create clones, and try to wire `random` on the way:
+
+```python
+# For each original node, we want clone.random = copy_of(original.random)
+# but copy_of(...) may not have been created yet — so we can't resolve it inline.
+```
+
+The fix that *does* work but costs memory: a hash map from each original node to its clone.
+First pass creates every clone and fills the map; second pass wires `next` and `random` by
+looking each original up. Correct, **O(n) time**, but **O(n) extra space** for the map. For a
+huge list that overhead stings, and there is a slicker way that needs none of it.
+
+## The insight
+
+Weave the clones *into* the original list so each copy sits right after its source. Now the
+copy of `original.random` is simply `original.random.next` — no map needed, because the
+interleaving itself records the correspondence. Wire the `random` pointers using that
+relationship, then unzip the two lists apart.
+
+```text
+weave:   A → A' → B → B' → C → C' → null
+random:  A'.random = A.random.next   (the clone sitting after A's target)
+unzip:   pull out A' → B' → C' as the clone, restore A → B → C
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Interleave a copy after each node
+
+For every node, create its clone and splice it in as `node.next`, pushing the original `next`
+one step later. The list temporarily doubles in length: original, copy, original, copy.
+
+</Step>
+
+<Step>
+
+### Wire random from the neighbor
+
+For each original `node`, its clone is `node.next`. Set `node.next.random = node.random.next`
+(guarding null). Because every clone sits right after its source, `node.random.next` is
+exactly the clone of `node.random`.
+
+</Step>
+
+<Step>
+
+### Unzip into two lists
+
+Walk again, detaching the clones: restore each original's `next` to skip its copy, and link
+each copy to the next copy. You end with the original list intact and a fully independent
+clone — O(1) extra space beyond the output.
+
+</Step>
+
+<Step>
+
+### Flattening is a repeated merge
+
+A different beast: a list where each node has a `next` and a `child` sublist. Flatten it
+depth-first — when a node has a child, splice the entire child chain between the node and its
+`next`, fixing `prev` pointers, and continue. It is careful pointer surgery, not new theory.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.next = None
+        self.random = None
+
+def clone(head):                     # O(n) time, O(1) extra space
+    if not head:
+        return None
+    # 1) weave copies in
+    cur = head
+    while cur:
+        copy = Node(cur.value)
+        copy.next = cur.next
+        cur.next = copy
+        cur = copy.next
+    # 2) wire random
+    cur = head
+    while cur:
+        if cur.random:
+            cur.next.random = cur.random.next
+        cur = cur.next.next
+    # 3) unzip
+    cur, new_head = head, head.next
+    while cur:
+        copy = cur.next
+        cur.next = copy.next
+        copy.next = copy.next.next if copy.next else None
+        cur = cur.next
+    return new_head
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class Node {
+  value: number;
+  next: Node | null = null;
+  random: Node | null = null;
+  constructor(value: number) { this.value = value; }
+}
+
+function clone(head: Node | null): Node | null { // O(n) time, O(1) space
+  if (!head) return null;
+  // 1) weave copies in
+  let cur: Node | null = head;
+  while (cur) {
+    const copy = new Node(cur.value);
+    copy.next = cur.next;
+    cur.next = copy;
+    cur = copy.next;
+  }
+  // 2) wire random
+  cur = head;
+  while (cur) {
+    if (cur.random) cur.next!.random = cur.random.next;
+    cur = cur.next!.next;
+  }
+  // 3) unzip
+  cur = head;
+  const newHead = head.next;
+  while (cur) {
+    const copy = cur.next!;
+    cur.next = copy.next;
+    copy.next = copy.next ? copy.next.next : null;
+    cur = cur.next;
+  }
+  return newHead;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Node {
+    int value;
+    Node next, random;
+    Node(int value) { this.value = value; }
+}
+
+Node clone(Node head) {              // O(n) time, O(1) extra space
+    if (head == null) return null;
+    // 1) weave copies in
+    for (Node cur = head; cur != null; ) {
+        Node copy = new Node(cur.value);
+        copy.next = cur.next;
+        cur.next = copy;
+        cur = copy.next;
+    }
+    // 2) wire random
+    for (Node cur = head; cur != null; cur = cur.next.next) {
+        if (cur.random != null) cur.next.random = cur.random.next;
+    }
+    // 3) unzip
+    Node newHead = head.next;
+    for (Node cur = head; cur != null; ) {
+        Node copy = cur.next;
+        cur.next = copy.next;
+        copy.next = (copy.next != null) ? copy.next.next : null;
+        cur = cur.next;
+    }
+    return newHead;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *next, *random;
+} Node;
+
+/* O(n) time, O(1) extra space. */
+Node *clone(Node *head) {
+    if (!head) return NULL;
+    /* 1) weave copies in */
+    for (Node *cur = head; cur; ) {
+        Node *copy = malloc(sizeof(Node));
+        copy->value = cur->value;
+        copy->random = NULL;
+        copy->next = cur->next;
+        cur->next = copy;
+        cur = copy->next;
+    }
+    /* 2) wire random */
+    for (Node *cur = head; cur; cur = cur->next->next)
+        if (cur->random) cur->next->random = cur->random->next;
+    /* 3) unzip */
+    Node *new_head = head->next;
+    for (Node *cur = head; cur; ) {
+        Node *copy = cur->next;
+        cur->next = copy->next;
+        copy->next = copy->next ? copy->next->next : NULL;
+        cur = cur->next;
+    }
+    return new_head;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct Node {
+    int value;
+    Node *next = nullptr, *random = nullptr;
+    explicit Node(int v) : value(v) {}
+};
+
+// O(n) time, O(1) extra space.
+Node *clone(Node *head) {
+    if (!head) return nullptr;
+    // 1) weave copies in
+    for (Node *cur = head; cur; ) {
+        Node *copy = new Node(cur->value);
+        copy->next = cur->next;
+        cur->next = copy;
+        cur = copy->next;
+    }
+    // 2) wire random
+    for (Node *cur = head; cur; cur = cur->next->next)
+        if (cur->random) cur->next->random = cur->random->next;
+    // 3) unzip
+    Node *newHead = head->next;
+    for (Node *cur = head; cur; ) {
+        Node *copy = cur->next;
+        cur->next = copy->next;
+        copy->next = copy->next ? copy->next->next : nullptr;
+        cur = cur->next;
+    }
+    return newHead;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Problem                     | Approach              | Time | Space |
+| --------------------------- | --------------------- | ---- | ----- |
+| Clone with random pointers  | Hash map old→new      | O(n) | O(n)  |
+| Clone with random pointers  | Interleave + unzip    | O(n) | O(1)  |
+| Flatten multilevel list     | Depth-first splice    | O(n) | O(1)\* |
+| Merge k lists (see prior)   | Min-heap of heads     | O(N log k) | O(k) |
+
+\*O(depth) recursion if written recursively; iterative flattening is O(1) extra.
+
+## When to use it
+
+<Callout type="warn" title="These are pointer-discipline problems, not algorithm problems">
+The hard part of clone-with-random and flatten is not a clever algorithm — it is executing
+many precise pointer updates in the right order without losing a link. The interleave trick
+trades the hash map's O(n) space for delicacy: one mis-ordered assignment corrupts both lists.
+When the O(1)-space version is not required, the hash-map clone is far easier to get right and
+often the better real-world choice. Reserve the weave for when memory genuinely matters.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="In the interleave clone, why must you restore the original list's next pointers during the unzip?">
+
+Because the interleave step mutated the input — the original nodes now point at their clones,
+not at each other. If you only pulled out the clones and left the originals wired to copies,
+you would hand back a corrupted source list. The unzip must do both jobs at once: relink each
+original to the next original *and* each copy to the next copy.
+
+</Accordion>
+
+<Accordion title="Why can't you set random pointers in the same pass that creates the clones?">
+
+When you clone node A and try to set `A'.random`, the target is the clone of `A.random` —
+which may be a node further down the list you have not cloned yet. Its clone does not exist,
+so there is nothing to point at. You must finish creating every clone first (pass 1), then
+resolve randoms once all targets exist (pass 2). This is why both the map and the interleave
+solutions use two passes.
+
+</Accordion>
+
+<Accordion title="How does the hash-map clone compare, and when would you prefer it?">
+
+The map approach does pass 1 to create clones and fill `old → new`, then pass 2 to set both
+`next` and `random` via lookups. Same O(n) time, but O(n) space and much harder to get wrong —
+no in-place mutation of the source, no fragile unzip. Prefer it whenever memory is not the
+binding constraint; it is the clearer, safer code.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Clone-with-random resolves in two passes: create all clones, then wire the random pointers.
+- Interleaving each clone after its source encodes the mapping, trading the hash map for O(1) space.
+- These problems reward careful, correctly-ordered pointer surgery over algorithmic cleverness.
+
+<Cards>
+  <Card title="Reversal Patterns" href="/docs/dsa/12-linked-list/03-reversal-patterns" description="The pointer-juggling foundation these problems extend." />
+  <Card title="Designing with Lists" href="/docs/dsa/12-linked-list/06-design-with-lists" description="Compose lists with hash maps for O(1) structures." />
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The map that makes the simpler clone possible." />
+</Cards>

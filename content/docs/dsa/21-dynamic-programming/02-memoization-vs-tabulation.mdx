@@ -1,0 +1,287 @@
+---
+title: "Memoization vs Tabulation"
+description: "Two doors into DP: remember results as you recurse (top-down), or build a table from the ground up (bottom-up)."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/01-what-is-dp
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/21-dynamic-programming/04-2d-dp
+---
+
+## The problem
+
+You have accepted that DP means "solve each subproblem once." But *how* do you actually pull
+that off in code? You sit down to write it and immediately hit a fork. Do you keep your neat
+recursive function and just teach it to remember? Or do you throw the recursion away and fill
+an array with a loop?
+
+Both give the right answer. Both are O(n). Yet interviewers ask you to convert between them,
+and one of them will silently crash on large inputs while the other sails through. The
+choice matters more than it first appears.
+
+## A first attempt
+
+Take the naive Fibonacci again. The trouble was that `fib(3)` got recomputed over and over:
+
+```python
+def fib(n):
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+```
+
+The recursion tree is right; it just has no memory. What if we bolted on a cache so the
+second time we ask for `fib(3)`, we answer instantly?
+
+## The insight
+
+There are exactly two ways to add that memory, and they mirror each other:
+
+> **Memoization (top-down):** keep the recursion, but store each answer the first time you
+> compute it. Later calls read the cache instead of recursing again.
+>
+> **Tabulation (bottom-up):** drop the recursion entirely. Start from the base cases and
+> iterate forward, filling a table until you reach the answer.
+
+Top-down follows the problem's natural shape and only computes subproblems it actually needs.
+Bottom-up computes every subproblem in dependency order, with no recursion stack at all.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Memoize: cache on the way down
+
+Add a dictionary or array `memo`. On entering the function, check it — if the answer is
+cached, return it. Otherwise compute normally, **store** the result before returning.
+
+</Step>
+
+<Step>
+
+### Tabulate: build on the way up
+
+Allocate `dp[0..n]`. Fill the base cases directly. Then loop from small to large, computing
+each entry from ones already filled. The final entry is your answer.
+
+</Step>
+
+<Step>
+
+### Watch the order of dependencies
+
+Tabulation only works if you iterate in an order where every value you read is already
+computed. For Fibonacci that is left to right; for a grid it may be row by row. Getting the
+order right *is* the design work.
+
+</Step>
+
+<Step>
+
+### Mind the call stack
+
+Memoization recurses `n` deep. For `n = 100000` that overflows the stack in most languages.
+Tabulation uses a plain loop, so it has no such limit — often the deciding factor.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+# Top-down: memoization
+def fib_memo(n, memo=None):
+    if memo is None:
+        memo = {}
+    if n < 2:
+        return n
+    if n in memo:
+        return memo[n]
+    memo[n] = fib_memo(n - 1, memo) + fib_memo(n - 2, memo)
+    return memo[n]
+
+# Bottom-up: tabulation
+def fib_tab(n):
+    if n < 2:
+        return n
+    dp = [0] * (n + 1)
+    dp[1] = 1
+    for i in range(2, n + 1):
+        dp[i] = dp[i - 1] + dp[i - 2]
+    return dp[n]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+// Top-down: memoization
+function fibMemo(n: number, memo = new Map<number, number>()): number {
+  if (n < 2) return n;
+  if (memo.has(n)) return memo.get(n)!;
+  const val = fibMemo(n - 1, memo) + fibMemo(n - 2, memo);
+  memo.set(n, val);
+  return val;
+}
+
+// Bottom-up: tabulation
+function fibTab(n: number): number {
+  if (n < 2) return n;
+  const dp = new Array<number>(n + 1).fill(0);
+  dp[1] = 1;
+  for (let i = 2; i <= n; i++) dp[i] = dp[i - 1] + dp[i - 2];
+  return dp[n];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+class Solution {
+    // Top-down: memoization
+    long fibMemo(int n, Map<Integer, Long> memo) {
+        if (n < 2) return n;
+        if (memo.containsKey(n)) return memo.get(n);
+        long val = fibMemo(n - 1, memo) + fibMemo(n - 2, memo);
+        memo.put(n, val);
+        return val;
+    }
+
+    // Bottom-up: tabulation
+    long fibTab(int n) {
+        if (n < 2) return n;
+        long[] dp = new long[n + 1];
+        dp[1] = 1;
+        for (int i = 2; i <= n; i++) dp[i] = dp[i - 1] + dp[i - 2];
+        return dp[n];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+// Top-down: memoization (memo pre-filled with -1)
+long long fib_memo(int n, long long *memo) {
+    if (n < 2) return n;
+    if (memo[n] != -1) return memo[n];
+    memo[n] = fib_memo(n - 1, memo) + fib_memo(n - 2, memo);
+    return memo[n];
+}
+
+// Bottom-up: tabulation
+long long fib_tab(int n) {
+    if (n < 2) return n;
+    long long dp[n + 1];
+    dp[0] = 0;
+    dp[1] = 1;
+    for (int i = 2; i <= n; i++) dp[i] = dp[i - 1] + dp[i - 2];
+    return dp[n];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+// Top-down: memoization
+long long fibMemo(int n, vector<long long> &memo) {
+    if (n < 2) return n;
+    if (memo[n] != -1) return memo[n];
+    memo[n] = fibMemo(n - 1, memo) + fibMemo(n - 2, memo);
+    return memo[n];
+}
+
+// Bottom-up: tabulation
+long long fibTab(int n) {
+    if (n < 2) return n;
+    vector<long long> dp(n + 1, 0);
+    dp[1] = 1;
+    for (int i = 2; i <= n; i++) dp[i] = dp[i - 1] + dp[i - 2];
+    return dp[n];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space | Notes |
+| --- | --- | --- | --- |
+| Memoization | O(n) | O(n) table + O(n) stack | Only visits needed subproblems |
+| Tabulation | O(n) | O(n) table | No recursion; can drop to O(1) here |
+
+Both do the same number of subproblem computations. The difference is the extra recursion
+stack in memoization, and the fact that tabulation forces you to compute *every* subproblem
+whether you need it or not.
+
+## When to use it
+
+<Callout type="warn" title="Stack depth is the real trap">
+Memoization is quicker to write because it mirrors the recursion you already have. But its
+call stack grows with the input, so it can overflow on large `n`. When inputs are big or the
+recurrence is deep, convert to tabulation. When the state space is huge but you only touch a
+sparse slice of it, memoization wins by skipping the rest.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Both are O(n). So why would an interviewer ever push you to convert memoization to tabulation?">
+
+Mainly the call stack. Memoization recurses to depth `n`, which overflows for large inputs
+(say `n = 10⁶`) in languages without deep stacks. Tabulation uses an ordinary loop, so it
+has no depth limit and often a smaller constant factor. It also makes space optimization
+(rolling rows) obvious.
+
+</Accordion>
+
+<Accordion title="When does memoization do strictly less work than tabulation?">
+
+When the reachable state space is much smaller than the full table. Tabulation fills every
+cell in order; memoization only computes states the recursion actually reaches. If a large
+grid or number line is mostly irrelevant to the answer, top-down skips the dead regions.
+
+</Accordion>
+
+<Accordion title="In the C and C++ memo versions, why initialize the cache to -1 instead of 0?">
+
+Because `0` is a legitimate answer (`fib(0) = 0`), so it cannot double as "not computed
+yet." A sentinel like `-1` that can never be a valid result lets you distinguish an empty
+slot from a real cached value.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- **Memoization** keeps the recursion and caches results — top-down, lazy, natural to write.
+- **Tabulation** iterates from base cases upward — bottom-up, no stack, easy to
+  space-optimize.
+- They compute the same subproblems; choose based on stack depth and how much of the state
+  space you actually visit.
+
+<Cards>
+  <Card title="What Is Dynamic Programming?" href="/docs/dsa/21-dynamic-programming/01-what-is-dp" description="Why caching subproblems beats naive recursion." />
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="Put tabulation to work on real one-dimensional problems." />
+  <Card title="2D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/04-2d-dp" description="When the table needs a second dimension." />
+</Cards>

@@ -1,0 +1,269 @@
+---
+title: "Binary Trees"
+description: "File systems, org charts, family trees all branch — the binary tree is the simplest way to capture that shape."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/02-traversals
+  - href: /docs/dsa/16-binary-tree/05-tree-properties
+---
+
+## The problem
+
+Open your file explorer. A folder holds files and other folders, and those hold more still. Nobody handed you a flat list — the thing branches. Try to store that in an array and you immediately fight it: where does "Documents" end and "Downloads" begin? How deep does "Projects" go?
+
+You keep hitting the same wall with org charts, comment threads, and the moves in a chess game. The data isn't a line and it isn't a grid. It's a shape that splits, and splits again, and you need a structure that splits with it.
+
+## A first attempt
+
+Your first instinct is probably a list of parent-child pairs: `[("root", "a"), ("root", "b"), ("a", "c")]`. It stores the links, sure. But now answer a simple question — "what are the children of `a`?" — and you're scanning the entire list looking for pairs whose first element is `a`. That's `O(n)` per lookup, and walking the whole structure becomes `O(n²)`.
+
+The pairs also lose *order* and *direction*. Is `c` the left child or the right child of `a`? In a decision tree or an expression like `3 - 2`, left versus right changes the meaning entirely. A flat list throws that away.
+
+## The insight
+
+Stop storing the tree as one big table. Store it *from each node's point of view*. Give every node a slot that points directly to its children. If you cap it at two children — a **left** and a **right** — every node becomes a tiny fixed-size record, and "give me the children of `a`" is just reading two pointers. No scan.
+
+That capped, self-referential record is the **binary tree**: a node holds a value, a pointer to its left subtree, and a pointer to its right subtree. Each child is itself the root of a smaller binary tree. The recursion is the whole idea.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### One node, three fields
+
+Every node stores a `value`, a `left` reference, and a `right` reference. A missing child is `null` (or `None`, or `NULL`). That's the entire building block.
+
+</Step>
+
+<Step>
+
+### The root is your handle
+
+You hold exactly one pointer — to the **root**. Everything else is reached by following `left` and `right` from there. Lose the root and you lose the tree.
+
+</Step>
+
+<Step>
+
+### Subtrees all the way down
+
+`root.left` is not just a node — it's the root of a complete binary tree in its own right. This is why almost every tree algorithm is recursive: solve it for a node by asking the same question of its two children.
+
+```
+        1          <- root
+       / \
+      2   3        <- root.left, root.right
+     / \   \
+    4   5   6      <- leaves (no children)
+```
+
+</Step>
+
+<Step>
+
+### Leaves and height
+
+A node with no children is a **leaf**. The number of edges on the longest path from the root down to a leaf is the tree's **height**. A balanced tree of `n` nodes has height about `log₂ n`; a degenerate one (each node has a single child) has height `n − 1` — a glorified linked list.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.left = None
+        self.right = None
+
+# Build:      1
+#            / \
+#           2   3
+root = Node(1)
+root.left = Node(2)
+root.right = Node(3)
+
+def count_nodes(node):
+    if node is None:
+        return 0
+    return 1 + count_nodes(node.left) + count_nodes(node.right)
+
+print(count_nodes(root))  # 3
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class TreeNode {
+  value: number;
+  left: TreeNode | null = null;
+  right: TreeNode | null = null;
+  constructor(value: number) {
+    this.value = value;
+  }
+}
+
+const root = new TreeNode(1);
+root.left = new TreeNode(2);
+root.right = new TreeNode(3);
+
+function countNodes(node: TreeNode | null): number {
+  if (node === null) return 0;
+  return 1 + countNodes(node.left) + countNodes(node.right);
+}
+
+console.log(countNodes(root)); // 3
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class TreeNode {
+    int value;
+    TreeNode left, right;
+    TreeNode(int value) { this.value = value; }
+}
+
+public class Main {
+    static int countNodes(TreeNode node) {
+        if (node == null) return 0;
+        return 1 + countNodes(node.left) + countNodes(node.right);
+    }
+
+    public static void main(String[] args) {
+        TreeNode root = new TreeNode(1);
+        root.left = new TreeNode(2);
+        root.right = new TreeNode(3);
+        System.out.println(countNodes(root)); // 3
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+Node *newNode(int value) {
+    Node *n = malloc(sizeof(Node));
+    n->value = value;
+    n->left = n->right = NULL;
+    return n;
+}
+
+int countNodes(Node *node) {
+    if (node == NULL) return 0;
+    return 1 + countNodes(node->left) + countNodes(node->right);
+}
+
+int main(void) {
+    Node *root = newNode(1);
+    root->left = newNode(2);
+    root->right = newNode(3);
+    printf("%d\n", countNodes(root)); // 3
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+int countNodes(Node *node) {
+    if (node == nullptr) return 0;
+    return 1 + countNodes(node->left) + countNodes(node->right);
+}
+
+int main() {
+    Node *root = new Node(1);
+    root->left = new Node(2);
+    root->right = new Node(3);
+    cout << countNodes(root) << endl; // 3
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Access a child (left/right) | O(1) | O(1) |
+| Visit every node (any traversal) | O(n) | O(h) stack |
+| Search (unordered binary tree) | O(n) | O(h) |
+| Height of tree | O(n) | O(h) |
+
+Here `n` is the node count and `h` is the height. For a balanced tree `h ≈ log n`; for a degenerate one `h ≈ n`.
+
+## When to use it
+
+<Callout type="idea" title="Reach for a binary tree when data branches">
+Use a binary tree whenever your data is naturally hierarchical and each item splits into at most two directions — decisions (yes/no), expressions (operator with two operands), or ordered lookups. If you need fast *ordered* search, add the ordering rule and you get a binary search tree; if items can have many children, you want a general tree instead. Watch the shape: an unbalanced binary tree quietly degrades to `O(n)` and erases the whole benefit.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why cap the branching at two children instead of allowing any number?">
+
+Two is the smallest branching that still lets you represent *choice* and *order* (left vs. right), and a fixed size keeps each node a tiny constant-space record with O(1) child access. Any tree with arbitrary children can be re-encoded as a binary tree using the "left child, right sibling" trick, so you lose no expressive power while gaining simplicity. When you genuinely need many children per node (like a file system), use a general tree or an n-ary structure.
+
+</Accordion>
+
+<Accordion title="What is the maximum number of nodes in a binary tree of height h?">
+
+At each level `i` (counting the root as level 0) you can have at most `2^i` nodes. Summing levels 0 through `h` gives `2^(h+1) − 1` nodes. That maximum is reached only by a *perfect* binary tree where every level is completely full. The minimum, by contrast, is just `h + 1` nodes — one per level, which is the degenerate linked-list shape.
+
+</Accordion>
+
+<Accordion title="Given only the root pointer, how would you find whether a value exists in the tree?">
+
+Recurse: if the current node is null, return false; if its value matches, return true; otherwise return the OR of searching the left subtree and the right subtree. Because an ordinary binary tree has no ordering guarantee, you may have to visit every node, so it's `O(n)`. This is exactly why binary *search* trees exist — imposing an order lets you skip half the tree at each step.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A binary tree stores hierarchy as nodes that each hold a value plus a `left` and `right` pointer to smaller subtrees.
+- You hold only the root; every algorithm follows pointers down and is naturally recursive.
+- Balance controls everything — height near `log n` keeps operations fast, while a degenerate tree collapses to a linked list.
+
+<Cards>
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="The orders in which you can visit every node." />
+  <Card title="Tree Properties" href="/docs/dsa/16-binary-tree/05-tree-properties" description="Height, diameter, and balance — the measurements that keep a tree fast." />
+</Cards>

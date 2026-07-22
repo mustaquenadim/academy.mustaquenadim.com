@@ -1,0 +1,240 @@
+---
+title: "Pointers from Both Ends"
+description: "Pair sums, palindromes, the most water a container holds — problems solved by two pointers closing in from the edges."
+extractedReferences:
+  - href: /docs/dsa/08-two-pointer/01-two-pointer-intro
+  - href: /docs/dsa/08-two-pointer/03-triplets-and-quads
+  - href: /docs/dsa/04-searching/03-binary-search
+---
+
+## The problem
+
+A user types a target amount into your checkout screen and asks, "which two of my gift cards add up to exactly this?" The balances are already sorted, smallest to largest. You need to find a pair that sums to the target — or say confidently that none exists.
+
+It feels like a lookup. But the naive way of finding that pair scales badly, and the sorted order you were handed is a gift you're about to throw away.
+
+## A first attempt
+
+Try every pair. For each card, loop over every later card and check the sum.
+
+```python
+def two_sum_naive(nums, target):
+    n = len(nums)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if nums[i] + nums[j] == target:
+                return [i, j]
+    return [-1, -1]
+```
+
+Correct, but it examines about `n²/2` pairs. With 50,000 cards that's over a billion checks. And it ignores the one fact that makes this easy: **the array is sorted**. We're paying full price for information we already have.
+
+## The insight
+
+Put one pointer at the **smallest** value and one at the **largest**, then look at their sum:
+
+- If the sum is **too small**, the only way to grow it is to give up the smallest number — move the **left** pointer right.
+- If the sum is **too big**, the only way to shrink it is to give up the largest number — move the **right** pointer left.
+- If it's **exactly right**, you're done.
+
+Every move throws away exactly one number that can never be part of the answer, so the two pointers march toward each other and meet in a single pass.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start at both edges
+
+Put `lo` at index `0` (smallest) and `hi` at the last index (largest). The window between them holds every candidate pair.
+
+</Step>
+
+<Step>
+
+### Read the sum
+
+Compute `nums[lo] + nums[hi]`. This is the largest-plus-smallest of the current window — a sum you can steer up or down by one step at either end.
+
+</Step>
+
+<Step>
+
+### Move the pointer that helps
+
+If the sum is less than the target, `lo += 1` to bring in a bigger small number. If it's greater, `hi -= 1` to bring in a smaller big number. Discard is safe: nothing you skipped could have paired better.
+
+</Step>
+
+<Step>
+
+### Stop when they meet or match
+
+Return the pair the moment the sum equals the target. If `lo` and `hi` cross without a match, no pair exists.
+
+```text
+target = 9
+[1, 2, 4, 7, 11, 15]
+ lo              hi     1+15=16 > 9  → hi--
+ lo          hi        1+11=12 > 9  → hi--
+ lo       hi           1+7 =8  < 9  → lo++
+    lo    hi           2+7 =9  ✓
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def two_sum_sorted(nums, target):
+    lo, hi = 0, len(nums) - 1
+    while lo < hi:
+        s = nums[lo] + nums[hi]
+        if s == target:
+            return [lo, hi]
+        if s < target:
+            lo += 1
+        else:
+            hi -= 1
+    return [-1, -1]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function twoSumSorted(nums: number[], target: number): number[] {
+  let lo = 0;
+  let hi = nums.length - 1;
+  while (lo < hi) {
+    const s = nums[lo] + nums[hi];
+    if (s === target) return [lo, hi];
+    if (s < target) lo++;
+    else hi--;
+  }
+  return [-1, -1];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    public int[] twoSumSorted(int[] nums, int target) {
+        int lo = 0, hi = nums.length - 1;
+        while (lo < hi) {
+            int s = nums[lo] + nums[hi];
+            if (s == target) return new int[] {lo, hi};
+            if (s < target) lo++;
+            else hi--;
+        }
+        return new int[] {-1, -1};
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+// Caller frees the returned array of length 2.
+int* twoSumSorted(int* nums, int numsSize, int target) {
+    int* res = malloc(2 * sizeof(int));
+    int lo = 0, hi = numsSize - 1;
+    res[0] = -1; res[1] = -1;
+    while (lo < hi) {
+        int s = nums[lo] + nums[hi];
+        if (s == target) { res[0] = lo; res[1] = hi; return res; }
+        if (s < target) lo++;
+        else hi--;
+    }
+    return res;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+vector<int> twoSumSorted(vector<int>& nums, int target) {
+    int lo = 0, hi = (int)nums.size() - 1;
+    while (lo < hi) {
+        int s = nums[lo] + nums[hi];
+        if (s == target) return {lo, hi};
+        if (s < target) lo++;
+        else hi--;
+    }
+    return {-1, -1};
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Brute-force pairs | O(n²) | O(1) |
+| Hash set (unsorted) | O(n) | O(n) |
+| Two pointers (sorted) | O(n) | O(1) |
+
+Each iteration moves exactly one pointer inward, so the pointers can meet after at most `n` steps — linear time, and no extra memory at all.
+
+## When to use it
+
+<Callout type="idea" title="Opposite-ends pointers shine when…">
+The array is **sorted** and the property you're optimizing is **monotonic** at the edges — moving the left pointer only ever increases the sum, moving the right only ever decreases it. That's what makes discarding an endpoint safe. It powers pair-sum, the palindrome check, container-with-most-water, and reversing in place. If the data isn't sorted and you can't afford to sort it, a hash set may beat it on time at the cost of space.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is it safe to discard an endpoint after every comparison?">
+
+At `lo`, `nums[lo]` is the smallest remaining value. If `nums[lo] + nums[hi]` is already too big, then pairing `nums[hi]` with *any* value ≥ `nums[lo]` is also too big — `hi` can never be part of a valid pair, so drop it. The symmetric argument holds for `lo`. Each move eliminates a whole row or column of the pair space at once.
+
+</Accordion>
+
+<Accordion title="How would you check whether a string is a palindrome with this pattern?">
+
+Same shape, no sorting needed. Put `lo` at the front and `hi` at the back; while `lo < hi`, compare `s[lo]` and `s[hi]`. Any mismatch means it's not a palindrome. Otherwise step `lo` forward and `hi` backward until they meet. O(n) time, O(1) space.
+
+</Accordion>
+
+<Accordion title="In container-with-most-water, which pointer do you move?">
+
+The area is `min(height[lo], height[hi]) * (hi - lo)`. Width only shrinks as pointers close in, so your only hope of a bigger area is a taller wall — always move the pointer at the **shorter** line inward, since moving the taller one can never help.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Two pointers starting at **opposite ends** exploit sorted (or symmetric) data to solve pair and boundary problems in one linear pass.
+- Each comparison lets you **safely discard** one endpoint, which is why O(n²) brute force collapses to O(n) with O(1) space.
+- The pattern generalizes far past pair-sums: palindromes, reversing in place, and max-area problems all ride the same "close in from the edges" idea.
+
+<Cards>
+  <Card title="The Two-Pointer Technique" href="/docs/dsa/08-two-pointer/01-two-pointer-intro" description="Same-direction pointers and where the idea starts." />
+  <Card title="Triplets & Quadruplets" href="/docs/dsa/08-two-pointer/03-triplets-and-quads" description="Fix one index, two-pointer the rest for 3-Sum and 4-Sum." />
+  <Card title="Binary Search" href="/docs/dsa/04-searching/03-binary-search" description="Another algorithm that lives on sorted data." />
+</Cards>

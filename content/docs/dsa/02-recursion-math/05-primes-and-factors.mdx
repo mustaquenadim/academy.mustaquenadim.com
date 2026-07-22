@@ -1,0 +1,293 @@
+---
+title: "Primes & Factors"
+description: "Is this number prime? What are its factors? The naive checks are slow, and the fast ones are surprisingly clever."
+extractedReferences:
+  - href: /docs/dsa/02-recursion-math/04-number-basics
+  - href: /docs/dsa/22-number-theory/01-number-theory-intro
+  - href: /docs/dsa/22-number-theory/02-sieve-of-eratosthenes
+---
+
+## The problem
+
+A form on your site asks users to pick a "lucky number," and you want to award a badge if it happens to be prime. Simple enough — you write a checker. Then a prankster pastes in `999999937` and your request times out. The badge feature has become a denial-of-service hole.
+
+The naive way to test primality is the first thing everyone writes, and it is also the thing that falls over on big inputs. The fast way needs only one insight about how factors come in pairs.
+
+## A first attempt
+
+Test every possible divisor from `2` up to `n - 1`:
+
+```python
+def is_prime_slow(n):
+    if n < 2:
+        return False
+    for i in range(2, n):
+        if n % i == 0:
+            return False
+    return True
+```
+
+Correct, but it does up to `n - 2` divisions. That is **O(n)** — for a 9-digit number like `999999937` that is nearly a billion modulo operations, which is exactly why your request hung. To make this practical you need to check *far* fewer candidates.
+
+## The insight
+
+Factors come in **pairs**. If `d` divides `n`, then so does `n / d`, and the two multiply back to `n`. In every such pair, one member is `≤ √n` and the other is `≥ √n`. So if `n` had any divisor at all, the *smaller* one would already appear at or below `√n`.
+
+That means you never have to look past `√n`. Find no divisor there, and there is none anywhere.
+
+- For `n = 100`, √n = 10. The pairs are `(2,50), (4,25), (5,20), (10,10)` — every small side is `≤ 10`.
+- Checking up to `√n` instead of `n` drops a billion operations to about 31,623 for that 9-digit number.
+
+The same pairing insight lets you list *all* factors in `O(√n)`: for each `d ≤ √n` that divides `n`, record both `d` and `n / d`.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Rule out the trivial cases
+
+Numbers below `2` are not prime by definition, so return early. This also keeps the loop below from misbehaving on `0` and `1`.
+
+</Step>
+
+<Step>
+
+### Loop only while i·i ≤ n
+
+Instead of computing a floating-point `√n`, test `i * i <= n`. This stays in integer arithmetic — no rounding bugs — and stops exactly at the square root.
+
+</Step>
+
+<Step>
+
+### Reject on the first divisor
+
+If any `i` divides `n` evenly, `n` is composite; return `false` immediately. You do not need the other factor, just the fact that one exists.
+
+```text
+is_prime(97):  test i = 2,3,4,5,6,7,8,9
+               9*9 = 81 ≤ 97,  10*10 = 100 > 97  -> stop
+               none divide 97  ->  prime
+```
+
+</Step>
+
+<Step>
+
+### Collect both sides for factors
+
+To list factors, whenever `i` divides `n`, record `i` and its partner `n / i`. Guard the case `i == n / i` (a perfect square) so you don't add the square root twice.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def is_prime(n):                   # O(sqrt n)
+    if n < 2:
+        return False
+    i = 2
+    while i * i <= n:
+        if n % i == 0:
+            return False
+        i += 1
+    return True
+
+
+def factors(n):                    # O(sqrt n)
+    result = []
+    i = 1
+    while i * i <= n:
+        if n % i == 0:
+            result.append(i)
+            if i != n // i:
+                result.append(n // i)
+        i += 1
+    return sorted(result)
+
+
+print(is_prime(97))       # True
+print(factors(36))        # [1, 2, 3, 4, 6, 9, 12, 18, 36]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function isPrime(n: number): boolean {
+  if (n < 2) return false;
+  for (let i = 2; i * i <= n; i++) {
+    if (n % i === 0) return false;
+  }
+  return true;
+}
+
+function factors(n: number): number[] {
+  const result: number[] = [];
+  for (let i = 1; i * i <= n; i++) {
+    if (n % i === 0) {
+      result.push(i);
+      if (i !== n / i) result.push(n / i);
+    }
+  }
+  return result.sort((a, b) => a - b);
+}
+
+console.log(isPrime(97)); // true
+console.log(factors(36)); // [1, 2, 3, 4, 6, 9, 12, 18, 36]
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+static boolean isPrime(int n) {        // O(sqrt n)
+    if (n < 2) return false;
+    for (int i = 2; (long) i * i <= n; i++) {
+        if (n % i == 0) return false;
+    }
+    return true;
+}
+
+static java.util.List<Integer> factors(int n) {
+    java.util.List<Integer> result = new java.util.ArrayList<>();
+    for (int i = 1; (long) i * i <= n; i++) {
+        if (n % i == 0) {
+            result.add(i);
+            if (i != n / i) result.add(n / i);
+        }
+    }
+    java.util.Collections.sort(result);
+    return result;
+}
+
+// isPrime(97) -> true,  factors(36) -> [1, 2, 3, 4, 6, 9, 12, 18, 36]
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdbool.h>
+
+bool is_prime(int n) {                 /* O(sqrt n) */
+    if (n < 2) return false;
+    for (int i = 2; (long)i * i <= n; i++) {
+        if (n % i == 0) return false;
+    }
+    return true;
+}
+
+/* factors: fill out[] with divisors, return the count */
+int factors(int n, int out[]) {        /* O(sqrt n) */
+    int count = 0;
+    for (int i = 1; (long)i * i <= n; i++) {
+        if (n % i == 0) {
+            out[count++] = i;
+            if (i != n / i) out[count++] = n / i;
+        }
+    }
+    return count;                      /* caller may sort out[] */
+}
+
+/* is_prime(97) -> true */
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+
+bool isPrime(int n) {                  // O(sqrt n)
+    if (n < 2) return false;
+    for (int i = 2; (long long)i * i <= n; i++) {
+        if (n % i == 0) return false;
+    }
+    return true;
+}
+
+std::vector<int> factors(int n) {      // O(sqrt n)
+    std::vector<int> result;
+    for (int i = 1; (long long)i * i <= n; i++) {
+        if (n % i == 0) {
+            result.push_back(i);
+            if (i != n / i) result.push_back(n / i);
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+// isPrime(97) -> true,  factors(36) -> [1, 2, 3, 4, 6, 9, 12, 18, 36]
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Task                    | Approach                | Time      | Space  |
+| ----------------------- | ----------------------- | --------- | ------ |
+| Primality (naive)       | trial up to n           | O(n)      | O(1)   |
+| Primality (√n trial)    | trial up to √n          | O(√n)     | O(1)   |
+| List all factors        | pair up around √n       | O(√n)     | O(√n)  |
+| Primes up to N          | Sieve of Eratosthenes   | O(N log log N) | O(N) |
+
+For testing *one* number, √n trial division wins. For finding *all* primes up to some limit, the sieve is the right tool — that is a separate lesson.
+
+## When to use it
+
+<Callout type="warn" title="√n trial division has limits">
+Trial division to √n is perfect for a single check on numbers up to roughly 10¹²ish. Beyond that — cryptographic-scale numbers with hundreds of digits — even √n is astronomically large, and you need probabilistic tests like Miller–Rabin. And if you must test many numbers below a fixed bound, precompute a sieve once instead of running trial division over and over.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why is checking up to √n enough — couldn't a factor hide above it?">
+
+No. Factors come in pairs `d` and `n / d` whose product is `n`. If both were larger than `√n`, their product would exceed `n` — a contradiction. So at least one member of every pair sits at or below `√n`. If no divisor appears up to `√n`, none exists above it either, and `n` is prime.
+
+</Accordion>
+
+<Accordion title="Why loop with i * i <= n instead of i <= sqrt(n)?">
+
+Two reasons. First, `i * i <= n` stays in exact integer arithmetic, while `sqrt(n)` returns a float that can round just below or above the true root and cause off-by-one bugs on perfect squares. Second, you avoid recomputing a `sqrt` call every iteration. One integer multiply is cheaper and always correct.
+
+</Accordion>
+
+<Accordion title="How do you avoid listing the square root twice for perfect squares?">
+
+When `n` is a perfect square, `i` and `n / i` meet at the middle — for `n = 36`, both are `6` when `i = 6`. Guard it with `if (i != n / i)` before adding the partner, so `6` is recorded once, not twice.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Factors come in pairs straddling `√n`, so you never need to search past the square root.
+- Trial division to `√n` tests primality in **O(√n)**; the same loop lists all factors in **O(√n)**.
+- Use `i * i <= n` for exact integer bounds, and switch to a sieve when you need many primes at once.
+
+<Cards>
+  <Card title="Number Basics" href="/docs/dsa/02-recursion-math/04-number-basics" description="The digit and division tricks that lead here." />
+  <Card title="Number Theory Intro" href="/docs/dsa/22-number-theory/01-number-theory-intro" description="Divisibility, GCD, and modular arithmetic in depth." />
+  <Card title="Sieve of Eratosthenes" href="/docs/dsa/22-number-theory/02-sieve-of-eratosthenes" description="Find every prime up to N far faster than one-by-one." />
+</Cards>

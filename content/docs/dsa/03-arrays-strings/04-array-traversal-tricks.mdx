@@ -1,0 +1,266 @@
+---
+title: "Array Traversal Tricks"
+description: "Reverse it, rotate it, list every subarray — a handful of index tricks handle a huge share of array problems."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+  - href: /docs/dsa/03-arrays-strings/05-kadane-and-subarrays
+  - href: /docs/dsa/08-two-pointer/02-opposite-ends
+---
+
+## The problem
+
+Your music app has a "shift the queue" feature: the user taps a button and the last `k`
+songs jump to the front. The queue has 100,000 tracks. Every tap should feel instant — no
+spinner, no lag while the phone shuffles a hundred thousand items around.
+
+"Move the last `k` to the front" is a **rotation**, and it's one of a small family of moves
+— reverse, rotate, enumerate subarrays — that show up again and again. Learn the index
+tricks behind them once and a surprising share of array problems fall over.
+
+## A first attempt
+
+The obvious rotation: to move everything right by `k`, rotate right by **one**, `k` times.
+Each single-step rotation pulls the last element off and shifts the other `n − 1` over.
+
+```python
+def rotate_one(arr):
+    last = arr.pop()      # remove the final element
+    arr.insert(0, last)   # put it at the front — shifts everything, O(n)
+```
+
+Do that `k` times and you've paid `O(n × k)`. Rotate a 100,000-track queue by 50,000 and
+that's five billion moves. The spinner is back.
+
+## The insight
+
+Here's the trick that feels like magic the first time you see it. **Reversal composes into
+rotation.** To rotate right by `k`:
+
+1. reverse the **whole** array,
+2. reverse the **first `k`** elements,
+3. reverse the **rest**.
+
+Reversing is a cheap two-pointer sweep, and you do it three times over — still just `O(n)`,
+with `O(1)` extra space. No element is ever inserted or shifted one-at-a-time.
+
+## How it works
+
+Take `[1, 2, 3, 4, 5]` and rotate right by `k = 2`. The answer should be `[4, 5, 1, 2, 3]`.
+
+<Steps>
+
+<Step>
+
+### Reverse the whole array
+
+`[1, 2, 3, 4, 5]` → `[5, 4, 3, 2, 1]`. Now the last `k` elements are at the front, but
+backwards.
+
+</Step>
+
+<Step>
+
+### Reverse the first k
+
+Fix the front block: reverse indices `0…k-1`. `[5, 4, 3, 2, 1]` → `[4, 5, 3, 2, 1]`.
+
+</Step>
+
+<Step>
+
+### Reverse the rest
+
+Fix the tail block: reverse indices `k…n-1`. `[4, 5, 3, 2, 1]` → `[4, 5, 1, 2, 3]`. Done.
+
+</Step>
+
+</Steps>
+
+```text
+start:            1 2 3 4 5      rotate right by k=2
+reverse all:      5 4 3 2 1
+reverse [0..1]:   4 5 3 2 1
+reverse [2..4]:   4 5 1 2 3   ✓
+```
+
+## The code
+
+The `reverse(arr, i, j)` helper is the two-pointer sweep from the
+[Strings](/docs/dsa/03-arrays-strings/02-strings) lesson, reused three times.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def reverse(arr, i, j):
+    while i < j:
+        arr[i], arr[j] = arr[j], arr[i]
+        i += 1
+        j -= 1
+
+def rotate_right(arr, k):
+    n = len(arr)
+    k %= n                       # k larger than n just wraps around
+    reverse(arr, 0, n - 1)
+    reverse(arr, 0, k - 1)
+    reverse(arr, k, n - 1)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function reverse(arr: number[], i: number, j: number): void {
+  while (i < j) {
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    i++;
+    j--;
+  }
+}
+
+function rotateRight(arr: number[], k: number): void {
+  const n = arr.length;
+  k %= n;
+  reverse(arr, 0, n - 1);
+  reverse(arr, 0, k - 1);
+  reverse(arr, k, n - 1);
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void reverse(int[] arr, int i, int j) {
+    while (i < j) {
+        int tmp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = tmp;
+        i++;
+        j--;
+    }
+}
+
+void rotateRight(int[] arr, int k) {
+    int n = arr.length;
+    k %= n;
+    reverse(arr, 0, n - 1);
+    reverse(arr, 0, k - 1);
+    reverse(arr, k, n - 1);
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void reverse(int *arr, int i, int j) {
+    while (i < j) {
+        int tmp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = tmp;
+        i++;
+        j--;
+    }
+}
+
+void rotate_right(int *arr, int n, int k) {
+    k %= n;
+    reverse(arr, 0, n - 1);
+    reverse(arr, 0, k - 1);
+    reverse(arr, k, n - 1);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+void rotateRight(vector<int>& arr, int k) {
+    int n = (int)arr.size();
+    k %= n;
+    reverse(arr.begin(), arr.end());          // whole
+    reverse(arr.begin(), arr.begin() + k);    // first k
+    reverse(arr.begin() + k, arr.end());      // the rest
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Trick                   | Time     | Space  | Note                                  |
+| ----------------------- | -------- | ------ | ------------------------------------- |
+| Reverse in place        | `O(n)`   | `O(1)` | two pointers swapping inward          |
+| Rotate (three reversals)| `O(n)`   | `O(1)` | beats the `O(n·k)` one-step approach  |
+| Enumerate all subarrays | `O(n²)`  | `O(1)` | there are `n(n+1)/2` of them          |
+
+That last row is the key mental model for the next lesson: an array of length `n` has about
+`n²/2` contiguous subarrays, so *examining each one* can't be faster than `O(n²)`.
+
+## When to use it
+
+<Callout type="idea" title="Reversal is a Swiss-army knife">
+The reverse helper alone gives you in-place reversal, `O(n)` rotation, and palindrome checks.
+When a problem says "rotate", "shift", or "cyclically move", reach for the three-reversal
+trick before writing any element-shifting loop.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why take k %= n before rotating?">
+
+Rotating by `n` lands you back where you started, so only `k mod n` actually matters. If a
+caller passes `k = 100` on a 7-element array, `k %= n` reduces it to `2` and prevents the
+suffix reversal from using out-of-range indices. It's a one-line guard that also handles
+`k` larger than the array.
+
+</Accordion>
+
+<Accordion title="How would you rotate LEFT by k instead of right?">
+
+Rotating left by `k` is the same as rotating right by `n − k`. So either compute
+`k = n - (k % n)` and call the same function, or swap the block sizes: reverse the first `k`,
+reverse the rest, then reverse the whole thing. Both are `O(n)`.
+
+</Accordion>
+
+<Accordion title="How many contiguous subarrays does an array of length n have, and why does that matter?">
+
+Exactly `n(n+1)/2` — choose a start index and an end index at or after it. That's `O(n²)`.
+It matters because any brute-force that inspects every subarray is at least quadratic, which
+is precisely the wall that
+[Kadane's algorithm](/docs/dsa/03-arrays-strings/05-kadane-and-subarrays) breaks through by
+*not* enumerating them all.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A tiny set of index tricks — reverse, rotate, subarray enumeration — covers a large slice
+  of array problems.
+- Rotation done naively is `O(n·k)`; the three-reversal trick does it in `O(n)` time and
+  `O(1)` space.
+- An array has `~n²/2` subarrays, so brute-forcing over all of them is `O(n²)` — a ceiling
+  smarter algorithms aim to beat.
+
+<Cards>
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="Why in-place moves are cheap and shifts are not." />
+  <Card title="Kadane's Algorithm" href="/docs/dsa/03-arrays-strings/05-kadane-and-subarrays" description="Beating the O(n²) subarray wall in one pass." />
+  <Card title="Two Pointers: Opposite Ends" href="/docs/dsa/08-two-pointer/02-opposite-ends" description="More of the inward-sweep pattern used to reverse." />
+</Cards>

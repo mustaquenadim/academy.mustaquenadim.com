@@ -1,0 +1,309 @@
+---
+title: "Breadth-First Search"
+description: "What’s the fewest hops between two people? BFS explores a network ripple by ripple and finds the shortest unweighted path."
+extractedReferences:
+  - href: /docs/dsa/19-graph/01-graph-representations
+  - href: /docs/dsa/19-graph/03-dfs
+  - href: /docs/dsa/19-graph/07-multi-source-bfs
+---
+
+## The problem
+
+On a professional network, you want to know: *how many introductions away is that hiring
+manager?* A direct connection is one hop. A friend-of-a-friend is two. You don't care
+*which* chain — you care about the **shortest** one, because fewer hops means an easier
+introduction.
+
+The people form a [graph](/docs/dsa/19-graph/01-graph-representations), and every edge is
+one hop — all edges cost the same. You need the minimum number of edges from *you* to the
+manager. Guessing a path and counting won't do; you might stumble onto a ten-hop chain when
+a three-hop one exists. You need a method that finds the shortest by construction.
+
+## A first attempt
+
+You might explore greedily: walk to a neighbor, then that neighbor's neighbor, following
+one trail deep before trying another. But depth-first wandering can reach the target the
+*long* way first — it commits to a chain before checking closer people. When it finally
+arrives, the hop count isn't guaranteed minimal, so you'd have to explore *every* path and
+compare. On a large network that's exponential blowup.
+
+The fix isn't cleverer trail-picking. It's changing the **order** in which you visit
+people.
+
+## The insight
+
+Visit people in order of distance. First everyone **1 hop** away, then everyone **2 hops**
+away, then 3 — expanding outward in rings, like ripples from a stone dropped in water.
+
+The moment a ring reaches the target, you're done: no closer ring contained it, so the
+current ring *is* its true distance. To enforce "closest first," process people in the
+exact order you discover them — **first in, first out**. That's a **queue**, and the whole
+technique is **breadth-first search**.
+
+<Callout type="idea" title="Why a queue, not a stack">
+A queue hands back the *oldest* waiting vertex, so all distance-1 vertices are processed
+before any distance-2 vertex is touched. Swap the queue for a stack and you get depth-first
+search — same skeleton, opposite order, and you lose the shortest-path guarantee.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Seed the queue with the start
+
+Put the start vertex in the queue and mark it **visited** so you never enqueue it twice.
+Record its distance as 0.
+
+</Step>
+
+<Step>
+
+### Pop the front vertex
+
+Take the oldest vertex off the queue. This is the current ripple's frontier.
+
+</Step>
+
+<Step>
+
+### Enqueue its unvisited neighbors
+
+For each neighbor not yet visited: mark it visited, set its distance to `dist[current] + 1`,
+and push it to the back. Marking *when enqueuing* (not when popping) prevents the same
+vertex from entering the queue multiple times.
+
+</Step>
+
+<Step>
+
+### Repeat until the queue empties
+
+Keep popping and expanding. Every vertex is dequeued exactly once, in nondecreasing order of
+distance. Stop early if you pop the target.
+
+</Step>
+
+</Steps>
+
+Starting BFS from `0` on this graph, the rings come out in order `0 | 1 2 | 3 4 5`:
+
+```text
+      (1)---(3)
+     /         \
+   (0)         (5)
+     \         /
+      (2)---(4)
+
+queue:  [0]              visit 0            dist 0
+        [1,2]            visit 1, 2         dist 1
+        [3,4]            visit 3, 4         dist 2
+        [5]              visit 5            dist 3
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+def bfs(adj, start):
+    n = len(adj)
+    dist = [-1] * n           # -1 = unvisited
+    dist[start] = 0
+    q = deque([start])
+    order = []
+    while q:
+        u = q.popleft()
+        order.append(u)
+        for v in adj[u]:
+            if dist[v] == -1:         # mark on enqueue
+                dist[v] = dist[u] + 1
+                q.append(v)
+    return order, dist
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function bfs(adj: number[][], start: number): { order: number[]; dist: number[] } {
+  const n = adj.length;
+  const dist = new Array(n).fill(-1);
+  dist[start] = 0;
+  const q: number[] = [start];
+  const order: number[] = [];
+  let head = 0;
+  while (head < q.length) {
+    const u = q[head++];
+    order.push(u);
+    for (const v of adj[u]) {
+      if (dist[v] === -1) {
+        dist[v] = dist[u] + 1;
+        q.push(v);
+      }
+    }
+  }
+  return { order, dist };
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+int[] bfs(List<List<Integer>> adj, int start) {
+    int n = adj.size();
+    int[] dist = new int[n];
+    Arrays.fill(dist, -1);
+    dist[start] = 0;
+    Queue<Integer> q = new ArrayDeque<>();
+    q.add(start);
+    while (!q.isEmpty()) {
+        int u = q.poll();
+        for (int v : adj.get(u)) {
+            if (dist[v] == -1) {
+                dist[v] = dist[u] + 1;
+                q.add(v);
+            }
+        }
+    }
+    return dist;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <string.h>
+
+/* adj: adjacency list via arrays; deg[u] = neighbor count */
+void bfs(int adj[][100], int deg[], int n, int start, int dist[]) {
+    memset(dist, -1, n * sizeof(int));
+    int queue[100000], head = 0, tail = 0;
+    dist[start] = 0;
+    queue[tail++] = start;
+    while (head < tail) {
+        int u = queue[head++];
+        for (int i = 0; i < deg[u]; i++) {
+            int v = adj[u][i];
+            if (dist[v] == -1) {
+                dist[v] = dist[u] + 1;
+                queue[tail++] = v;
+            }
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <queue>
+
+std::vector<int> bfs(const std::vector<std::vector<int>>& adj, int start) {
+    int n = adj.size();
+    std::vector<int> dist(n, -1);
+    dist[start] = 0;
+    std::queue<int> q;
+    q.push(start);
+    while (!q.empty()) {
+        int u = q.front(); q.pop();
+        for (int v : adj[u]) {
+            if (dist[v] == -1) {
+                dist[v] = dist[u] + 1;
+                q.push(v);
+            }
+        }
+    }
+    return dist;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warning" title="Mark on enqueue, not on dequeue">
+If you only mark a vertex visited when you *pop* it, the same vertex can be pushed by
+several neighbors before it's popped — the queue balloons and distances can be overwritten.
+Always set `dist[v]` (or `visited[v]`) the instant you enqueue `v`.
+</Callout>
+
+## Complexity
+
+| Aspect | Cost       | Why                                                    |
+| ------ | ---------- | ------------------------------------------------------ |
+| Time   | `O(n + m)` | each vertex dequeued once, each edge examined once     |
+| Space  | `O(n)`     | the queue plus the `dist`/`visited` array              |
+
+`n` is the vertex count and `m` the edge count. Every edge is looked at from each endpoint,
+so with an adjacency list the total edge work is `O(m)`.
+
+## When to use it
+
+<Callout type="info" title="BFS shines here">
+Reach for BFS to find the **shortest path in an unweighted graph** (fewest edges), to
+explore level by level, to find connected components, or to test bipartiteness. It does
+**not** find shortest paths when edges have different weights — for that you need
+[Dijkstra](/docs/dsa/19-graph/06-shortest-paths). When several starting points spread at
+once (fire, rot, signal), see [Multi-Source BFS](/docs/dsa/19-graph/07-multi-source-bfs).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does BFS give the shortest path in an unweighted graph but DFS doesn't?">
+
+BFS processes vertices in nondecreasing distance order, so the *first* time it reaches a
+vertex is necessarily along a minimum-hop path — no later, longer path can overwrite it.
+DFS dives down one branch fully before trying siblings, so it may reach a vertex via a long
+detour first and record that inflated distance. The FIFO queue is what buys the guarantee.
+
+</Accordion>
+
+<Accordion title="How do you recover the actual path, not just its length?">
+
+Keep a `parent` array. When you enqueue `v` from `u`, set `parent[v] = u`. After the search,
+start at the target and follow `parent` pointers back to the start, then reverse the list.
+Costs only `O(n)` extra space and turns a distance into a concrete route.
+
+</Accordion>
+
+<Accordion title="Your graph is disconnected — some vertices are unreachable from the start. What does BFS report for them, and how do you visit everything?">
+
+Unreachable vertices keep `dist == -1` (never enqueued). To cover every component, loop over
+all vertices and launch a fresh BFS from any that are still unvisited. The total stays
+`O(n + m)` because each vertex and edge is still handled at most once overall.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- BFS explores a graph in **rings of increasing distance** using a FIFO queue.
+- The first time it reaches a vertex is along a **shortest unweighted path** — that's its
+  signature guarantee.
+- It runs in `O(n + m)` time and `O(n)` space; always mark vertices visited **on enqueue**.
+
+<Cards>
+  <Card title="Representing Graphs" href="/docs/dsa/19-graph/01-graph-representations" description="The adjacency list BFS walks." />
+  <Card title="Depth-First Search" href="/docs/dsa/19-graph/03-dfs" description="Same skeleton, a stack instead of a queue." />
+  <Card title="Multi-Source BFS" href="/docs/dsa/19-graph/07-multi-source-bfs" description="Start the ripples from many sources at once." />
+</Cards>

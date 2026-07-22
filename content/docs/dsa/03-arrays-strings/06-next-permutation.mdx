@@ -1,0 +1,275 @@
+---
+title: "Next Permutation"
+description: "Given an arrangement, what’s the very next one in dictionary order? There’s an elegant in-place way to find it."
+extractedReferences:
+  - href: /docs/dsa/03-arrays-strings/04-array-traversal-tricks
+  - href: /docs/dsa/11-backtracking/02-permutations-and-subsets
+  - href: /docs/dsa/03-arrays-strings/01-arrays
+---
+
+## The problem
+
+Think of the odometer in an old car, but each digit can be any value and no digit repeats.
+You're showing arrangements of `[1, 2, 3]` in dictionary order: `123`, `132`, `213`, `231`,
+`312`, `321`. Someone hands you `123` and asks for the **next** one, `132`. Hand them `321`
+and there is no next — you wrap back to `123`.
+
+The task: given one arrangement, produce the **immediately next** arrangement in
+lexicographic (dictionary) order, using the same elements. And do it in place, without
+listing all the permutations first.
+
+## A first attempt
+
+The brute-force route: generate **every** permutation, sort them all, find yours in the
+list, and return the one after it. With `n` elements there are `n!` permutations — for just
+12 elements that's nearly half a billion arrangements to build and sort. You'd burn `O(n!)`
+time and memory to answer a question about a *single* step. There has to be local structure
+we can exploit instead.
+
+## The insight
+
+Read the arrangement from the right and notice what makes `321` the **last** one: it's fully
+**descending**. A descending tail is already maxed out — it can't get any bigger. So the
+only way to increase the number by the smallest possible amount is:
+
+1. Find the rightmost spot where the order **breaks** — an element smaller than the one just
+   after it. Call its index the **pivot**.
+2. Swap the pivot with the **smallest element to its right that still beats it**. This nudges
+   the number up by the least amount possible at that position.
+3. The tail after the pivot is still descending; **reverse it** to make it ascending — the
+   smallest possible ending.
+
+If there's no pivot at all, the whole thing was descending (the last permutation), so just
+reverse it to wrap around to the first.
+
+## How it works
+
+Take `[1, 3, 5, 4, 2]`. The next permutation is `[1, 4, 2, 3, 5]`.
+
+<Steps>
+
+<Step>
+
+### Find the pivot from the right
+
+Scan right-to-left for the first index `i` where `arr[i] < arr[i + 1]`. Here `5 > 4 > 2` is
+descending, but `3 < 5` — so the pivot is `arr[1] = 3`.
+
+</Step>
+
+<Step>
+
+### Find the successor to swap in
+
+In the descending tail `[5, 4, 2]`, find the **rightmost** element still larger than the
+pivot `3`. That's `4`. Swap it with the pivot: `[1, 4, 5, 3, 2]`.
+
+</Step>
+
+<Step>
+
+### Reverse the tail
+
+Everything after the pivot position is still descending (`[5, 3, 2]`). Reverse it to get the
+smallest ordering: `[2, 3, 5]`. Result: `[1, 4, 2, 3, 5]`.
+
+</Step>
+
+<Step>
+
+### Handle the wrap-around
+
+If step 1 finds no pivot (the array was fully descending, like `[3, 2, 1]`), reversing the
+whole array gives the first permutation `[1, 2, 3]`.
+
+</Step>
+
+</Steps>
+
+```text
+[1, 3, 5, 4, 2]
+    ^pivot=3 (arr[1] < arr[2])
+find rightmost > 3 in tail [5,4,2] -> 4, swap:
+[1, 4, 5, 3, 2]
+reverse tail after pivot [5,3,2] -> [2,3,5]:
+[1, 4, 2, 3, 5]   ✓
+```
+
+## The code
+
+The tail reversal reuses the two-pointer sweep from
+[Array Traversal Tricks](/docs/dsa/03-arrays-strings/04-array-traversal-tricks).
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def next_permutation(arr):
+    n = len(arr)
+    i = n - 2
+    while i >= 0 and arr[i] >= arr[i + 1]:   # find the pivot
+        i -= 1
+    if i >= 0:                               # not the last permutation
+        j = n - 1
+        while arr[j] <= arr[i]:              # rightmost value bigger than pivot
+            j -= 1
+        arr[i], arr[j] = arr[j], arr[i]
+    arr[i + 1:] = reversed(arr[i + 1:])      # reverse the tail (whole array if i == -1)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function nextPermutation(arr: number[]): void {
+  const n = arr.length;
+  let i = n - 2;
+  while (i >= 0 && arr[i] >= arr[i + 1]) i--;
+  if (i >= 0) {
+    let j = n - 1;
+    while (arr[j] <= arr[i]) j--;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  let lo = i + 1, hi = n - 1;                // reverse the tail
+  while (lo < hi) {
+    [arr[lo], arr[hi]] = [arr[hi], arr[lo]];
+    lo++;
+    hi--;
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void nextPermutation(int[] arr) {
+    int n = arr.length, i = n - 2;
+    while (i >= 0 && arr[i] >= arr[i + 1]) i--;
+    if (i >= 0) {
+        int j = n - 1;
+        while (arr[j] <= arr[i]) j--;
+        int tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    int lo = i + 1, hi = n - 1;
+    while (lo < hi) {
+        int tmp = arr[lo]; arr[lo] = arr[hi]; arr[hi] = tmp;
+        lo++; hi--;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void next_permutation(int *arr, int n) {
+    int i = n - 2;
+    while (i >= 0 && arr[i] >= arr[i + 1]) i--;
+    if (i >= 0) {
+        int j = n - 1;
+        while (arr[j] <= arr[i]) j--;
+        int tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    int lo = i + 1, hi = n - 1;
+    while (lo < hi) {
+        int tmp = arr[lo]; arr[lo] = arr[hi]; arr[hi] = tmp;
+        lo++; hi--;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+void nextPermutation(vector<int>& arr) {
+    int n = (int)arr.size(), i = n - 2;
+    while (i >= 0 && arr[i] >= arr[i + 1]) i--;
+    if (i >= 0) {
+        int j = n - 1;
+        while (arr[j] <= arr[i]) j--;
+        swap(arr[i], arr[j]);
+    }
+    reverse(arr.begin() + (i + 1), arr.end());
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach                    | Time     | Space  | Note                                    |
+| --------------------------- | -------- | ------ | --------------------------------------- |
+| Generate & sort all         | `O(n!·n)`| `O(n!)`| builds every arrangement — infeasible   |
+| Pivot, swap, reverse        | `O(n)`   | `O(1)` | at most three linear passes, in place   |
+
+Three simple scans — find pivot, find successor, reverse tail — and never more than `O(n)`
+work total.
+
+## When to use it
+
+<Callout type="idea" title="Repeat it to list every permutation in order">
+Call `next_permutation` in a loop starting from the sorted array until it wraps back to the
+start, and you get all `n!` permutations in lexicographic order using `O(1)` extra space —
+no recursion stack. It's the iterative alternative to
+[backtracking permutations](/docs/dsa/11-backtracking/02-permutations-and-subsets).
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why do we look for the RIGHTMOST element bigger than the pivot, not just any bigger one?">
+
+The tail to the pivot's right is descending, so the rightmost element larger than the pivot
+is the **smallest** such element. Swapping in the smallest valid value increases the number
+by the least possible amount at that position — which is exactly what "next" permutation
+means. Picking a larger one would skip valid permutations.
+
+</Accordion>
+
+<Accordion title="Why reverse the tail after swapping instead of sorting it?">
+
+After the swap, the tail is still in descending order (the swap preserves that property). The
+smallest arrangement of a descending run is its reverse — an ascending run. Reversing is
+`O(n)`; sorting would be `O(n log n)` and unnecessary. Recognizing the tail is already
+sorted-in-reverse is the trick that keeps the whole thing linear.
+
+</Accordion>
+
+<Accordion title="What does the algorithm return for the last permutation like [3, 2, 1]?">
+
+No pivot is found (`i` falls to `-1`), so the swap step is skipped and the tail-reverse runs
+on the **entire** array, turning `[3, 2, 1]` into `[1, 2, 3]` — the first permutation. That's
+the intended wrap-around, matching how an odometer rolls over.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Next permutation finds the immediately-larger arrangement in dictionary order in `O(n)`
+  time and `O(1)` space — no need to enumerate all `n!` of them.
+- The recipe: find the rightmost pivot where order breaks, swap it with the smallest
+  larger element to its right, then reverse the descending tail.
+- A fully descending array has no pivot; reversing the whole thing wraps it back to the
+  first permutation.
+
+<Cards>
+  <Card title="Array Traversal Tricks" href="/docs/dsa/03-arrays-strings/04-array-traversal-tricks" description="The reverse helper this algorithm leans on." />
+  <Card title="Permutations & Subsets" href="/docs/dsa/11-backtracking/02-permutations-and-subsets" description="The recursive way to generate arrangements." />
+  <Card title="Arrays" href="/docs/dsa/03-arrays-strings/01-arrays" description="The in-place operations underneath." />
+</Cards>

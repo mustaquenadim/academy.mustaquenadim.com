@@ -1,0 +1,287 @@
+---
+title: "Bitwise Basics"
+description: "Underneath every number is a row of switches — learn AND, OR, XOR, and shifts, and some problems become one-liners."
+extractedReferences:
+  - href: /docs/dsa/06-bit-manipulation/02-bit-tricks
+  - href: /docs/dsa/06-bit-manipulation/03-bits-with-arrays
+---
+
+## The problem
+
+You are building a settings screen. A user can toggle notifications, dark mode, auto-save,
+and a dozen more options. Your first instinct is a row of boolean fields — one per option.
+Then you need to pass that state to an API, cache it, compare two users' settings, and count
+how many features someone has enabled. Suddenly you are juggling a bag of loose flags.
+
+There is a quieter representation hiding in plain sight. Every integer your program already
+stores is a row of on/off switches. If you could flip and read those switches directly, a
+whole class of these bookkeeping problems collapses into a single number and a few operators.
+
+## A first attempt
+
+You could keep a list of booleans and loop over it for every question you ask:
+
+```python
+flags = [True, False, True, False]  # notifications, dark, autosave, beta
+
+def count_enabled(flags):
+    total = 0
+    for f in flags:
+        if f:
+            total += 1
+    return total
+```
+
+That works, but every operation is O(n) in the number of flags, and storing one full boolean
+(often a whole byte) per switch is wasteful. Comparing two users means walking both lists.
+Combining two sets of permissions means another loop. The list never lets you treat the
+*whole* state as one atomic value.
+
+## The insight
+
+A single integer is already a fixed row of bits. The number `13` is `1101` in binary — four
+switches, three of them on. If you decide "bit 0 is notifications, bit 1 is dark mode, bit 2
+is auto-save," then the entire settings state *is* one number. The bitwise operators let you
+read and write individual switches in O(1) without any loop.
+
+Four operators do everything:
+
+- **AND (`&`)** keeps a bit only if it is on in *both* operands — used to *test* or *mask*.
+- **OR (`|`)** turns a bit on if it is on in *either* — used to *set*.
+- **XOR (`^`)** flips a bit when the two differ — used to *toggle*.
+- **Shifts (`<<`, `>>`)** slide bits left or right — used to *build a mask* like `1 << i`.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build a mask for the bit you care about
+
+To touch bit `i`, you need a number with only that bit set. `1 << i` does exactly that:
+`1 << 0` is `0001`, `1 << 2` is `0100`. The mask is a spotlight on one switch.
+
+</Step>
+
+<Step>
+
+### Set a bit with OR
+
+`x | (1 << i)` turns bit `i` on and leaves every other bit alone, because OR-ing with `0`
+never changes a bit.
+
+```
+  1010   (x = 10)
+| 0100   (1 << 2)
+------
+  1110   (14)  ← bit 2 is now on
+```
+
+</Step>
+
+<Step>
+
+### Clear a bit with AND and NOT
+
+To turn bit `i` off, AND with a mask that is all ones except that bit: `x & ~(1 << i)`.
+
+```
+  1110   (14)
+& 1011   (~(1 << 2))
+------
+  1010   (10)  ← bit 2 is now off
+```
+
+</Step>
+
+<Step>
+
+### Test a bit with AND
+
+`(x >> i) & 1` shifts the bit you want down to position 0, then masks off the rest. You get
+`1` if the switch is on, `0` if off.
+
+</Step>
+
+<Step>
+
+### Toggle a bit with XOR
+
+`x ^ (1 << i)` flips bit `i`: on becomes off, off becomes on, because XOR with `1` inverts.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def set_bit(x, i):
+    return x | (1 << i)
+
+def clear_bit(x, i):
+    return x & ~(1 << i)
+
+def toggle_bit(x, i):
+    return x ^ (1 << i)
+
+def test_bit(x, i):
+    return (x >> i) & 1
+
+x = 0b1010          # 10
+x = set_bit(x, 2)   # 1110 -> 14
+print(test_bit(x, 2))  # 1
+x = clear_bit(x, 1) # 1100 -> 12
+print(x)            # 12
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const setBit = (x: number, i: number): number => x | (1 << i);
+const clearBit = (x: number, i: number): number => x & ~(1 << i);
+const toggleBit = (x: number, i: number): number => x ^ (1 << i);
+const testBit = (x: number, i: number): number => (x >> i) & 1;
+
+let x = 0b1010;        // 10
+x = setBit(x, 2);      // 1110 -> 14
+console.log(testBit(x, 2)); // 1
+x = clearBit(x, 1);    // 1100 -> 12
+console.log(x);        // 12
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Bits {
+    static int setBit(int x, int i)    { return x | (1 << i); }
+    static int clearBit(int x, int i)  { return x & ~(1 << i); }
+    static int toggleBit(int x, int i) { return x ^ (1 << i); }
+    static int testBit(int x, int i)   { return (x >> i) & 1; }
+
+    public static void main(String[] args) {
+        int x = 0b1010;        // 10
+        x = setBit(x, 2);      // 1110 -> 14
+        System.out.println(testBit(x, 2)); // 1
+        x = clearBit(x, 1);    // 1100 -> 12
+        System.out.println(x); // 12
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+
+int set_bit(int x, int i)    { return x | (1 << i); }
+int clear_bit(int x, int i)  { return x & ~(1 << i); }
+int toggle_bit(int x, int i) { return x ^ (1 << i); }
+int test_bit(int x, int i)   { return (x >> i) & 1; }
+
+int main(void) {
+    int x = 0b1010;        /* 10 */
+    x = set_bit(x, 2);     /* 1110 -> 14 */
+    printf("%d\n", test_bit(x, 2)); /* 1 */
+    x = clear_bit(x, 1);   /* 1100 -> 12 */
+    printf("%d\n", x);     /* 12 */
+    return 0;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+
+int setBit(int x, int i)    { return x | (1 << i); }
+int clearBit(int x, int i)  { return x & ~(1 << i); }
+int toggleBit(int x, int i) { return x ^ (1 << i); }
+int testBit(int x, int i)   { return (x >> i) & 1; }
+
+int main() {
+    int x = 0b1010;        // 10
+    x = setBit(x, 2);      // 1110 -> 14
+    std::cout << testBit(x, 2) << "\n"; // 1
+    x = clearBit(x, 1);    // 1100 -> 12
+    std::cout << x << "\n"; // 12
+    return 0;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Set / clear / toggle / test one bit | O(1) | O(1) |
+| Store n flags | O(1) integer | O(1) |
+| Combine two flag sets (`a \| b`) | O(1) | O(1) |
+
+Each operation is a single CPU instruction, independent of how many flags the integer holds.
+
+## When to use it
+
+<Callout type="idea" title="Reach for bits when state is a small fixed set of flags">
+Bit fields shine for compact permission sets, feature toggles, and visited-state in graph or
+DP problems. The pitfall: operator precedence. `x & 1 << i` is not `(x & 1) << i` — always
+parenthesize your masks. Also watch shift width: shifting by 32 or more on a 32-bit int is
+undefined in C/C++/Java, and JavaScript coerces bitwise operands to 32-bit signed integers.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How do you check whether an integer is even using one bitwise operation?">
+
+The lowest bit of any number is its "ones" place, so it is `1` exactly when the number is
+odd. `x & 1` is `0` for even and `1` for odd. So `(x & 1) == 0` tests evenness without a
+division or modulo.
+
+</Accordion>
+
+<Accordion title="Given flags = 0, set bits 0 and 3, then check if bit 3 is on. What are the steps?">
+
+Start with `flags = 0000`. Set bit 0: `flags | (1 << 0)` gives `0001`. Set bit 3:
+`0001 | (1 << 3)` gives `1001` (decimal 9). Test bit 3: `(9 >> 3) & 1` shifts `1001` down to
+`0001`, mask gives `1`. The bit is on.
+
+</Accordion>
+
+<Accordion title="Why is x ^ x always 0, and x ^ 0 always x?">
+
+XOR outputs `1` only when its two inputs differ. Every bit of `x` matches itself, so
+`x ^ x` produces all zeros. Every bit of `x` XOR `0` keeps its own value, so `x ^ 0` is `x`.
+These two identities are the engine behind almost every XOR trick you will meet next.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- An integer is a fixed row of bits; AND masks, OR sets, XOR toggles, and shifts build masks.
+- `1 << i` spotlights bit `i`; combine it with `|`, `& ~`, `^`, and `>>` to write and read switches in O(1).
+- Parenthesize masks and mind shift width to avoid precedence and overflow surprises.
+
+<Cards>
+  <Card title="Bit Tricks" href="/docs/dsa/06-bit-manipulation/02-bit-tricks" description="Swap without a temp, detect powers of two, count set bits." />
+  <Card title="Bits Meet Arrays" href="/docs/dsa/06-bit-manipulation/03-bits-with-arrays" description="XOR makes duplicates and missing numbers disappear." />
+</Cards>

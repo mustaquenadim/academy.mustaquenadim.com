@@ -1,0 +1,279 @@
+---
+title: "Hash Functions"
+description: "How do you turn \"a name\" into \"a shelf number\" so you always know where to look? That mapping is a hash function."
+extractedReferences:
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/07-hashing/03-collision-handling
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+You're building a coat check at a busy theater. A thousand guests arrive, hand you a coat,
+and later come back for it. If you just pile the coats up, finding one guest's coat means
+digging through the whole heap — a fresh search every single time.
+
+So you buy a wall of numbered hooks. Now the real question is the hard one: when a guest
+named `ria_codes` hands you a coat, **which hook do you hang it on?** You need a rule that
+turns a name into a hook number — and gives you back the *same* number when she returns.
+
+## A first attempt
+
+The easy rule: keep a running list, and give each new guest the next free hook. `ria_codes`
+gets hook 0, `fahim` gets hook 1, and so on.
+
+But now retrieval is broken again. When `ria_codes` comes back, which hook was hers? You
+don't know — so you scan the list to find her name, then read off the hook. That scan is
+`O(n)`, exactly the pile-of-coats problem you were trying to escape. Assigning numbers in
+arrival order tells you nothing about where to *look* later.
+
+The fix has to come from the name itself. The number must be **computed from the key**, not
+handed out in sequence.
+
+## The insight
+
+What if the name *is* the address? Take the characters of `ria_codes`, mash them into a
+single number with arithmetic, then fold that number down to a valid hook. Same name in,
+same number out — every time, without any list to consult.
+
+That rule is a **hash function**: a deterministic function that maps a key of any size to a
+fixed-size number, its *hash code*. Reduce that code modulo the number of hooks and you get
+a slot. The name computes its own address.
+
+<Callout type="idea" title="Determinism is the whole game">
+A hash function must return the same output for the same input, forever. If `hash("ria")`
+could drift between calls, you'd store a coat on one hook and look for it on another. Given
+that, everything else is about *spreading* keys evenly so few of them collide.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Start from a seed
+
+Begin an accumulator at some non-zero value. It will absorb every character of the key.
+
+</Step>
+
+<Step>
+
+### Mix in each character
+
+Walk the string. For each character, multiply the accumulator by a small prime (a common
+choice is 31) and add the character's code. Multiplying before adding makes *position*
+matter — so `"abc"` and `"cba"` land on different codes.
+
+</Step>
+
+<Step>
+
+### Keep it bounded
+
+The running number can grow huge, so wrap it into a fixed integer range as you go. This is
+the raw *hash code*.
+
+</Step>
+
+<Step>
+
+### Fold to a slot
+
+Take the hash code modulo the table size to get an index in range. A prime table size and a
+good mix keep those indices spread out.
+
+</Step>
+
+</Steps>
+
+Here's the mixing, character by character, for a tiny 8-hook wall:
+
+```text
+key = "cat",  acc starts at 7
+ 'c' (99):   acc = 7*31 + 99   = 316
+ 'a' (97):   acc = 316*31 + 97 = 9893
+ 't'(116):   acc = 9893*31 +116 = 306799
+ slot = 306799 % 8 = 7   ← "cat" hangs on hook 7
+```
+
+Change one letter and the whole number swerves — that avalanche is what scatters keys across
+the hooks instead of clumping them.
+
+## The code
+
+A classic string hash: fold each character into an accumulator, then reduce to a slot.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def hash_code(key: str) -> int:
+    h = 7
+    for ch in key:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF  # keep it 32-bit
+    return h
+
+def slot(key: str, table_size: int) -> int:
+    return hash_code(key) % table_size
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function hashCode(key: string): number {
+  let h = 7;
+  for (const ch of key) {
+    h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; // 32-bit wrap
+  }
+  return h >>> 0; // treat as unsigned
+}
+
+function slot(key: string, tableSize: number): number {
+  return hashCode(key) % tableSize;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int hashCode(String key) {
+    int h = 7;
+    for (int i = 0; i < key.length(); i++) {
+        h = h * 31 + key.charAt(i); // int overflow wraps naturally
+    }
+    return h;
+}
+
+int slot(String key, int tableSize) {
+    return Math.floorMod(hashCode(key), tableSize);
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stddef.h>
+
+unsigned int hash_code(const char *key) {
+    unsigned int h = 7;
+    for (const char *p = key; *p; p++) {
+        h = h * 31u + (unsigned char)*p; // unsigned wraps by spec
+    }
+    return h;
+}
+
+size_t slot(const char *key, size_t table_size) {
+    return hash_code(key) % table_size;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <cstddef>
+
+unsigned int hash_code(const std::string &key) {
+    unsigned int h = 7;
+    for (unsigned char ch : key) {
+        h = h * 31u + ch; // unsigned wraps by spec
+    }
+    return h;
+}
+
+std::size_t slot(const std::string &key, std::size_t table_size) {
+    return hash_code(key) % table_size;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+Computing the code touches every character once, so hashing a key of length `k` is `O(k)`.
+For short keys we treat that as effectively constant — which is why a hash-table lookup is
+called `O(1)`.
+
+## Complexity
+
+| Operation             | Time   | Space  | Note                                        |
+| --------------------- | ------ | ------ | ------------------------------------------- |
+| Hash a key length `k` | `O(k)` | `O(1)` | one pass over the characters                |
+| Fold to a slot        | `O(1)` | `O(1)` | a single modulo                             |
+
+<Callout type="warn" title="A good hash isn't just fast">
+Speed is only half the job. A hash function that returns `0` for everything is instant and
+useless — every key collides. What you actually want is *uniform spread*: keys scattered
+evenly so each hook holds about the same number of coats. A weak hash silently turns your
+`O(1)` table into an `O(n)` list.
+</Callout>
+
+## When to use it
+
+<Callout type="info" title="Reach for it — and when not to">
+You need a hash function any time you build or use a hash table, deduplicate items, or shard
+data across buckets. Use your language's built-in hash for everyday keys; it's tuned and
+tested. Write your own only for learning, or for custom key types. And never use a plain
+hash like this one for security — passwords and signatures need *cryptographic* hashes,
+which are a different tool with different guarantees.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why multiply by 31 before adding each character, instead of just summing the character codes?">
+
+A plain sum ignores order: `"abc"` and `"cba"` and `"bca"` all add up to the same number, so
+they'd all collide. Multiplying the accumulator by 31 first gives each position a different
+weight, so rearranging the letters changes the code. 31 is a small odd prime that mixes bits
+well and compiles to a cheap shift-and-subtract (`h*31 == (h<<5) - h`).
+
+</Accordion>
+
+<Accordion title="Two different keys produce the same slot. Did the hash function fail?">
+
+No — that's a **collision**, and it's unavoidable. There are infinitely many possible keys
+but only finitely many slots, so by the pigeonhole principle some keys must share. A good
+hash makes collisions rare and evenly spread; a hash table then resolves them with chaining
+or probing. See [Handling Collisions](/docs/dsa/07-hashing/03-collision-handling).
+
+</Accordion>
+
+<Accordion title="Why reduce modulo a prime table size rather than a power of two?">
+
+Modulo a power of two just keeps the low bits of the hash code, so if your hash concentrates
+information in the high bits, those get thrown away and keys clump. A prime size mixes all
+the bits into the result, spreading keys more evenly. (Well-designed hashes sidestep this,
+which is why some libraries still use powers of two for speed — but a prime is the safe
+default.)
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A hash function deterministically turns a key into a fixed-size number, which you fold
+  modulo the table size into a slot — the key computes its own address.
+- Good hashes are fast *and* spread keys uniformly; multiplying by a prime makes position
+  matter so anagrams don't collide.
+- Collisions are mathematically inevitable; the hash's job is to make them rare, and the
+  table's job is to resolve them.
+
+<Cards>
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The shelf of slots that turns a hash into O(1) lookup." />
+  <Card title="Handling Collisions" href="/docs/dsa/07-hashing/03-collision-handling" description="What to do when two keys compute the same slot." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why O(k) hashing counts as constant time in practice." />
+</Cards>

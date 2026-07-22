@@ -1,0 +1,366 @@
+---
+title: "Iterative & Morris Traversal"
+description: "Recursion uses the call stack — but you can traverse a tree with your own stack, or even no extra space at all."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/02-traversals
+  - href: /docs/dsa/16-binary-tree/01-binary-tree-intro
+---
+
+## The problem
+
+Recursive traversal is beautiful — three lines and you're done. Then production hands you a tree that's a million nodes deep. It happens: a linked-list-shaped BST, a deeply nested comment thread, a pathological input crafted by a fuzzer. Your elegant recursion hits it and the program dies with a stack overflow.
+
+The recursion never *told* you how much memory it was using. Each call quietly parks a stack frame, and the runtime's call stack has a hard limit you don't control. On a deep tree you run out of it before you run out of nodes.
+
+## A first attempt
+
+The obvious fix is to raise the recursion limit. In Python you can bump `sys.setrecursionlimit`; in other languages you can grow the thread stack size. But you're just moving the wall, not removing it — and a bigger stack eats real memory whether or not you need it. You still can't traverse a tree taller than your stack.
+
+The deeper issue is that the *call stack* is doing bookkeeping you could do yourself. It remembers "which node do I return to, and what's left to do there." If you managed that bookkeeping in a plain data structure on the heap, depth would be limited only by available memory, not by a fixed runtime stack.
+
+## The insight
+
+Recursion is just an **explicit stack** in disguise. Anything the call stack tracks — the node to resume and whether you've handled its right child yet — you can push onto a `Stack` object yourself and loop instead of recurse. Same order, same `O(n)` time, but the depth budget is now the heap.
+
+Then push further: do you even need the stack? **Morris traversal** says no. It temporarily rewires unused `null` right-pointers into **threads** that point back to the in-order successor, walks the tree following those threads, and undoes them as it goes — giving true `O(1)` extra space.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Iterative in-order with an explicit stack
+
+Keep a `current` pointer and a stack. Push nodes while going as far left as possible. When you can't go left, pop a node, visit it, then move to its right child and repeat. The stack holds exactly the ancestors you still owe a visit to.
+
+```
+push-left chain, pop to visit, then go right
+```
+
+</Step>
+
+<Step>
+
+### Iterative pre-order is even simpler
+
+Push the root. Loop: pop a node and visit it, then push its **right** child first and **left** child second. Because a stack is LIFO, the left child comes back out first — giving node, left, right order.
+
+</Step>
+
+<Step>
+
+### Morris: borrow the null right-pointers
+
+For in-order without any stack: at each `current`, if it has no left child, visit it and go right. If it *has* a left child, find that subtree's rightmost node (the in-order predecessor).
+
+</Step>
+
+<Step>
+
+### Thread, then unthread
+
+If the predecessor's right pointer is `null`, set it to `current` (a temporary thread) and move left. If it already points to `current`, you've come back around — so remove the thread, visit `current`, and go right. Every thread you create you later destroy, so the tree ends exactly as it started.
+
+```
+   1              predecessor of 1 is 2's rightmost = 2
+  /
+ 2      -> thread 2.right = 1, descend left; later follow thread back up to 1
+```
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def inorder_iterative(root):
+    out, stack, cur = [], [], root
+    while cur or stack:
+        while cur:                  # dive left, remembering ancestors
+            stack.append(cur)
+            cur = cur.left
+        cur = stack.pop()
+        out.append(cur.value)       # visit
+        cur = cur.right
+    return out
+
+def morris_inorder(root):
+    out, cur = [], root
+    while cur:
+        if cur.left is None:
+            out.append(cur.value)   # visit
+            cur = cur.right
+        else:
+            pred = cur.left
+            while pred.right and pred.right is not cur:
+                pred = pred.right
+            if pred.right is None:  # create thread, go left
+                pred.right = cur
+                cur = cur.left
+            else:                   # thread exists: unthread, visit, go right
+                pred.right = None
+                out.append(cur.value)
+                cur = cur.right
+    return out
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function inorderIterative(root: TreeNode | null): number[] {
+  const out: number[] = [];
+  const stack: TreeNode[] = [];
+  let cur = root;
+  while (cur || stack.length) {
+    while (cur) {                   // dive left
+      stack.push(cur);
+      cur = cur.left;
+    }
+    cur = stack.pop()!;
+    out.push(cur.value);            // visit
+    cur = cur.right;
+  }
+  return out;
+}
+
+function morrisInorder(root: TreeNode | null): number[] {
+  const out: number[] = [];
+  let cur = root;
+  while (cur) {
+    if (cur.left === null) {
+      out.push(cur.value);          // visit
+      cur = cur.right;
+    } else {
+      let pred = cur.left;
+      while (pred.right && pred.right !== cur) pred = pred.right;
+      if (pred.right === null) {    // thread, go left
+        pred.right = cur;
+        cur = cur.left;
+      } else {                      // unthread, visit, go right
+        pred.right = null;
+        out.push(cur.value);
+        cur = cur.right;
+      }
+    }
+  }
+  return out;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class IterativeTraversal {
+    static List<Integer> inorderIterative(TreeNode root) {
+        List<Integer> out = new ArrayList<>();
+        Deque<TreeNode> stack = new ArrayDeque<>();
+        TreeNode cur = root;
+        while (cur != null || !stack.isEmpty()) {
+            while (cur != null) {           // dive left
+                stack.push(cur);
+                cur = cur.left;
+            }
+            cur = stack.pop();
+            out.add(cur.value);             // visit
+            cur = cur.right;
+        }
+        return out;
+    }
+
+    static List<Integer> morrisInorder(TreeNode root) {
+        List<Integer> out = new ArrayList<>();
+        TreeNode cur = root;
+        while (cur != null) {
+            if (cur.left == null) {
+                out.add(cur.value);         // visit
+                cur = cur.right;
+            } else {
+                TreeNode pred = cur.left;
+                while (pred.right != null && pred.right != cur) pred = pred.right;
+                if (pred.right == null) {   // thread, go left
+                    pred.right = cur;
+                    cur = cur.left;
+                } else {                    // unthread, visit, go right
+                    pred.right = null;
+                    out.add(cur.value);
+                    cur = cur.right;
+                }
+            }
+        }
+        return out;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+void inorderIterative(Node *root) {
+    Node *stack[10000];
+    int top = 0;
+    Node *cur = root;
+    while (cur != NULL || top > 0) {
+        while (cur != NULL) {           /* dive left */
+            stack[top++] = cur;
+            cur = cur->left;
+        }
+        cur = stack[--top];
+        printf("%d ", cur->value);      /* visit */
+        cur = cur->right;
+    }
+}
+
+void morrisInorder(Node *root) {
+    Node *cur = root;
+    while (cur != NULL) {
+        if (cur->left == NULL) {
+            printf("%d ", cur->value);  /* visit */
+            cur = cur->right;
+        } else {
+            Node *pred = cur->left;
+            while (pred->right != NULL && pred->right != cur) pred = pred->right;
+            if (pred->right == NULL) {  /* thread, go left */
+                pred->right = cur;
+                cur = cur->left;
+            } else {                    /* unthread, visit, go right */
+                pred->right = NULL;
+                printf("%d ", cur->value);
+                cur = cur->right;
+            }
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <stack>
+#include <vector>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+vector<int> inorderIterative(Node *root) {
+    vector<int> out;
+    stack<Node*> st;
+    Node *cur = root;
+    while (cur != nullptr || !st.empty()) {
+        while (cur != nullptr) {        // dive left
+            st.push(cur);
+            cur = cur->left;
+        }
+        cur = st.top(); st.pop();
+        out.push_back(cur->value);      // visit
+        cur = cur->right;
+    }
+    return out;
+}
+
+vector<int> morrisInorder(Node *root) {
+    vector<int> out;
+    Node *cur = root;
+    while (cur != nullptr) {
+        if (cur->left == nullptr) {
+            out.push_back(cur->value);  // visit
+            cur = cur->right;
+        } else {
+            Node *pred = cur->left;
+            while (pred->right != nullptr && pred->right != cur) pred = pred->right;
+            if (pred->right == nullptr) {   // thread, go left
+                pred->right = cur;
+                cur = cur->left;
+            } else {                        // unthread, visit, go right
+                pred->right = nullptr;
+                out.push_back(cur->value);
+                cur = cur->right;
+            }
+        }
+    }
+    return out;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Recursive traversal | O(n) | O(h) call stack |
+| Iterative (explicit stack) | O(n) | O(h) heap stack |
+| Morris traversal | O(n) | O(1) extra |
+
+Morris still runs in linear time: each edge is walked at most a constant number of times (once to build a thread, once to follow it back), so the total stays `O(n)` even though the predecessor search looks nested.
+
+## When to use it
+
+<Callout type="warn" title="Trade-offs: Morris is cheap on space but costly in other ways">
+Use the explicit-stack iterative form when recursion depth is a real risk — it's just as readable and immune to call-stack overflow. Reach for Morris only when `O(1)` space genuinely matters, and know the cost: it temporarily *mutates* the tree by rewiring pointers, so it's unsafe on shared or concurrently-read trees and awkward if a node visit can throw mid-traversal (a thread could be left dangling). For everyday work the iterative stack version is the pragmatic default.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="In iterative pre-order, why do you push the right child before the left child?">
+
+A stack is last-in-first-out. Pre-order must visit the left subtree before the right one, so the left child has to be popped *first* — which means it must be pushed *last*. Pushing right then left leaves left on top of the stack, so the next iteration pops and processes it before ever touching the right subtree. Reverse the push order and you'd get a mirror-image (right-first) traversal.
+
+</Accordion>
+
+<Accordion title="How does Morris traversal guarantee it visits each node exactly once and restores the tree?">
+
+For every node with a left child, Morris reaches it twice: the first time it creates a thread from the subtree's rightmost node back to it and descends left; the second time it arrives via that thread, finds the thread already set, removes it, visits the node, and goes right. Because the thread is created and destroyed in a matched pair, every temporary pointer is undone, leaving the tree identical to how it started. Nodes with no left child are simply visited once directly.
+
+</Accordion>
+
+<Accordion title="Your recursive traversal crashes with a stack overflow on a valid tree. What's the quickest robust fix?">
+
+Convert it to the iterative explicit-stack version. It produces the identical output in the same `O(n)` time, but its "stack" lives on the heap, so its depth is bounded by available memory rather than the fixed runtime call-stack limit. This handles degenerate, deeply skewed trees that recursion cannot. Morris would also work and uses even less space, but it mutates the tree and is trickier to get right, so the explicit stack is the safer first move.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Recursion is an implicit call stack; you can replace it with your own explicit stack and loop, dodging stack-overflow on deep trees.
+- Iterative pre- and in-order are short once you see the stack is just tracking unfinished ancestors.
+- Morris traversal reaches `O(1)` space by threading unused right-pointers, at the price of temporarily mutating the tree.
+
+<Cards>
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="The recursive orders this lesson makes iterative." />
+  <Card title="Binary Trees" href="/docs/dsa/16-binary-tree/01-binary-tree-intro" description="The node structure whose pointers Morris temporarily rewires." />
+</Cards>

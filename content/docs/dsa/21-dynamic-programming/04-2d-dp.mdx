@@ -1,0 +1,269 @@
+---
+title: "2D Dynamic Programming"
+description: "When the answer depends on two things at once — a position in each of two strings — the table grows a dimension."
+extractedReferences:
+  - href: /docs/dsa/21-dynamic-programming/03-1d-dp
+  - href: /docs/dsa/21-dynamic-programming/07-string-dp
+  - href: /docs/dsa/21-dynamic-programming/05-subset-knapsack
+---
+
+## The problem
+
+Two of your teammates edited the same document. You want to know how much they kept in common
+— the longest run of characters, in order but not necessarily adjacent, that appears in both
+versions. For `"ABCBDAB"` and `"BDCAB"` the answer is `"BCAB"`, length 4.
+
+A single index cannot describe where you are here. Your progress is a *pair*: how far you have
+read into the first string **and** how far into the second. The moment a subproblem needs two
+coordinates to name it, your DP table needs two dimensions.
+
+## A first attempt
+
+Recurse on both strings at once. Compare the last characters. If they match, they contribute
+1 and you recurse on both shortened strings. If not, you try dropping the last character of
+each and keep the better result.
+
+```python
+def lcs(a, b):
+    if not a or not b:
+        return 0
+    if a[-1] == b[-1]:
+        return 1 + lcs(a[:-1], b[:-1])
+    return max(lcs(a[:-1], b), lcs(a, b[:-1]))
+```
+
+Correct, but each mismatch **branches into two calls**, so the tree is roughly O(2^(m+n)).
+The pair `(i, j)` gets revisited a staggering number of times — the classic overlapping
+subproblem, now in two dimensions.
+
+## The insight
+
+The state is a pair of prefix lengths:
+
+> Let `dp[i][j]` be the answer for the first `i` characters of `a` and the first `j`
+> characters of `b`. There are only `(m+1) × (n+1)` such pairs — a grid, not a tree.
+
+Each cell depends on its neighbors up and to the left:
+
+```
+        j-1     j
+       +-----+-----+
+  i-1  |  ↖  |  ↑  |
+       +-----+-----+
+   i   |  ←  |  ?  |
+       +-----+-----+
+```
+
+If `a[i-1] == b[j-1]`, take the diagonal `dp[i-1][j-1] + 1`. Otherwise take the better of the
+cell above and the cell to the left. Fill the grid row by row and the bottom-right corner is
+your answer.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Define the 2D state
+
+`dp[i][j]` = length of the longest common subsequence of `a[0..i-1]` and `b[0..j-1]`. Using
+prefix *lengths* (not indices) makes the empty-prefix base case clean.
+
+</Step>
+
+<Step>
+
+### Base row and column
+
+`dp[0][j] = 0` and `dp[i][0] = 0`: matching anything against an empty string yields nothing.
+These form the top row and left column that seed everything else.
+
+</Step>
+
+<Step>
+
+### Recurrence on the last characters
+
+If `a[i-1] == b[j-1]`, the characters pair up: `dp[i][j] = dp[i-1][j-1] + 1`. Otherwise you
+must drop one side: `dp[i][j] = max(dp[i-1][j], dp[i][j-1])`.
+
+</Step>
+
+<Step>
+
+### Fill row by row
+
+Iterate `i` from 1 to `m`, and inside it `j` from 1 to `n`. Every cell you read (up, left,
+diagonal) is already computed. The answer lands in `dp[m][n]`.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def lcs(a, b):
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+    return dp[m][n]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function lcs(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class Solution {
+    int lcs(String a, String b) {
+        int m = a.length(), n = b.length();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = 1; i <= m; i++) {
+            for (int j = 1; j <= n; j++) {
+                if (a.charAt(i - 1) == b.charAt(j - 1))
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                else
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+        return dp[m][n];
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int lcs(const char *a, const char *b, int m, int n) {
+    int dp[m + 1][n + 1];
+    for (int i = 0; i <= m; i++) dp[i][0] = 0;
+    for (int j = 0; j <= n; j++) dp[0][j] = 0;
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a[i - 1] == b[j - 1])
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            else
+                dp[i][j] = dp[i - 1][j] > dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
+        }
+    }
+    return dp[m][n];
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int lcs(const string &a, const string &b) {
+    int m = a.size(), n = b.size();
+    vector<vector<int>> dp(m + 1, vector<int>(n + 1, 0));
+    for (int i = 1; i <= m; i++) {
+        for (int j = 1; j <= n; j++) {
+            if (a[i - 1] == b[j - 1])
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            else
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1]);
+        }
+    }
+    return dp[m][n];
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Approach | Time | Space |
+| --- | --- | --- |
+| Naive recursion | O(2^(m+n)) | O(m + n) stack |
+| 2D DP table | O(m × n) | O(m × n) |
+| Two rolling rows | O(m × n) | O(n) |
+
+Because each row depends only on the row above it, you can keep just two rows (or even one,
+with care) and reduce space to O(n).
+
+## When to use it
+
+<Callout type="idea" title="Two moving parts, two dimensions">
+Whenever the state is a pair — a position in each of two sequences, an index plus a remaining
+capacity, a start and an end — reach for a 2D table. The recurrence still combines a constant
+number of neighboring cells; the grid just makes that geometry visible.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="How would you recover the actual subsequence, not just its length?">
+
+Walk backward from `dp[m][n]`. If `a[i-1] == b[j-1]`, that character is part of the answer —
+prepend it and move diagonally to `(i-1, j-1)`. Otherwise move toward the larger of
+`dp[i-1][j]` and `dp[i][j-1]`. Stop when either index hits 0, then reverse what you
+collected.
+
+</Accordion>
+
+<Accordion title="Why reduce space to two rows, and what has to change to do it safely?">
+
+Row `i` reads only from row `i-1` and cells to its left in row `i`. So you keep a `prev` row
+and a `cur` row, compute `cur` from `prev`, then swap. Space drops from O(m×n) to O(n). The
+catch: you lose the full table, so you can no longer backtrack to reconstruct the sequence —
+only the length survives.
+
+</Accordion>
+
+<Accordion title="What is the relationship between LCS and the edit distance between two strings?">
+
+They are cousins. Both are 2D DPs over prefix pairs with a match/mismatch recurrence. LCS
+maximizes kept characters; edit distance minimizes insert/delete/replace operations. In fact,
+for insert-and-delete-only editing, the minimum operations equal `m + n − 2·LCS(a, b)`.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- When a subproblem needs **two coordinates** to name, the DP table gains a dimension.
+- The classic 2D recurrence compares last characters: **diagonal on a match**, else the best
+  of **up or left**.
+- Each row depends only on the previous one, so space collapses from O(m×n) to O(n).
+
+<Cards>
+  <Card title="1D Dynamic Programming" href="/docs/dsa/21-dynamic-programming/03-1d-dp" description="The single-array warm-up for these grids." />
+  <Card title="DP on Strings" href="/docs/dsa/21-dynamic-programming/07-string-dp" description="Edit distance and friends, all 2D DPs." />
+  <Card title="The Knapsack Pattern" href="/docs/dsa/21-dynamic-programming/05-subset-knapsack" description="Another 2D state: item index by remaining capacity." />
+</Cards>

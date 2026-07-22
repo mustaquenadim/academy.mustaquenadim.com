@@ -1,0 +1,10 @@
+{
+  "title": "Stack",
+  "icon": "Layers",
+  "pages": [
+    "01-stack-intro",
+    "02-expression-evaluation",
+    "03-stack-design",
+    "04-monotonic-stack"
+  ]
+}

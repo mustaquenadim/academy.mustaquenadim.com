@@ -1,0 +1,275 @@
+---
+title: "The Simple (Slow) Sorts"
+description: "Bubble, selection, and insertion sort are the ones you’d invent yourself — and understanding why they’re slow teaches what fast sorts avoid."
+extractedReferences:
+  - href: /docs/dsa/05-sorting/01-sorting-intro
+  - href: /docs/dsa/05-sorting/03-merge-sort
+  - href: /docs/dsa/01-fundamentals/04-big-o
+---
+
+## The problem
+
+Hand someone a shuffled deck of thirteen cards and say "put these in order." Watch what they
+actually do. Almost nobody invents merge sort on the spot. They pick up cards one at a time
+and slot each into the right place among the ones already in their hand. Or they scan for
+the lowest card, pull it out, then scan again. These are real algorithms — you just ran one
+in your head.
+
+That instinct is worth studying, because the sorts you'd reinvent from scratch are also the
+*slow* ones. Seeing exactly where they bog down is the fastest way to understand what the
+clever sorts are so careful to avoid.
+
+## A first attempt
+
+Take **bubble sort**, the most literal idea of all: repeatedly walk the list and swap any
+two neighbours that are out of order. Big values "bubble" toward the end one pass at a time.
+
+```python
+def bubble_sort(nums):
+    n = len(nums)
+    for i in range(n):
+        for j in range(n - 1 - i):
+            if nums[j] > nums[j + 1]:
+                nums[j], nums[j + 1] = nums[j + 1], nums[j]
+    return nums
+```
+
+Two nested loops over `n` elements is `O(n²)`. Double the input and the work quadruples.
+Selection sort (repeatedly find the minimum and place it) has the same `O(n²)` shape. They
+share one fatal habit: they compare and move the same elements over and over, throwing away
+what they learned on the previous pass.
+
+## The insight
+
+Not all `O(n²)` sorts are equally dumb. **Insertion sort** keeps the left part of the array
+*already sorted* and grows it one element at a time — exactly the card-in-hand move. To
+place the next element, it slides it leftward past everything larger until it lands.
+
+The payoff is that insertion sort does almost no work when the data is already close to
+sorted: each new element barely moves. On nearly-ordered input it runs in `O(n)`, not
+`O(n²)`. That single property — being *adaptive* — is why real libraries use insertion sort
+for small or almost-sorted slices even today.
+
+<Callout type="info" title="Stability, quietly important">
+Insertion, bubble, and selection-with-care can all be **stable**: equal elements keep their
+original relative order. That matters when you sort records by one field after another (sort
+by name, then by date). Keep an eye on it as you meet faster sorts that lose it.
+</Callout>
+
+## How it works
+
+We'll focus on insertion sort — the one worth keeping.
+
+<Steps>
+
+<Step>
+
+### Treat the first element as sorted
+
+A single element is trivially in order. That one-element prefix is your sorted region.
+
+</Step>
+
+<Step>
+
+### Take the next element as the "key"
+
+Look at the first unsorted element to its right. Hold onto its value — this is what you're
+inserting.
+
+</Step>
+
+<Step>
+
+### Slide larger elements right
+
+Walk leftward through the sorted region. Every element bigger than the key shifts one slot
+right, opening a gap.
+
+</Step>
+
+<Step>
+
+### Drop the key into the gap
+
+When you hit an element that isn't bigger (or the start), place the key there. The sorted
+region just grew by one. Repeat until the whole array is consumed.
+
+</Step>
+
+</Steps>
+
+Sorting `[5, 2, 4, 1]`, with `|` marking the boundary of the sorted region:
+
+```text
+[5 | 2  4  1]     key=2 → slides past 5      → [2  5 | 4  1]
+[2  5 | 4  1]     key=4 → slides past 5      → [2  4  5 | 1]
+[2  4  5 | 1]     key=1 → slides past 5,4,2  → [1  2  4  5 |]
+```
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def insertion_sort(nums):
+    for i in range(1, len(nums)):
+        key = nums[i]
+        j = i - 1
+        while j >= 0 and nums[j] > key:
+            nums[j + 1] = nums[j]   # slide right
+            j -= 1
+        nums[j + 1] = key           # drop into the gap
+    return nums
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function insertionSort(nums: number[]): number[] {
+  for (let i = 1; i < nums.length; i++) {
+    const key = nums[i];
+    let j = i - 1;
+    while (j >= 0 && nums[j] > key) {
+      nums[j + 1] = nums[j]; // slide right
+      j--;
+    }
+    nums[j + 1] = key; // drop into the gap
+  }
+  return nums;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+void insertionSort(int[] nums) {
+    for (int i = 1; i < nums.length; i++) {
+        int key = nums[i];
+        int j = i - 1;
+        while (j >= 0 && nums[j] > key) {
+            nums[j + 1] = nums[j]; // slide right
+            j--;
+        }
+        nums[j + 1] = key;         // drop into the gap
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+void insertion_sort(int *nums, int n) {
+    for (int i = 1; i < n; i++) {
+        int key = nums[i];
+        int j = i - 1;
+        while (j >= 0 && nums[j] > key) {
+            nums[j + 1] = nums[j]; /* slide right */
+            j--;
+        }
+        nums[j + 1] = key;         /* drop into the gap */
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+using namespace std;
+
+void insertionSort(vector<int> &nums) {
+    for (size_t i = 1; i < nums.size(); i++) {
+        int key = nums[i];
+        int j = (int)i - 1;
+        while (j >= 0 && nums[j] > key) {
+            nums[j + 1] = nums[j]; // slide right
+            j--;
+        }
+        nums[j + 1] = key;         // drop into the gap
+    }
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Sort      | Best         | Average / Worst | Space  | Stable |
+| --------- | ------------ | --------------- | ------ | ------ |
+| Bubble    | `O(n)`       | `O(n²)`         | `O(1)` | yes    |
+| Selection | `O(n²)`      | `O(n²)`         | `O(1)` | no*    |
+| Insertion | `O(n)`       | `O(n²)`         | `O(1)` | yes    |
+
+Insertion and bubble hit their `O(n)` best case only on already-sorted input. Selection
+always does `O(n²)` comparisons regardless — it never gets to quit early.
+
+## When to use it
+
+<Callout type="idea" title="Small and nearly-sorted is their home turf">
+For big random data these are the wrong tool — use [merge sort](/docs/dsa/05-sorting/03-merge-sort)
+or quicksort. But insertion sort genuinely wins on **small arrays (roughly n ≤ 16)** and on
+**nearly-sorted** data, thanks to tiny constants and its adaptive best case. That's why
+industrial hybrid sorts fall back to it for small partitions. Selection sort's one merit is
+that it makes the fewest *writes*, useful when writing to memory is expensive.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Insertion sort is O(n²) worst case. When does it actually run in O(n)?">
+
+When the array is already sorted (or nearly so). Each new key finds its home almost
+immediately — the inner `while` loop exits after zero or one comparison — so the outer loop
+alone drives the cost, giving `O(n)`. This adaptivity is insertion sort's superpower and the
+reason it survives inside faster algorithms.
+
+</Accordion>
+
+<Accordion title="Why does selection sort never get an O(n) best case like the others?">
+
+Because finding the minimum of the unsorted region *requires* scanning all of it, every
+single pass, no matter how sorted things already are. There's no early exit: the `i`-th pass
+always inspects `n − i` elements. Bubble and insertion can detect order and stop early;
+selection is structurally blind to it, so it's `O(n²)` even on sorted input.
+
+</Accordion>
+
+<Accordion title="You need to sort records by last name, then within ties keep them in signup order. Which of these sorts is safe?">
+
+A **stable** one — insertion or bubble sort. Stability means equal keys keep their input
+order, so sorting by last name won't scramble the earlier signup ordering among people who
+share a name. Plain selection sort can swap equal-keyed elements past each other and break
+that guarantee.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Bubble, selection, and insertion are the sorts you'd invent yourself — all `O(n²)` on
+  general data because they rework the same elements repeatedly.
+- Insertion sort is the keeper: it's stable, in-place, and *adaptive*, hitting `O(n)` on
+  nearly-sorted input.
+- Their slowness motivates the divide-and-conquer sorts — understanding the `O(n²)` trap is
+  what makes `O(n log n)` feel like a real achievement.
+
+<Cards>
+  <Card title="Why Sorting Matters" href="/docs/dsa/05-sorting/01-sorting-intro" description="What all this ordering buys you in the first place." />
+  <Card title="Merge Sort" href="/docs/dsa/05-sorting/03-merge-sort" description="Escaping O(n²) with divide and conquer." />
+  <Card title="Big-O Notation" href="/docs/dsa/01-fundamentals/04-big-o" description="Why O(n²) vs O(n log n) is the whole game." />
+</Cards>

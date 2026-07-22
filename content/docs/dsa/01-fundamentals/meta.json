@@ -1,0 +1,12 @@
+{
+  "title": "Fundamentals",
+  "icon": "Sparkles",
+  "pages": [
+    "01-what-is-dsa",
+    "02-order-of-growth",
+    "03-asymptotic-analysis",
+    "04-big-o",
+    "05-time-complexity",
+    "06-space-complexity"
+  ]
+}

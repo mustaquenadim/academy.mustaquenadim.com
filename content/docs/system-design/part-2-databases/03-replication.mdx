@@ -1,0 +1,137 @@
+---
+title: "Replication"
+description: "If your one database dies, your product dies with it — replication keeps copies alive and reads fast, at the price of keeping them in sync."
+extractedReferences:
+  - href: /docs/system-design/part-2-databases/04-sharding
+  - href: /docs/system-design/part-2-databases/05-consistency-and-cap
+  - href: /docs/system-design/part-4-reliability/02-redundancy-and-failover
+---
+
+## The problem
+
+It is 2 a.m. and the single database server that holds everything your company does reboots for a kernel update — or its disk fails. For those minutes, nobody can log in, nobody can buy anything, and there is no second copy to fall back to. One machine is one point of failure.
+
+Even on a good night, that same machine is a bottleneck. Every read and every write funnels through it. As traffic grows, the reads alone — dashboards, feeds, product pages — saturate it long before writes do. You need more copies of the data: for survival, and for read throughput.
+
+## A first attempt
+
+The naive backup is a nightly dump: copy the whole database to another disk at midnight. It protects you from total loss, but if the server dies at 11 p.m. you have lost 23 hours of data, and restoring a large dump can take hours during which you are still down.
+
+A nightly copy is a *snapshot*, not a *live spare*. What you actually want is a second server that is continuously up to date — so that if the primary dies you switch to the copy in seconds, and so that reads can be served from the copy right now. That means streaming every change to the copy as it happens, which raises the hard question: how in-sync must the copy be?
+
+## The insight
+
+Elect one **leader** that takes all writes, and stream its change log to one or more **followers** that stay (nearly) up to date. Reads can be served by any copy; the leader handles writes and hands over if it dies.
+
+The single choice that defines the whole system is **when the write is acknowledged**:
+
+- **Synchronous:** the leader waits for a follower to confirm before telling the client "done." No data loss on failover, but every write is as slow as the slowest follower.
+- **Asynchronous:** the leader confirms immediately and ships changes in the background. Fast writes, but a leader that dies before shipping loses the last few writes, and followers briefly serve stale data.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### The leader records every change to a log
+
+Each write is appended to a replication log (the WAL / binlog). This ordered stream *is* the source of truth followers replay.
+
+</Step>
+
+<Step>
+
+### Followers replay the log in order
+
+Each follower connects, streams the log, and applies the same changes in the same order, arriving at the same state a moment behind the leader.
+
+</Step>
+
+<Step>
+
+### Reads split across the copies
+
+Writes go to the leader; reads fan out to followers. Because reads usually outnumber writes 10:1 or more, adding followers scales reads almost linearly.
+
+</Step>
+
+<Step>
+
+### Failover promotes a follower
+
+If the leader dies, a follower is promoted to leader and traffic redirects to it. With synchronous replication no data is lost; with async, whatever had not shipped is gone.
+
+</Step>
+
+</Steps>
+
+```
+                 writes
+   client ───────────────►  ┌────────────┐
+                            │   LEADER    │  append to log
+                            └─────┬───────┘
+                       replicate  │  (sync = wait, async = fire-and-forget)
+                     ┌────────────┼────────────┐
+                     ▼            ▼             ▼
+               ┌──────────┐ ┌──────────┐ ┌──────────┐
+               │ follower │ │ follower │ │ follower │
+               └────┬─────┘ └────┬─────┘ └────┬─────┘
+                    └──────── reads ──────────┘
+```
+
+## Concrete numbers
+
+Async replication lag is typically single-digit milliseconds within one datacenter, but can spike to seconds under write bursts or across regions (a cross-continent link adds 100–200 ms of round trip on its own). That lag is exactly the window where a follower serves stale data.
+
+The read-scaling math is direct: one leader plus five read-replicas gives you roughly 6x read capacity, so a system doing 60k reads/s and 5k writes/s fits comfortably where a single node at 20k reads/s would have collapsed. Failover time depends on detection — health checks every few seconds plus promotion usually means 10–30 seconds of write downtime, unless an automated system does it faster.
+
+## When to use it
+
+<Callout type="warn" title="The trade-off">
+Synchronous replication protects your data but couples your write latency to your slowest replica — one slow follower slows every write. Asynchronous replication keeps writes fast but risks losing the most recent writes on failover and serving stale reads. A common middle ground is *semi-synchronous*: wait for one follower, not all.
+</Callout>
+
+<Callout type="idea" title="Read-your-own-writes">
+Right after a user posts a comment, a read from a lagging follower may not show it — the write "vanishes." Fix it by routing that user's reads to the leader (or to a follower known to be caught up) for a short window after they write. This is why replica reads need care, not just a load balancer.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="A user updates their profile photo, the page reloads, and the old photo is back. The database is healthy. What happened?">
+
+Replication lag. The write went to the leader, but the reload read from a follower that had not yet applied the change, so it returned the stale photo. Nothing is broken — this is asynchronous replication showing its window. The fix is read-your-own-writes: route this user's reads to the leader (or a caught-up replica) briefly after they write.
+
+</Accordion>
+
+<Accordion title="Your write latency doubled after you added a replica in another region for disaster recovery. Why, and what setting caused it?">
+
+The replica was added synchronously, so the leader now waits for an acknowledgment that must cross the continent — adding 100–200 ms per write. Synchronous replication makes every write as slow as the slowest replica. For a distant DR replica you almost always want asynchronous replication, accepting a small potential data-loss window in exchange for local write speed.
+
+</Accordion>
+
+<Accordion title="Replication scales reads by adding followers. Why does it not scale writes?">
+
+Every write still goes through the single leader and is then copied to every follower — followers *add* write work (each must replay the log), they do not absorb it. So write capacity is capped by the one leader regardless of how many followers you add. Scaling writes requires splitting the data itself across multiple leaders, which is sharding.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- One leader takes writes; followers replay its log and serve reads.
+- Synchronous = no data loss but slow writes; asynchronous = fast writes but stale reads and a small loss window on failover.
+- Replication scales **reads** and gives you failover — it does not scale writes.
+
+<Cards>
+  <Card title="Sharding" href="/docs/system-design/part-2-databases/04-sharding" description="Splitting writes across machines when one leader is not enough." />
+  <Card title="Consistency & the CAP Theorem" href="/docs/system-design/part-2-databases/05-consistency-and-cap" description="Why replication forces a consistency-versus-availability choice." />
+  <Card title="Redundancy and Failover" href="/docs/system-design/part-4-reliability/02-redundancy-and-failover" description="Turning replicas into automatic recovery." />
+</Cards>
+
+<Callout type="info" title="In an interview">
+When you say "add read replicas," immediately name the two costs: replication lag (stale reads) and that writes still bottleneck on the leader. Then reach for the sync-versus-async trade and mention read-your-own-writes. Interviewers want to hear that replication buys read scale and availability, not write scale.
+</Callout>

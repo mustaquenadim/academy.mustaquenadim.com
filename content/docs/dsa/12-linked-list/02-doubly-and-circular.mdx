@@ -1,0 +1,340 @@
+---
+title: "Doubly & Circular Lists"
+description: "Add a backward pointer and you can delete a node without hunting for its predecessor; join the ends and you get a ring."
+extractedReferences:
+  - href: /docs/dsa/12-linked-list/01-linked-list-intro
+  - href: /docs/dsa/12-linked-list/06-design-with-lists
+  - href: /docs/dsa/14-queue/01-queue-intro
+---
+
+## The problem
+
+You built a browser's history as a singly linked list. Forward works great. Then the user
+hits "Back," and you realise you are stuck: a node knows the page *after* it, but has no idea
+which page came *before*. To go back one step you have to walk from the very first page again
+just to find the predecessor.
+
+The same wall appears when deleting. To unlink a node you must fix the arrow pointing *into*
+it — but a singly linked node cannot see who points at it. You are always searching from the
+head for something the node is practically sitting on top of.
+
+## A first attempt
+
+To delete node `x` in a singly linked list you scan for its predecessor:
+
+```python
+prev = head
+while prev and prev.next is not x:
+    prev = prev.next
+prev.next = x.next        # found it, now splice
+```
+
+That search is **O(n)** every single time, even though the splice itself is one assignment.
+For a history list, a media playlist, or an LRU cache — all things that delete arbitrary
+interior nodes constantly — the scan dominates and the structure crawls.
+
+## The insight
+
+Give each node a *second* pointer, back to the one before it. Now a node knows both
+neighbors. Deleting is pure local surgery: reach left and right, hand them each other's
+address, done. No search. That is a **doubly linked list**.
+
+Then a second idea: make the last node point back to the first (and, doubly, the first point
+back to the last). The chain becomes a **circle** with no null ends — perfect for anything
+that cycles: round-robin schedulers, a carousel, a ring buffer.
+
+```text
+      ┌──────────────────────────────┐
+      ▼                              │
+null◀─[a]⇄[b]⇄[c]─▶null      circular: [a]⇄[b]⇄[c]⇄(back to a)
+```
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Each node gains a prev pointer
+
+A doubly linked node stores `value`, `next`, and `prev`. Keeping both arrows consistent on
+every edit is the whole discipline — break one and traversal desyncs.
+
+</Step>
+
+<Step>
+
+### Deletion is four reassignments
+
+To remove `x`: set `x.prev.next = x.next` and `x.next.prev = x.prev`. Guard the ends —
+if `x` is the head or tail, one of those neighbors is null and you update the head/tail
+reference instead. All **O(1)**.
+
+</Step>
+
+<Step>
+
+### Insertion splices between two nodes
+
+To insert `y` after `x`: point `y.prev` at `x`, `y.next` at `x.next`, then fix the two
+outer nodes to point at `y`. Order matters — capture `x.next` before you overwrite it.
+
+</Step>
+
+<Step>
+
+### Circular joins the ends
+
+In a circular list the tail's `next` is the head and the head's `prev` is the tail. There is
+no null terminator, so traversal must stop by counting or by detecting "back at start,"
+never by waiting for null.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+class Node:
+    def __init__(self, value):
+        self.value = value
+        self.prev = None
+        self.next = None
+
+class DoublyLinkedList:
+    def __init__(self):
+        self.head = None
+        self.tail = None
+
+    def append(self, value):             # O(1)
+        node = Node(value)
+        node.prev = self.tail
+        if self.tail:
+            self.tail.next = node
+        else:
+            self.head = node
+        self.tail = node
+        return node
+
+    def remove(self, node):              # O(1)
+        if node.prev:
+            node.prev.next = node.next
+        else:
+            self.head = node.next
+        if node.next:
+            node.next.prev = node.prev
+        else:
+            self.tail = node.prev
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class DNode<T> {
+  value: T;
+  prev: DNode<T> | null = null;
+  next: DNode<T> | null = null;
+  constructor(value: T) { this.value = value; }
+}
+
+class DoublyLinkedList<T> {
+  head: DNode<T> | null = null;
+  tail: DNode<T> | null = null;
+
+  append(value: T): DNode<T> {           // O(1)
+    const node = new DNode(value);
+    node.prev = this.tail;
+    if (this.tail) this.tail.next = node;
+    else this.head = node;
+    this.tail = node;
+    return node;
+  }
+
+  remove(node: DNode<T>): void {         // O(1)
+    if (node.prev) node.prev.next = node.next;
+    else this.head = node.next;
+    if (node.next) node.next.prev = node.prev;
+    else this.tail = node.prev;
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class DNode {
+    int value;
+    DNode prev, next;
+    DNode(int value) { this.value = value; }
+}
+
+class DoublyLinkedList {
+    DNode head, tail;
+
+    DNode append(int value) {            // O(1)
+        DNode node = new DNode(value);
+        node.prev = tail;
+        if (tail != null) tail.next = node;
+        else head = node;
+        tail = node;
+        return node;
+    }
+
+    void remove(DNode node) {            // O(1)
+        if (node.prev != null) node.prev.next = node.next;
+        else head = node.next;
+        if (node.next != null) node.next.prev = node.prev;
+        else tail = node.prev;
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+
+typedef struct DNode {
+    int value;
+    struct DNode *prev, *next;
+} DNode;
+
+typedef struct {
+    DNode *head, *tail;
+} DList;
+
+DNode *dlist_append(DList *l, int value) {   /* O(1) */
+    DNode *n = malloc(sizeof(DNode));
+    n->value = value;
+    n->prev = l->tail;
+    n->next = NULL;
+    if (l->tail) l->tail->next = n;
+    else         l->head = n;
+    l->tail = n;
+    return n;
+}
+
+void dlist_remove(DList *l, DNode *n) {       /* O(1) */
+    if (n->prev) n->prev->next = n->next;
+    else         l->head = n->next;
+    if (n->next) n->next->prev = n->prev;
+    else         l->tail = n->prev;
+    free(n);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <cstddef>
+
+struct DNode {
+    int value;
+    DNode *prev = nullptr, *next = nullptr;
+    explicit DNode(int v) : value(v) {}
+};
+
+class DoublyLinkedList {
+public:
+    DNode *head = nullptr, *tail = nullptr;
+
+    DNode *append(int value) {               // O(1)
+        DNode *n = new DNode(value);
+        n->prev = tail;
+        if (tail) tail->next = n;
+        else      head = n;
+        tail = n;
+        return n;
+    }
+
+    void remove(DNode *n) {                  // O(1)
+        if (n->prev) n->prev->next = n->next;
+        else         head = n->next;
+        if (n->next) n->next->prev = n->prev;
+        else         tail = n->prev;
+        delete n;
+    }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation                     | Singly | Doubly |
+| ----------------------------- | ------ | ------ |
+| Insert at head / tail\*       | O(1)   | O(1)   |
+| Delete a node you hold        | O(n)   | O(1)   |
+| Traverse backward             | O(n)   | O(1)/step |
+| Extra space per node          | 1 ptr  | 2 ptrs |
+
+\*Singly lists need a stored tail pointer for O(1) append; otherwise appending is O(n).
+
+## When to use it
+
+<Callout type="warn" title="Two pointers, twice the bookkeeping">
+A doubly linked list buys O(1) arbitrary deletion and backward walks, which is why it powers
+LRU caches and editor buffers. The cost is a second pointer per node and the discipline of
+keeping `prev` and `next` in sync on every edit — a single missed update silently corrupts
+traversal. Use circular lists for anything that naturally loops, but always give traversal a
+hard stop (a count or a sentinel), because there is no null to catch you.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does an LRU cache specifically need a doubly linked list, not a singly one?">
+
+An LRU cache moves an arbitrary node to the front on every access and evicts from the tail.
+Both require unlinking a node you already hold in O(1). Only a doubly linked node can splice
+itself out without an O(n) predecessor search, so the double link is what keeps every cache
+operation O(1). The next lessons build exactly this.
+
+</Accordion>
+
+<Accordion title="In a circular list, how do you traverse all nodes without looping forever?">
+
+Remember the starting node and stop when you return to it: `node = head; do { visit(node);
+node = node.next; } while (node != head)`. A `while (node != null)` loop never terminates in
+a circular list because no node's `next` is ever null.
+
+</Accordion>
+
+<Accordion title="A sentinel (dummy) head-and-tail node removes almost all the null checks. Why?">
+
+If you keep permanent dummy nodes on both ends, every real node always has a non-null `prev`
+and `next`. Insert and delete then never touch the head/tail references and never special-case
+the ends — the four-assignment splice always applies. It costs two extra nodes but eliminates
+the most common source of pointer bugs.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A doubly linked node carries `prev` and `next`, turning O(n) deletion into O(1) surgery.
+- Circular lists join the ends into a ring with no null terminator — stop by count or sentinel.
+- The trade is a second pointer per node plus the discipline of keeping both arrows in sync.
+
+<Cards>
+  <Card title="Linked Lists" href="/docs/dsa/12-linked-list/01-linked-list-intro" description="Where the single next pointer and O(1) prepend came from." />
+  <Card title="Designing with Lists" href="/docs/dsa/12-linked-list/06-design-with-lists" description="Build an LRU cache from a doubly linked list plus a hash map." />
+  <Card title="Queues" href="/docs/dsa/14-queue/01-queue-intro" description="A list with inserts at one end and removals at the other." />
+</Cards>

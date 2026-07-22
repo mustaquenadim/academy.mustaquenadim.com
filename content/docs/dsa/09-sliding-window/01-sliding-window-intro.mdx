@@ -1,0 +1,332 @@
+---
+title: "The Sliding Window"
+description: "Finding the best stretch of consecutive items shouldn’t mean re-checking every window from scratch — slide instead of restart."
+extractedReferences:
+  - href: /docs/dsa/09-sliding-window/02-fixed-window
+  - href: /docs/dsa/09-sliding-window/03-variable-window
+  - href: /docs/dsa/08-two-pointer/02-opposite-ends
+---
+
+## The problem
+
+You run a small weather station that logs the temperature every hour. Someone asks a simple
+question: over the last month, which **3-hour stretch** was the hottest on average? You have
+a list of a few thousand readings, and you want the window of three consecutive hours with
+the biggest sum.
+
+The obvious plan: look at hours 0–2, add them up. Then hours 1–3, add them up. Then 2–4.
+Slide across the whole log, keep the biggest total. It works — but if the window were 500
+hours wide instead of 3, you'd be re-adding hundreds of numbers for every single position.
+That re-adding is where the time goes, and it feels wasteful. It *is* wasteful.
+
+## A first attempt
+
+Here's the direct translation: for every starting index, sum up the next `k` values.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_window_sum(arr, k):
+    best = float("-inf")
+    for start in range(len(arr) - k + 1):
+        total = 0
+        for j in range(start, start + k):   # re-adds k values every time
+            total += arr[j]
+        best = max(best, total)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxWindowSum(arr: number[], k: number): number {
+  let best = -Infinity;
+  for (let start = 0; start <= arr.length - k; start++) {
+    let total = 0;
+    for (let j = start; j < start + k; j++) total += arr[j]; // re-adds k each time
+    best = Math.max(best, total);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int maxWindowSum(int[] arr, int k) {
+    int best = Integer.MIN_VALUE;
+    for (int start = 0; start <= arr.length - k; start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; // re-adds k
+        best = Math.max(best, total);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int maxWindowSum(int arr[], int n, int k) {
+    int best = INT_MIN;
+    for (int start = 0; start <= n - k; start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; /* re-adds k */
+        if (total > best) best = total;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int maxWindowSum(const vector<int>& arr, int k) {
+    int best = INT_MIN;
+    for (int start = 0; start + k <= (int)arr.size(); start++) {
+        int total = 0;
+        for (int j = start; j < start + k; j++) total += arr[j]; // re-adds k
+        best = max(best, total);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+There are about `n` windows, and each costs `k` additions, so this is `O(n · k)`. When `k`
+grows with the input, that drifts toward `O(n²)`. The insight is hiding in plain sight:
+**two neighboring windows overlap almost completely.**
+
+## The insight
+
+Windows `[0..2]` and `[1..3]` share elements 1 and 2. Only two things actually change when
+you slide one step right: element 0 **leaves** on the left, and element 3 **enters** on the
+right. Everything in the middle is identical.
+
+So don't recompute the sum — **update** it. Subtract the value leaving, add the value
+entering. One subtraction and one addition per step, no matter how wide the window is. The
+window *slides* instead of restarting, and that single idea is the whole technique.
+
+<Callout type="idea" title="The core move">
+A sliding window keeps a running answer for the current stretch. Each step you **evict** the
+element leaving and **absorb** the element entering, then update the answer in `O(1)`. You
+touch each element roughly twice total, not `k` times.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Build the first window
+
+Sum the first `k` elements once. That's your starting window and your first candidate answer.
+
+</Step>
+
+<Step>
+
+### Slide by one
+
+Move the window right: add the new element on the right edge, subtract the element that just
+fell off the left edge. The running sum is now correct for the new window.
+
+</Step>
+
+<Step>
+
+### Record the best
+
+Compare the updated sum against the best seen so far and keep the larger.
+
+</Step>
+
+<Step>
+
+### Repeat to the end
+
+Keep sliding until the right edge reaches the last element. One pass, done.
+
+</Step>
+
+</Steps>
+
+Here's a window of `k = 3` sliding across the readings. `[` and `]` mark the window edges:
+
+```text
+index:   0    1    2    3    4    5
+value:  21   19   24   22   30   18
+       [21   19   24]  22   30   18     sum = 64
+        21  [19   24   22]  30   18     sum = 64 - 21 + 22 = 65
+        21   19  [24   22   30]  18     sum = 65 - 19 + 30 = 76  ← best
+        21   19   24  [22   30   18]    sum = 76 - 24 + 18 = 70
+```
+
+Each slide is two arithmetic operations, regardless of how wide the window is.
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+def max_window_sum(arr, k):
+    window = sum(arr[:k])           # first window, O(k) once
+    best = window
+    for right in range(k, len(arr)):
+        window += arr[right] - arr[right - k]   # absorb new, evict old
+        best = max(best, window)
+    return best
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function maxWindowSum(arr: number[], k: number): number {
+  let window = 0;
+  for (let i = 0; i < k; i++) window += arr[i]; // first window
+  let best = window;
+  for (let right = k; right < arr.length; right++) {
+    window += arr[right] - arr[right - k]; // absorb new, evict old
+    best = Math.max(best, window);
+  }
+  return best;
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+int maxWindowSum(int[] arr, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; // first window
+    int best = window;
+    for (int right = k; right < arr.length; right++) {
+        window += arr[right] - arr[right - k]; // absorb new, evict old
+        best = Math.max(best, window);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+int maxWindowSum(int arr[], int n, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; /* first window */
+    int best = window;
+    for (int right = k; right < n; right++) {
+        window += arr[right] - arr[right - k]; /* absorb new, evict old */
+        if (window > best) best = window;
+    }
+    return best;
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+int maxWindowSum(const vector<int>& arr, int k) {
+    int window = 0;
+    for (int i = 0; i < k; i++) window += arr[i]; // first window
+    int best = window;
+    for (int right = k; right < (int)arr.size(); right++) {
+        window += arr[right] - arr[right - k]; // absorb new, evict old
+        best = max(best, window);
+    }
+    return best;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Aspect | Cost   | Why                                                     |
+| ------ | ------ | ------------------------------------------------------- |
+| Time   | `O(n)` | one pass; each slide updates the sum in constant time   |
+| Space  | `O(1)` | just the running sum and the best-so-far                |
+
+The naive version was `O(n · k)`. Reusing the overlap between neighboring windows collapses
+the `k` factor entirely.
+
+## When to use it
+
+<Callout type="info" title="The signal to reach for a window">
+Sliding window fits when the answer concerns a **contiguous** run of elements — a subarray
+or substring — and you can update your running answer cheaply as the window moves. If the
+elements don't have to be adjacent, or you can't undo an element leaving, a window won't
+help; reach for hashing, sorting, or dynamic programming instead.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why does the naive version drift toward O(n²) when k is large?">
+
+There are `n - k + 1` windows, and each one costs `k` additions, giving `O(n · k)`. When `k`
+is a small constant that's basically linear, but if `k` grows with `n` (say `k = n / 2`),
+then `n · k` becomes proportional to `n²`. The sliding update removes the `k` factor because
+each step is `O(1)` no matter how wide the window is.
+
+</Accordion>
+
+<Accordion title="The array can contain negative numbers. Does the sliding update still work?">
+
+Yes. The update `window += arr[right] - arr[right - k]` is pure arithmetic — it doesn't care
+about signs. Negatives only matter for *initialization*: start `best` at the first real
+window sum (or `-∞`), never at `0`, or an all-negative array would wrongly report `0`.
+
+</Accordion>
+
+<Accordion title="How would this change if the window size k could vary during the scan?">
+
+Then a fixed slide won't do — you need a window whose two edges move independently, growing
+and shrinking based on a condition. That's the variable-size window, covered in a later
+lesson, and it's what powers problems like "longest substring without repeats."
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A sliding window keeps a running answer for a contiguous stretch and **updates** it as the
+  window moves, instead of recomputing from scratch.
+- Each slide evicts the element leaving and absorbs the one entering in `O(1)`, turning an
+  `O(n · k)` scan into a single `O(n)` pass.
+- Reach for it when the answer is about a contiguous subarray or substring and the running
+  answer can be cheaply updated.
+
+<Cards>
+  <Card title="Fixed-Size Windows" href="/docs/dsa/09-sliding-window/02-fixed-window" description="The k-consecutive pattern in full detail." />
+  <Card title="Variable-Size Windows" href="/docs/dsa/09-sliding-window/03-variable-window" description="Windows that grow and shrink on demand." />
+  <Card title="Two Pointers" href="/docs/dsa/08-two-pointer/02-opposite-ends" description="The sibling technique of moving indices in tandem." />
+</Cards>

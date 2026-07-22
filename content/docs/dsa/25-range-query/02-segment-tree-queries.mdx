@@ -1,0 +1,487 @@
+---
+title: "Segment Tree Queries"
+description: "Range minimum, range XOR, range LCM — one structure answers them all by combining a handful of nodes."
+extractedReferences:
+  - href: /docs/dsa/25-range-query/01-segment-tree-intro
+  - href: /docs/dsa/25-range-query/03-lazy-propagation
+  - href: /docs/dsa/25-range-query/04-fenwick-tree
+---
+
+## The problem
+
+Your monitoring service stores one latency reading per minute in a big array. The alerting
+rules don't want sums — they want the *worst* case. "What was the maximum latency between
+2:00 and 3:15?" "What's the minimum free memory across this window?" Tomorrow product asks
+for the XOR of a range of flags, and next week someone wants the GCD of a slice.
+
+You already built a segment tree for range sums. It would be maddening to write a brand new
+tree for every one of these. Surely the same shape can answer all of them?
+
+## A first attempt
+
+You could keep a separate precomputed table per question — a sparse table for minimums, a
+prefix XOR for XOR, and so on. Each is fast to query, but each is its own structure to build
+and, worse, most of them break the moment a value changes. A sparse table can't absorb an
+update at all; you'd rebuild it in **O(n log n)**.
+
+Maintaining five bespoke structures side by side is a bug farm. You want *one* tree whose
+only per-question difference is a tiny rule for combining two answers.
+
+## The insight
+
+Look back at how the sum tree worked. Every node stored `left + right`. The traversal never
+cared that the operation was addition — it only needed to **combine a left answer with a
+right answer**, and a neutral value to return when a node falls outside the query.
+
+That's the whole requirement. If your operation is **associative** — combining in any grouping
+gives the same result — it drops straight into a segment tree. Sum, min, max, XOR, GCD, LCM,
+matrix product: all associative. Pick the operation and its **identity** (the value that
+changes nothing), and the exact same traversal answers your question.
+
+| Query | merge(a, b) | identity |
+| --- | --- | --- |
+| Sum | a + b | 0 |
+| Min | min(a, b) | +∞ |
+| Max | max(a, b) | −∞ |
+| XOR | a ^ b | 0 |
+| GCD | gcd(a, b) | 0 |
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### A range splits into O(log n) canonical nodes
+
+Any query range `[l, r]` decomposes into at most about `2 log n` tree nodes whose ranges are
+fully inside it and don't overlap. The query's job is to find those nodes and fold them
+together with `merge`.
+
+```text
+query [1..6] over [0..7]:
+
+          [0..7]
+         /      \
+    [0..3]      [4..7]
+    /   \        /   \
+ [0..1] [2..3] [4..5] [6..7]
+   /\
+  0  1
+
+picked whole:  [2..3]  [4..5]   (fully inside)
+descend into:  [0..1] -> node 1 ;  [6..7] -> node 6
+result = merge(a[1], a[2..3], a[4..5], a[6])
+```
+
+</Step>
+
+<Step>
+
+### Three cases at every node
+
+**Disjoint** (`r < lo or hi < l`): return the identity. **Fully covered**
+(`l <= lo and hi <= r`): return the node's stored value. **Partial overlap**: recurse into
+both children and `merge` their results.
+
+</Step>
+
+<Step>
+
+### The identity keeps disjoint branches harmless
+
+Returning `+∞` from a min query's out-of-range branch means it never wins a `min`. The
+identity is exactly the value that `merge(x, identity) == x`, so folding in an untouched
+branch can't corrupt the answer.
+
+</Step>
+
+<Step>
+
+### Point updates still cost O(log n)
+
+Change a leaf, then re-`merge` each ancestor on the way up — identical to the sum tree. The
+merge rule you chose is the only thing that differs.
+
+</Step>
+
+</Steps>
+
+## The code
+
+A range-minimum tree. To get max, XOR, or GCD, change only `merge` and `IDENTITY`.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+import math
+
+class MinSegmentTree:
+    IDENTITY = math.inf
+
+    def __init__(self, data):
+        self.n = len(data)
+        self.tree = [self.IDENTITY] * (4 * self.n)
+        if self.n:
+            self._build(data, 1, 0, self.n - 1)
+
+    def _merge(self, a, b):
+        return min(a, b)
+
+    def _build(self, data, node, lo, hi):
+        if lo == hi:
+            self.tree[node] = data[lo]
+            return
+        mid = (lo + hi) // 2
+        self._build(data, 2 * node, lo, mid)
+        self._build(data, 2 * node + 1, mid + 1, hi)
+        self.tree[node] = self._merge(self.tree[2 * node], self.tree[2 * node + 1])
+
+    def update(self, i, value):
+        self._update(1, 0, self.n - 1, i, value)
+
+    def _update(self, node, lo, hi, i, value):
+        if lo == hi:
+            self.tree[node] = value
+            return
+        mid = (lo + hi) // 2
+        if i <= mid:
+            self._update(2 * node, lo, mid, i, value)
+        else:
+            self._update(2 * node + 1, mid + 1, hi, i, value)
+        self.tree[node] = self._merge(self.tree[2 * node], self.tree[2 * node + 1])
+
+    def query(self, l, r):
+        return self._query(1, 0, self.n - 1, l, r)
+
+    def _query(self, node, lo, hi, l, r):
+        if r < lo or hi < l:
+            return self.IDENTITY
+        if l <= lo and hi <= r:
+            return self.tree[node]
+        mid = (lo + hi) // 2
+        left = self._query(2 * node, lo, mid, l, r)
+        right = self._query(2 * node + 1, mid + 1, hi, l, r)
+        return self._merge(left, right)
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+class MinSegmentTree {
+  private static IDENTITY = Infinity;
+  private n: number;
+  private tree: number[];
+
+  constructor(data: number[]) {
+    this.n = data.length;
+    this.tree = new Array(4 * this.n).fill(MinSegmentTree.IDENTITY);
+    if (this.n > 0) this.build(data, 1, 0, this.n - 1);
+  }
+
+  private merge(a: number, b: number): number {
+    return Math.min(a, b);
+  }
+
+  private build(data: number[], node: number, lo: number, hi: number): void {
+    if (lo === hi) {
+      this.tree[node] = data[lo];
+      return;
+    }
+    const mid = (lo + hi) >> 1;
+    this.build(data, 2 * node, lo, mid);
+    this.build(data, 2 * node + 1, mid + 1, hi);
+    this.tree[node] = this.merge(this.tree[2 * node], this.tree[2 * node + 1]);
+  }
+
+  update(i: number, value: number): void {
+    this.updateNode(1, 0, this.n - 1, i, value);
+  }
+
+  private updateNode(node: number, lo: number, hi: number, i: number, value: number): void {
+    if (lo === hi) {
+      this.tree[node] = value;
+      return;
+    }
+    const mid = (lo + hi) >> 1;
+    if (i <= mid) this.updateNode(2 * node, lo, mid, i, value);
+    else this.updateNode(2 * node + 1, mid + 1, hi, i, value);
+    this.tree[node] = this.merge(this.tree[2 * node], this.tree[2 * node + 1]);
+  }
+
+  query(l: number, r: number): number {
+    return this.queryNode(1, 0, this.n - 1, l, r);
+  }
+
+  private queryNode(node: number, lo: number, hi: number, l: number, r: number): number {
+    if (r < lo || hi < l) return MinSegmentTree.IDENTITY;
+    if (l <= lo && hi <= r) return this.tree[node];
+    const mid = (lo + hi) >> 1;
+    const left = this.queryNode(2 * node, lo, mid, l, r);
+    const right = this.queryNode(2 * node + 1, mid + 1, hi, l, r);
+    return this.merge(left, right);
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+class MinSegmentTree {
+    private static final int IDENTITY = Integer.MAX_VALUE;
+    private final int n;
+    private final int[] tree;
+
+    MinSegmentTree(int[] data) {
+        n = data.length;
+        tree = new int[4 * Math.max(1, n)];
+        java.util.Arrays.fill(tree, IDENTITY);
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    private int merge(int a, int b) {
+        return Math.min(a, b);
+    }
+
+    private void build(int[] data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) >>> 1;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = merge(tree[2 * node], tree[2 * node + 1]);
+    }
+
+    void update(int i, int value) {
+        update(1, 0, n - 1, i, value);
+    }
+
+    private void update(int node, int lo, int hi, int i, int value) {
+        if (lo == hi) {
+            tree[node] = value;
+            return;
+        }
+        int mid = (lo + hi) >>> 1;
+        if (i <= mid) update(2 * node, lo, mid, i, value);
+        else update(2 * node + 1, mid + 1, hi, i, value);
+        tree[node] = merge(tree[2 * node], tree[2 * node + 1]);
+    }
+
+    int query(int l, int r) {
+        return query(1, 0, n - 1, l, r);
+    }
+
+    private int query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return IDENTITY;
+        if (l <= lo && hi <= r) return tree[node];
+        int mid = (lo + hi) >>> 1;
+        return merge(query(2 * node, lo, mid, l, r),
+                     query(2 * node + 1, mid + 1, hi, l, r));
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdlib.h>
+#include <limits.h>
+
+typedef struct {
+    int n;
+    int *tree;
+} MinSeg;
+
+static int merge(int a, int b) {
+    return a < b ? a : b;
+}
+
+static void build(MinSeg *st, const int *data, int node, int lo, int hi) {
+    if (lo == hi) {
+        st->tree[node] = data[lo];
+        return;
+    }
+    int mid = (lo + hi) / 2;
+    build(st, data, 2 * node, lo, mid);
+    build(st, data, 2 * node + 1, mid + 1, hi);
+    st->tree[node] = merge(st->tree[2 * node], st->tree[2 * node + 1]);
+}
+
+MinSeg *seg_create(const int *data, int n) {
+    MinSeg *st = malloc(sizeof(MinSeg));
+    st->n = n;
+    st->tree = malloc(sizeof(int) * 4 * n);
+    for (int i = 0; i < 4 * n; i++) st->tree[i] = INT_MAX;
+    if (n > 0) build(st, data, 1, 0, n - 1);
+    return st;
+}
+
+static void seg_set(MinSeg *st, int node, int lo, int hi, int i, int value) {
+    if (lo == hi) {
+        st->tree[node] = value;
+        return;
+    }
+    int mid = (lo + hi) / 2;
+    if (i <= mid) seg_set(st, 2 * node, lo, mid, i, value);
+    else seg_set(st, 2 * node + 1, mid + 1, hi, i, value);
+    st->tree[node] = merge(st->tree[2 * node], st->tree[2 * node + 1]);
+}
+
+void seg_update(MinSeg *st, int i, int value) {
+    seg_set(st, 1, 0, st->n - 1, i, value);
+}
+
+static int seg_min(MinSeg *st, int node, int lo, int hi, int l, int r) {
+    if (r < lo || hi < l) return INT_MAX;
+    if (l <= lo && hi <= r) return st->tree[node];
+    int mid = (lo + hi) / 2;
+    return merge(seg_min(st, 2 * node, lo, mid, l, r),
+                 seg_min(st, 2 * node + 1, mid + 1, hi, l, r));
+}
+
+int seg_query(MinSeg *st, int l, int r) {
+    return seg_min(st, 1, 0, st->n - 1, l, r);
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <vector>
+#include <climits>
+#include <algorithm>
+using namespace std;
+
+class MinSegmentTree {
+    static const int IDENTITY = INT_MAX;
+    int n;
+    vector<int> tree;
+
+    int merge(int a, int b) { return min(a, b); }
+
+    void build(const vector<int> &data, int node, int lo, int hi) {
+        if (lo == hi) {
+            tree[node] = data[lo];
+            return;
+        }
+        int mid = (lo + hi) / 2;
+        build(data, 2 * node, lo, mid);
+        build(data, 2 * node + 1, mid + 1, hi);
+        tree[node] = merge(tree[2 * node], tree[2 * node + 1]);
+    }
+
+    void update(int node, int lo, int hi, int i, int value) {
+        if (lo == hi) {
+            tree[node] = value;
+            return;
+        }
+        int mid = (lo + hi) / 2;
+        if (i <= mid) update(2 * node, lo, mid, i, value);
+        else update(2 * node + 1, mid + 1, hi, i, value);
+        tree[node] = merge(tree[2 * node], tree[2 * node + 1]);
+    }
+
+    int query(int node, int lo, int hi, int l, int r) {
+        if (r < lo || hi < l) return IDENTITY;
+        if (l <= lo && hi <= r) return tree[node];
+        int mid = (lo + hi) / 2;
+        return merge(query(2 * node, lo, mid, l, r),
+                     query(2 * node + 1, mid + 1, hi, l, r));
+    }
+
+public:
+    MinSegmentTree(const vector<int> &data)
+        : n(data.size()), tree(4 * data.size(), IDENTITY) {
+        if (n > 0) build(data, 1, 0, n - 1);
+    }
+
+    void update(int i, int value) { update(1, 0, n - 1, i, value); }
+
+    int query(int l, int r) { return query(1, 0, n - 1, l, r); }
+};
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation | Time | Space |
+| --- | --- | --- |
+| Build | O(n) | O(n) |
+| Point update | O(log n) | O(1) |
+| Range query | O(log n) | O(log n) recursion |
+
+Identical to the sum tree — the merge operation doesn't change the asymptotics as long as
+it's O(1).
+
+## When to use it
+
+<Callout type="warn" title="The operation must be associative — and mind the identity">
+Averages break the pattern: `avg` isn't associative, so store `(sum, count)` per node and
+divide at the end instead. Pick an identity that truly can't affect the result — using `0`
+as a min identity would silently make every query return `0`. Non-invertible operations like
+min and max are exactly why a segment tree beats a Fenwick tree here: a BIT needs an inverse
+to subtract prefixes, which min doesn't have.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Range GCD needs identity 0, not 1 — why?">
+
+`gcd(x, 0) = x` for every `x`, so `0` is the neutral element: folding an out-of-range branch
+in leaves the answer untouched. Using `1` would be wrong because `gcd(x, 1) = 1`, which would
+crush every query result down to `1`. The identity is always "the value that `merge` ignores,"
+and for GCD that's `0`.
+
+</Accordion>
+
+<Accordion title="How do you find the *index* of the minimum in a range, not just its value?">
+
+Store a pair `(value, index)` in each node and make `merge` return whichever pair has the
+smaller value (break ties however you like). The identity becomes `(+∞, -1)`. The traversal is
+unchanged; you just carry the index alongside the value so the winning leaf's position comes
+back with it.
+
+</Accordion>
+
+<Accordion title="Can one tree answer both range-min and range-max without two trees?">
+
+Yes — store a struct `(min, max)` per node and merge component-wise: the parent's min is the
+smaller of the children's mins, its max the larger of their maxes. One traversal, one tree,
+both answers. This "combine multiple aggregates per node" trick generalizes to any bundle of
+associative statistics.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A segment tree answers **any associative range query** — sum, min, max, XOR, GCD — by
+  swapping only the `merge` function and its identity.
+- A range decomposes into O(log n) canonical nodes; the identity keeps disjoint branches from
+  corrupting the fold.
+- Bundle several aggregates in one node (min+max, value+index) to answer richer questions in a
+  single pass.
+
+<Cards>
+  <Card title="Segment Trees" href="/docs/dsa/25-range-query/01-segment-tree-intro" description="Where the tree, the build, and point updates come from." />
+  <Card title="Lazy Propagation" href="/docs/dsa/25-range-query/03-lazy-propagation" description="Extend queries with fast range updates." />
+  <Card title="Fenwick Trees" href="/docs/dsa/25-range-query/04-fenwick-tree" description="A leaner alternative when your operation has an inverse." />
+</Cards>

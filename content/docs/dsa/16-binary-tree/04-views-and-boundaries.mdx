@@ -1,0 +1,330 @@
+---
+title: "Views & Boundaries"
+description: "Seen from the left, the right, the top — a tree casts different silhouettes, and each is its own traversal."
+extractedReferences:
+  - href: /docs/dsa/16-binary-tree/02-traversals
+  - href: /docs/dsa/16-binary-tree/05-tree-properties
+---
+
+## The problem
+
+Stand to the right of a tree and look at it. You don't see every node — you see only the nearest node on each level, the ones that aren't hidden behind others. That silhouette is the **right view**. Stand on the left, or above, and you get a different outline each time.
+
+These "views" aren't a party trick. Rendering a collapsed org chart, drawing a skyline, summarizing a decision tree at a glance — all of them ask "what's visible from this angle?" The tree has all the nodes; you need just the ones on the edge of the shape.
+
+## A first attempt
+
+You might try to eyeball it recursively: "the right view is just the right spine, keep going right from the root." That works until the right child is missing but a left child dangles lower. Then the deepest visible node on that level comes from the *left* branch, and your right-spine shortcut skips it entirely.
+
+So you patch it: track the maximum depth reached and record the first node you meet at each new depth. Now you're really asking a *per-level* question — "who is the last (or first) node on each row?" — and answering it one branch at a time gets fiddly and error-prone. The naive spine walk is `O(h)` but simply wrong.
+
+## The insight
+
+Every view is a **level-indexed** question. Once you think in levels, each view is a one-line rule applied to a level-order (BFS) sweep:
+
+- **Right view** — the *last* node seen on each level.
+- **Left view** — the *first* node seen on each level.
+- **Top view** — the *first* node seen at each horizontal distance from the root.
+- **Bottom view** — the *last* node seen at each horizontal distance.
+
+For top and bottom, add one number to each node: its **horizontal distance** (root is `0`, left child is `parent − 1`, right child is `parent + 1`). Group by that number and the columns fall out.
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Left and right views from a level sweep
+
+Run level-order. For each level, note its size, pop exactly that many nodes, and remember the first (left view) or last (right view) one you pop. One node per level, top to bottom.
+
+```
+        1            right view: 1, 3, 6
+       / \           left view:  1, 2, 4
+      2   3
+     /     \
+    4       6
+```
+
+</Step>
+
+<Step>
+
+### Horizontal distance for top/bottom
+
+Assign the root horizontal distance `0`. Going left subtracts one, going right adds one. Nodes stacked vertically share a horizontal distance — those form the columns you see from above or below.
+
+```
+   hd:  -2  -1   0   1   2
+                 1
+              2     3
+           4          6
+```
+
+</Step>
+
+<Step>
+
+### Top view: first node per column
+
+BFS the tree carrying each node's horizontal distance. Keep a map from distance to value. The **first** time you reach a given distance, record it — that node is highest in that column and hides the rest. Later nodes at the same distance are behind it.
+
+</Step>
+
+<Step>
+
+### Bottom view: last node per column
+
+Same BFS, but always *overwrite* the map entry for a distance. The final value stored for each column is the lowest node there — what you'd see from below. Read the map left to right (sorted by distance) to output the view.
+
+</Step>
+
+</Steps>
+
+## The code
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+from collections import deque
+
+def right_view(root):
+    out, q = [], deque([root] if root else [])
+    while q:
+        n = len(q)
+        for i in range(n):
+            node = q.popleft()
+            if i == n - 1:              # last node on this level
+                out.append(node.value)
+            if node.left:  q.append(node.left)
+            if node.right: q.append(node.right)
+    return out
+
+def top_view(root):
+    if not root:
+        return []
+    seen, q = {}, deque([(root, 0)])
+    while q:
+        node, hd = q.popleft()
+        if hd not in seen:              # first node at this distance
+            seen[hd] = node.value
+        if node.left:  q.append((node.left, hd - 1))
+        if node.right: q.append((node.right, hd + 1))
+    return [seen[hd] for hd in sorted(seen)]
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+function rightView(root: TreeNode | null): number[] {
+  const out: number[] = [];
+  const q: TreeNode[] = root ? [root] : [];
+  while (q.length) {
+    const n = q.length;
+    for (let i = 0; i < n; i++) {
+      const node = q.shift()!;
+      if (i === n - 1) out.push(node.value);   // last on level
+      if (node.left) q.push(node.left);
+      if (node.right) q.push(node.right);
+    }
+  }
+  return out;
+}
+
+function topView(root: TreeNode | null): number[] {
+  if (!root) return [];
+  const seen = new Map<number, number>();
+  const q: [TreeNode, number][] = [[root, 0]];
+  while (q.length) {
+    const [node, hd] = q.shift()!;
+    if (!seen.has(hd)) seen.set(hd, node.value); // first at distance
+    if (node.left) q.push([node.left, hd - 1]);
+    if (node.right) q.push([node.right, hd + 1]);
+  }
+  return [...seen.keys()].sort((a, b) => a - b).map((k) => seen.get(k)!);
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+class Views {
+    static List<Integer> rightView(TreeNode root) {
+        List<Integer> out = new ArrayList<>();
+        Queue<TreeNode> q = new LinkedList<>();
+        if (root != null) q.add(root);
+        while (!q.isEmpty()) {
+            int n = q.size();
+            for (int i = 0; i < n; i++) {
+                TreeNode node = q.poll();
+                if (i == n - 1) out.add(node.value);   // last on level
+                if (node.left != null) q.add(node.left);
+                if (node.right != null) q.add(node.right);
+            }
+        }
+        return out;
+    }
+
+    static List<Integer> topView(TreeNode root) {
+        List<Integer> out = new ArrayList<>();
+        if (root == null) return out;
+        TreeMap<Integer, Integer> seen = new TreeMap<>();
+        Queue<Map.Entry<TreeNode, Integer>> q = new LinkedList<>();
+        q.add(Map.entry(root, 0));
+        while (!q.isEmpty()) {
+            Map.Entry<TreeNode, Integer> e = q.poll();
+            TreeNode node = e.getKey();
+            int hd = e.getValue();
+            seen.putIfAbsent(hd, node.value);          // first at distance
+            if (node.left != null) q.add(Map.entry(node.left, hd - 1));
+            if (node.right != null) q.add(Map.entry(node.right, hd + 1));
+        }
+        return new ArrayList<>(seen.values());
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node {
+    int value;
+    struct Node *left, *right;
+} Node;
+
+/* Right view: print the last node of each level */
+void rightView(Node *root) {
+    if (root == NULL) return;
+    Node *q[10000];
+    int head = 0, tail = 0;
+    q[tail++] = root;
+    while (head < tail) {
+        int n = tail - head;                 /* nodes on this level */
+        for (int i = 0; i < n; i++) {
+            Node *node = q[head++];
+            if (i == n - 1) printf("%d ", node->value);  /* last */
+            if (node->left)  q[tail++] = node->left;
+            if (node->right) q[tail++] = node->right;
+        }
+    }
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <iostream>
+#include <queue>
+#include <map>
+#include <vector>
+using namespace std;
+
+struct Node {
+    int value;
+    Node *left = nullptr, *right = nullptr;
+    Node(int v) : value(v) {}
+};
+
+vector<int> rightView(Node *root) {
+    vector<int> out;
+    queue<Node*> q;
+    if (root) q.push(root);
+    while (!q.empty()) {
+        int n = q.size();
+        for (int i = 0; i < n; i++) {
+            Node *node = q.front(); q.pop();
+            if (i == n - 1) out.push_back(node->value);  // last on level
+            if (node->left)  q.push(node->left);
+            if (node->right) q.push(node->right);
+        }
+    }
+    return out;
+}
+
+vector<int> topView(Node *root) {
+    vector<int> out;
+    if (!root) return out;
+    map<int, int> seen;                      // ordered by horizontal distance
+    queue<pair<Node*, int>> q;
+    q.push({root, 0});
+    while (!q.empty()) {
+        auto [node, hd] = q.front(); q.pop();
+        if (seen.find(hd) == seen.end()) seen[hd] = node->value; // first
+        if (node->left)  q.push({node->left, hd - 1});
+        if (node->right) q.push({node->right, hd + 1});
+    }
+    for (auto &kv : seen) out.push_back(kv.second);
+    return out;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| View | Time | Space |
+| --- | --- | --- |
+| Left / right view | O(n) | O(w) queue |
+| Top / bottom view | O(n log n) | O(n) map + queue |
+| Boundary traversal | O(n) | O(h) |
+
+Left and right views are a plain BFS, `O(n)`. Top and bottom views add a distance-keyed ordered map; the `log n` comes from keeping columns sorted (use a hash map plus a min/max distance to make it `O(n)`). Here `w` is the maximum level width.
+
+## When to use it
+
+<Callout type="info" title="Views summarize a tree from an angle">
+Views turn a whole tree into a thin, screen-friendly outline — perfect for rendering skylines, collapsed hierarchies, or a one-glance summary of a decision tree. The subtle part is *ties*: when two nodes land in the same column, top view keeps the shallower one and bottom view keeps the deeper one, so your BFS ordering must be strictly level by level, left to right, or the wrong node wins. Boundary traversal (left edge, then leaves, then right edge in reverse) is a related favorite — watch the corners so the root and leaf overlaps aren't double-counted.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="Why must top and bottom views use BFS rather than DFS?">
+
+Both views resolve ties by depth: in a shared column, top view wants the shallowest node and bottom view wants the deepest. BFS visits strictly level by level, so the *first* node it records in a column is guaranteed shallowest and the *last* is guaranteed deepest. A DFS could reach a deep node in one column before a shallower node in the same column, recording the wrong one for top view. You can make DFS work only by also tracking each node's level and comparing, which is exactly the ordering BFS gives you for free.
+
+</Accordion>
+
+<Accordion title="What is the horizontal distance, and how does it define the columns you see from above?">
+
+Give the root horizontal distance `0`; moving to a left child subtracts one and moving to a right child adds one. Nodes that share a horizontal distance sit in the same vertical column when you draw the tree, so from directly above they stack on top of each other. Top view reports the first (highest) node in each column and bottom view the last (lowest), read left to right by increasing distance. It's the single number that converts a 2-D tree into orderable columns.
+
+</Accordion>
+
+<Accordion title="Sketch the boundary traversal of a tree and name its three parts.">
+
+The boundary is the outline you'd trace with a pen without lifting it: (1) the **left boundary** top-down, excluding leaves; (2) all the **leaves** left to right; (3) the **right boundary** bottom-up, excluding leaves. The root is included once at the start, and leaves are handled only in the middle pass so they're never counted twice. The corners are the tricky bit — a node that is both on the left boundary and a leaf must appear only in the leaf pass.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- Every view is a per-level question answered by a single rule over a BFS sweep.
+- Left/right views keep the first/last node per level; top/bottom views keep the first/last node per horizontal distance.
+- BFS ordering is what breaks column ties correctly — do it strictly level by level, left to right.
+
+<Cards>
+  <Card title="Tree Traversals" href="/docs/dsa/16-binary-tree/02-traversals" description="Level-order traversal is the engine behind every view." />
+  <Card title="Tree Properties" href="/docs/dsa/16-binary-tree/05-tree-properties" description="Width and height, the measurements views depend on." />
+</Cards>

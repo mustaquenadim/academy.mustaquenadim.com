@@ -1,0 +1,277 @@
+---
+title: "Sets & Maps"
+description: "Once you can hash, two of the most useful tools in programming fall out almost for free: the set and the map."
+extractedReferences:
+  - href: /docs/dsa/07-hashing/02-hash-tables
+  - href: /docs/dsa/07-hashing/05-frequency-patterns
+  - href: /docs/dsa/07-hashing/01-hash-functions
+---
+
+## The problem
+
+You're processing a stream of scanned event tickets at the door. Two jobs, over and over:
+make sure no ticket is used twice, and pull up the guest's seat from their ticket id.
+
+"Has this ticket been seen before?" is a *membership* question. "What seat goes with this
+ticket?" is a *lookup by key* question. Do either one with a plain array and you're scanning
+the whole list every scan — an afternoon of `O(n)` checks while a line forms at the door.
+Both problems are really the same problem wearing two hats, and hashing answers both.
+
+## A first attempt
+
+Keep a list of used ticket ids and a parallel list of seats. To check a ticket, scan the
+first list; to find a seat, scan until you match the id, then read the same position in the
+second list.
+
+```text
+used  = ["T-1007", "T-1042", "T-1099", ...]   # scan to check membership
+seats = ["A5",     "C12",    "B3",     ...]   # scan to find the seat
+```
+
+Every scan is `O(n)`, and keeping two lists aligned is its own bug factory. As the guest
+list grows, the door slows down linearly. You want membership and key→value lookup to cost
+*one step* each, regardless of size.
+
+## The insight
+
+A hash table already turns a key into a slot in `O(1)`. Point that machinery at each of the
+two questions and you get two data structures:
+
+- A **set** stores *keys only* and answers "is this present?" — deduplication and membership.
+- A **map** (a.k.a. dictionary or associative array) stores *key → value* pairs and answers
+  "what's associated with this key?" — the seat behind the ticket.
+
+Same [hash table](/docs/dsa/07-hashing/02-hash-tables) underneath; a set is just a map that
+doesn't bother storing values. Every language ships both as first-class types, so you almost
+never build one by hand.
+
+<Callout type="idea" title="One structure, two shapes">
+Reach for a **set** when you only care *whether* something exists — seen ids, visited nodes,
+a blocklist. Reach for a **map** when each key carries a *payload* — ticket → seat, word →
+count, user id → profile. Choosing the right one makes your intent obvious to the next reader.
+</Callout>
+
+## How it works
+
+<Steps>
+
+<Step>
+
+### Pick set or map by the question
+
+If you only need "is it here?", a set is enough and lighter. If you need "what's attached to
+it?", use a map. Asking the question first saves you from storing values you never read.
+
+</Step>
+
+<Step>
+
+### Insert in one step
+
+Hashing the key lands you on a slot immediately. The set stores the key there; the map stores
+the key alongside its value. Both are `O(1)` on average.
+
+</Step>
+
+<Step>
+
+### Query in one step
+
+Membership (`in` / `has` / `contains`) hashes the key and checks the slot. Lookup does the
+same and returns the stored value. No scanning of other entries.
+
+</Step>
+
+<Step>
+
+### Keys must be hashable and stable
+
+Only immutable, hashable keys belong here — strings, numbers, tuples of those. Mutating a key
+after insertion changes its hash and *loses* the entry, because it now points at the wrong
+slot.
+
+</Step>
+
+</Steps>
+
+## The code
+
+The ticket door, done right: a set to catch duplicates, a map to fetch seats.
+
+<Tabs items={['Python', 'TypeScript', 'Java', 'C', 'C++']}>
+
+<Tab value="Python">
+
+```python
+seen = set()                 # membership
+seats = {                    # key → value map
+    "T-1007": "A5",
+    "T-1042": "C12",
+}
+
+def scan(ticket):
+    if ticket in seen:                 # O(1) membership
+        return "duplicate"
+    seen.add(ticket)                   # O(1) insert
+    return seats.get(ticket, "no seat")  # O(1) lookup
+```
+
+</Tab>
+
+<Tab value="TypeScript">
+
+```ts
+const seen = new Set<string>();                 // membership
+const seats = new Map<string, string>([         // key → value map
+  ["T-1007", "A5"],
+  ["T-1042", "C12"],
+]);
+
+function scan(ticket: string): string {
+  if (seen.has(ticket)) return "duplicate"; // O(1) membership
+  seen.add(ticket);                         // O(1) insert
+  return seats.get(ticket) ?? "no seat";    // O(1) lookup
+}
+```
+
+</Tab>
+
+<Tab value="Java">
+
+```java
+import java.util.*;
+
+Set<String> seen = new HashSet<>();                 // membership
+Map<String, String> seats = new HashMap<>(Map.of(   // key → value map
+    "T-1007", "A5",
+    "T-1042", "C12"));
+
+String scan(String ticket) {
+    if (seen.contains(ticket)) return "duplicate"; // O(1) membership
+    seen.add(ticket);                              // O(1) insert
+    return seats.getOrDefault(ticket, "no seat");  // O(1) lookup
+}
+```
+
+</Tab>
+
+<Tab value="C">
+
+```c
+/* C has no built-in map, so uthash gives one over a struct. */
+#include "uthash.h"
+#include <string.h>
+
+typedef struct { char ticket[16]; char seat[8]; UT_hash_handle hh; } Seat;
+Seat *seats = NULL;
+
+void add_seat(const char *ticket, const char *seat) {
+    Seat *s = malloc(sizeof(Seat));
+    strcpy(s->ticket, ticket); strcpy(s->seat, seat);
+    HASH_ADD_STR(seats, ticket, s);
+}
+
+const char *scan(const char *ticket) {
+    Seat *s;
+    HASH_FIND_STR(seats, ticket, s); // O(1) lookup
+    return s ? s->seat : "no seat";
+}
+```
+
+</Tab>
+
+<Tab value="C++">
+
+```cpp
+#include <string>
+#include <unordered_set>
+#include <unordered_map>
+
+std::unordered_set<std::string> seen;              // membership
+std::unordered_map<std::string, std::string> seats // key → value map
+    = {{"T-1007", "A5"}, {"T-1042", "C12"}};
+
+std::string scan(const std::string &ticket) {
+    if (seen.count(ticket)) return "duplicate"; // O(1) membership
+    seen.insert(ticket);                        // O(1) insert
+    auto it = seats.find(ticket);               // O(1) lookup
+    return it != seats.end() ? it->second : "no seat";
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Complexity
+
+| Operation           | Set    | Map    | Note                                     |
+| ------------------- | ------ | ------ | ---------------------------------------- |
+| Insert / update     | `O(1)` | `O(1)` | average; worst `O(n)` under bad hashing  |
+| Membership / lookup | `O(1)` | `O(1)` | the whole reason to use them             |
+| Delete              | `O(1)` | `O(1)` | average                                  |
+| Iterate all entries | `O(n)` | `O(n)` | order is **not** guaranteed              |
+
+<Callout type="warn" title="Hash sets and maps don't keep order">
+Iterating a hash set or map gives you no meaningful order — hashing scatters keys on purpose.
+If you need entries sorted or in insertion order, reach for an ordered variant instead: a
+tree-based `TreeMap` / `std::map` for sorted keys (`O(log n)` operations), or an insertion-
+ordered map like Python's `dict` (ordered since 3.7) or JavaScript's `Map`.
+</Callout>
+
+## When to use it
+
+<Callout type="info" title="Everyday reach-for-it moments">
+Sets: deduplicating a list, tracking visited nodes in a graph traversal, testing membership
+against a blocklist. Maps: caches and memoization, grouping by a key, counting occurrences,
+indexing records by id. When a solution mentions "have I seen this?" or "what goes with
+this?", a set or map is almost always the tool — often turning an `O(n²)` scan into `O(n)`.
+</Callout>
+
+## Practice
+
+<Accordions>
+
+<Accordion title="You have two guest lists and want everyone who appears on both. How do sets make this fast?">
+
+Put the first list in a set (`O(n)`). Then walk the second list and keep only the names the
+set contains (`O(1)` per check), giving `O(n + m)` overall. The brute-force alternative —
+comparing every name in one list against every name in the other — is `O(n·m)`. This is set
+**intersection**, and union/difference work the same way.
+
+</Accordion>
+
+<Accordion title="When would you deliberately pick an ordered map over a hash map, accepting O(log n)?">
+
+When order is part of the answer: you need to iterate keys sorted, find the smallest key
+above some value (a floor/ceiling query), or range-scan between two keys. A hash map can't do
+any of those because it has no notion of key order. A tree-based ordered map trades constant-
+time lookup for `O(log n)` in exchange for keeping keys sorted at all times.
+
+</Accordion>
+
+<Accordion title="Why can't you use a mutable list as a key in most hash maps?">
+
+The map places a key by its hash and finds it later by re-hashing. If the key is mutable and
+you change it after insertion, its hash changes too — so the lookup computes a *different*
+slot and the entry appears to vanish, silently. That's why languages require immutable,
+hashable keys (strings, numbers, tuples/frozensets) and reject lists as keys.
+
+</Accordion>
+
+</Accordions>
+
+## Recap
+
+- A **set** answers "is it present?" (keys only); a **map** answers "what's attached to this
+  key?" (key → value). Both sit on the same hash table.
+- Insert, membership, lookup, and delete are all `O(1)` on average — the payoff that turns
+  linear scans into single steps.
+- The cost is order: hash sets and maps don't keep keys sorted or in insertion order, and
+  keys must be immutable and hashable.
+
+<Cards>
+  <Card title="Hash Tables" href="/docs/dsa/07-hashing/02-hash-tables" description="The O(1) machinery that sets and maps are built on." />
+  <Card title="Frequency Patterns" href="/docs/dsa/07-hashing/05-frequency-patterns" description="Counting and grouping — the maps' most common job." />
+  <Card title="Hash Functions" href="/docs/dsa/07-hashing/01-hash-functions" description="Why keys must be hashable and stable." />
+</Cards>
