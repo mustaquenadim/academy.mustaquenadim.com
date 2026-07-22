@@ -67,15 +67,13 @@ Each entry has a **TTL** so stale data self-destructs after a while. When the un
 
 The cache-aside read path:
 
-```
-   request ──► [ Cache ]  ── HIT ──►  return value  (~0.1 ms)
-                  │
-                MISS
-                  │
-                  ▼
-              [ Database ]  run expensive query  (~10 ms)
-                  │
-                  └── store result in cache (TTL) ──► return
+```mermaid
+flowchart LR
+  Request([request]) --> Cache{Cache}
+  Cache -->|HIT| Fast["return value (~0.1 ms)"]
+  Cache -->|MISS| DB[("Database")]
+  DB -->|"run expensive query (~10 ms)"| Store["store result in cache (TTL)"]
+  Store --> Return([return value])
 ```
 
 Where caches live — Adda can stack several:

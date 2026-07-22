@@ -5,6 +5,7 @@ import { Callout } from './callout';
 import { Card, Cards } from './card';
 import { CodeBlock, Pre } from './codeblock';
 import { File, Files, Folder } from './files';
+import { Mermaid } from './mermaid';
 import { Step, Steps } from './steps';
 import { Tab, Tabs } from './tabs';
 import { TypeTable } from './type-table';
@@ -21,6 +22,7 @@ export function getMDXComponents(components?: MDXComponents) {
     File,
     Files,
     Folder,
+    Mermaid,
     Step,
     Steps,
     Tab,
