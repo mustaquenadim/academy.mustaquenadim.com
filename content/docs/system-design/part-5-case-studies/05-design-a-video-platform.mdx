@@ -1,6 +1,6 @@
 ---
 title: "Design a Video Platform"
-description: "Uploading, encoding, storing, and streaming video to millions pulls together nearly every idea in this book."
+description: "Adda adds video — and uploading, encoding, storing, and streaming to millions pulls together nearly every idea in this book. The team's final build."
 extractedReferences:
   - href: /docs/system-design/part-1-networking/06-cdns
   - href: /docs/system-design/part-3-architecture/03-message-queues
@@ -9,9 +9,9 @@ extractedReferences:
 
 ## The problem
 
-A creator uploads a 4 K, 2 GB, ten-minute video from a laptop on hotel Wi-Fi. Minutes later, someone on a subway with one bar of signal taps play on their phone — and it starts almost instantly, at a resolution that quietly adjusts as their signal fades. Between those two moments, that single file has to be received, transformed into a dozen versions, stored durably, and pushed to servers near every viewer on Earth.
+For Adda's last big feature of the year, Ria wants video — creators posting clips, everyone watching. It's the design that pulls in nearly everything the team has learned, so they take their time at the whiteboard. Picture the two ends of it: a creator uploads a 4 K, 2 GB, ten-minute video from a laptop on hotel Wi-Fi. Minutes later, someone on a subway with one bar of signal taps play on their phone — and it starts almost instantly, at a resolution that quietly adjusts as their signal fades. Between those two moments, that single file has to be received, transformed into a dozen versions, stored durably, and pushed to servers near every viewer on Earth.
 
-The naive version — "store the uploaded file, and when someone watches, stream that file to them" — fails on every axis. The upload dies halfway on flaky Wi-Fi. The 4 K file is unwatchable on a phone with weak signal. And streaming one stored copy from one datacenter to a global audience is both slow and ruinously expensive. A video platform is really four systems stitched together: **upload, encode, store, deliver.**
+The naive version — "store the uploaded file, and when someone watches, stream that file to them" — fails on every axis. The upload dies halfway on flaky Wi-Fi. The 4 K file is unwatchable on a phone with weak signal. And streaming one stored copy from one datacenter to a global audience is both slow and ruinously expensive. A video platform, the team realizes, is really four systems stitched together: **upload, encode, store, deliver.**
 
 ## Requirements
 
@@ -30,6 +30,8 @@ The naive version — "store the uploaded file, and when someone watches, stream
 
 ## A scale estimate
 
+Shuvo runs the firehose numbers:
+
 - **500 hours** of video uploaded per minute (YouTube-scale) → a firehose of ingestion and encoding work.
 - Each source video is transcoded into ~6 renditions (240p → 4 K) × multiple codecs → encoding is CPU-heavy and slow (often longer than the video's runtime).
 - Storage: raw + all renditions → **petabytes**, growing constantly.
@@ -37,7 +39,7 @@ The naive version — "store the uploaded file, and when someone watches, stream
 
 ## The insight
 
-Uploading and watching are wildly different workloads that must be **decoupled**. The upload path is write-heavy, bursty, and slow (encoding). The watch path is read-heavy, latency-sensitive, and global. Between them sits an **asynchronous pipeline**: the user's upload finishes quickly, then a background system chews through encoding on its own schedule, and the watch path serves the finished renditions from the edge. Nothing on the fast paths waits for the slow work.
+Uploading and watching are wildly different workloads that must be **decoupled** — the same instinct that split Adda's feed writes from its reads. The upload path is write-heavy, bursty, and slow (encoding). The watch path is read-heavy, latency-sensitive, and global. Between them sits an **asynchronous pipeline**: the user's upload finishes quickly, then a background system chews through encoding on its own schedule, and the watch path serves the finished renditions from the edge. Nothing on the fast paths waits for the slow work.
 
 ## How it works
 
@@ -55,7 +57,7 @@ The client uploads directly to object storage (S3-style) in chunks via pre-signe
 
 ### Kick off encoding asynchronously
 
-When the upload completes, drop a job onto a [message queue](/docs/system-design/part-3-architecture/03-message-queues). The user's request returns "processing…" immediately. A fleet of encoding workers pulls jobs off the queue.
+When the upload completes, drop a job onto the [message queue](/docs/system-design/part-3-architecture/03-message-queues) — the same Part 3 queue that already carries Adda's fan-out work. The user's request returns "processing…" immediately. A fleet of encoding workers pulls jobs off the queue.
 
 </Step>
 
@@ -71,7 +73,7 @@ Workers split the video into small segments (2–10 s each) and encode each segm
 
 ### Store and distribute to the edge
 
-Write all segments and a manifest to object storage, then push the hot ones to a [CDN](/docs/system-design/part-1-networking/06-cdns). Mark the video ready and update its metadata.
+Write all segments and a manifest to object storage, then push the hot ones to a [CDN](/docs/system-design/part-1-networking/06-cdns) — the same edge network Tanvir set up in Part 1. Mark the video ready and update its metadata.
 
 </Step>
 
@@ -114,14 +116,14 @@ Cutting the video into short segments buys you three things at once: parallel en
 Six renditions plus the raw master multiply storage several-fold, and the vast majority of videos are watched rarely after their first week. Keep hot content on fast storage and at the edge; move cold content to cheap archival tiers. Don't pay SSD prices to store a video nobody's watched in a year.
 </Callout>
 
-Metadata (titles, view counts, the `videoId → manifest URL` mapping) is a separate, small, read-heavy service — much like the [URL shortener's](/docs/system-design/part-5-case-studies/01-design-a-url-shortener) key-value lookup — and is cached hard.
+Metadata (titles, view counts, the `videoId → manifest URL` mapping) is a separate, small, read-heavy service — much like the [URL shortener](/docs/system-design/part-5-case-studies/01-design-a-url-shortener) drill the team ran — and is cached hard.
 
 ## Bottlenecks and how to scale
 
 - **Encoding throughput:** the queue absorbs upload bursts; scale workers horizontally to drain it. Prioritize lower resolutions first so a video becomes watchable before the 4 K rendition finishes.
 - **Delivery bandwidth:** the CDN is non-negotiable — serving petabytes from the edge is what keeps playback fast and origin traffic (and cost) low. Cache hit rate at the edge is the metric to watch.
 - **Popular-video spikes:** a viral video is a hot object; the CDN naturally absorbs it because segments are immutable and cacheable, so the origin barely notices.
-- **Upload reliability:** resumable chunked uploads plus durable object storage (replicated across zones) mean a flaky network or a failed node never loses an upload.
+- **Upload reliability:** resumable chunked uploads plus durable object storage (replicated across zones, echoing Mou's failover playbook from Part 4) mean a flaky network or a failed node never loses an upload.
 
 ## Practice
 
@@ -129,7 +131,7 @@ Metadata (titles, view counts, the `videoId → manifest URL` mapping) is a sepa
 
 <Accordion title="Why encode into multiple resolutions up front instead of resizing on demand when someone watches?">
 
-Encoding is CPU-expensive and slow — often longer than the video itself. Doing it on demand would make the first viewer of each quality wait minutes, and you'd re-encode the same segment for every viewer, burning enormous compute. Encoding once, up front, into all renditions means playback is just a file fetch from the CDN — cheap and instant. You trade extra storage (which is comparatively cheap and tierable) for fast, repeatable reads. It's the same read-optimization instinct as precomputing a feed.
+Encoding is CPU-expensive and slow — often longer than the video itself. Doing it on demand would make the first viewer of each quality wait minutes, and you'd re-encode the same segment for every viewer, burning enormous compute. Encoding once, up front, into all renditions means playback is just a file fetch from the CDN — cheap and instant. You trade extra storage (which is comparatively cheap and tierable) for fast, repeatable reads. It's the same read-optimization instinct as precomputing Adda's feed.
 
 </Accordion>
 

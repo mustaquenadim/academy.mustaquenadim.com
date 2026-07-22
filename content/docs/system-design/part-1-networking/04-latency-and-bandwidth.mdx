@@ -1,6 +1,6 @@
 ---
 title: "Latency vs Bandwidth"
-description: "A fat pipe doesn’t help if every drop takes a second to arrive — confusing latency with bandwidth is behind countless \"why is it slow?\" mysteries."
+description: "Fahim's cousin in Canada says Adda feels sluggish, but Ria's internet is plenty fast. The fix is realizing that \"slow\" is two different numbers — and she's about to optimize the wrong one."
 extractedReferences:
   - href: /docs/system-design/part-1-networking/01-how-the-internet-carries-a-request
   - href: /docs/system-design/part-1-networking/06-cdns
@@ -9,24 +9,24 @@ extractedReferences:
 
 ## The problem
 
-Your team upgrades from a 100 Mbps line to a 1 Gbps line. Ten times the bandwidth. Everyone expects the app to feel ten times snappier. It feels exactly the same.
+**Fahim** has a cousin in Canada who tried Adda and gave a blunt review: "It's nice, but it feels kind of laggy." This stings, because from Fahim's phone in Dhaka — a few kilometers from the laptop under **Ria's** desk — Adda feels instant.
 
-The bug reports pour in: "the API is slow," "the dashboard takes forever." You throw more bandwidth at it, and nothing changes. The reason is that most people quietly assume "faster internet" means one thing, when it is really two very different things — and you almost certainly optimized the wrong one.
+Ria's first move is the obvious one: check the internet connection. It's fine. Her line is fast; she even upgrades her home plan to a fatter one, expecting the cousin's experience to snap into shape. It feels exactly the same to him. The bug reports keep the same shape: "the feed takes forever to load in Toronto." She throws more bandwidth at it and nothing changes. The reason is that "faster internet" quietly means one thing in her head, when it is really *two* very different things — and she just optimized the wrong one.
 
 ## A first attempt
 
 The instinct is: *slow = not enough bandwidth, so buy a bigger pipe.*
 
-Sometimes that is right. If you are moving a 4 GB file, a fatter pipe genuinely finishes sooner. But most app slowness is not one giant transfer — it is many small requests, each waiting on a round trip. Widening the pipe does nothing for the *wait before data starts flowing*. It is like widening a highway to fix a problem that is actually the distance between two cities: more lanes, same drive time. Throwing bandwidth at a latency problem is money set on fire.
+Sometimes that is right. If the cousin were downloading a 4 GB video from Adda, a fatter pipe would genuinely finish sooner. But loading a feed is not one giant transfer — it is many small requests, each waiting on a round trip between Toronto and Dhaka. Widening the pipe does nothing for the *wait before data starts flowing*. It is like widening a highway to fix a problem that is actually the distance between two cities: more lanes, same drive time. Throwing bandwidth at a latency problem is money set on fire.
 
 ## The insight
 
-Speed is **two independent numbers**, and confusing them is the root of most "why is it slow?" mysteries.
+Speed is **two independent numbers**, and confusing them is the root of most "why is it slow?" mysteries — including the cousin's.
 
 - **Latency** — the *delay* before data starts arriving. Measured in milliseconds. Set mostly by distance and number of round trips. This is the *when*.
 - **Bandwidth** — the *rate* data flows once it is moving. Measured in Mbps/Gbps. This is the *how much per second*.
 
-Think of a pipe carrying water. Latency is how long until the first drop reaches you. Bandwidth is how wide the pipe is. A wide pipe does not make the first drop arrive sooner — and for small, chatty requests, the first drop is almost the whole story.
+Think of a pipe carrying water. Latency is how long until the first drop reaches you. Bandwidth is how wide the pipe is. A wide pipe does not make the first drop arrive sooner — and for small, chatty requests like loading Adda's feed, the first drop is almost the whole story. The cousin isn't short on bandwidth; he's paying a distance tax on every round trip to Dhaka.
 
 ## How it works
 
@@ -36,7 +36,7 @@ Think of a pipe carrying water. Latency is how long until the first drop reaches
 
 ### Separate the two questions
 
-For any slow interaction ask: is it slow to *start* (latency) or slow to *finish once started* (bandwidth)? Small API calls are latency-bound; large downloads are bandwidth-bound.
+For any slow interaction ask: is it slow to *start* (latency) or slow to *finish once started* (bandwidth)? Adda's small feed calls are latency-bound; a large video upload is bandwidth-bound.
 
 </Step>
 
@@ -44,7 +44,7 @@ For any slow interaction ask: is it slow to *start* (latency) or slow to *finish
 
 ### Count the round trips
 
-Latency multiplies with round trips. DNS, TCP handshake, TLS handshake, then the request itself — each is a trip across the wire. Ten sequential API calls on a 100 ms link cost 1,000 ms of pure waiting, no matter how fat the pipe.
+Latency multiplies with round trips. DNS, TCP handshake, TLS handshake, then the request itself — each is a trip across the wire. Ten sequential API calls from Toronto on a 100 ms link cost 1,000 ms of pure waiting, no matter how fat the pipe.
 
 </Step>
 
@@ -52,7 +52,7 @@ Latency multiplies with round trips. DNS, TCP handshake, TLS handshake, then the
 
 ### Attack latency by cutting distance and trips
 
-Move data closer (CDNs, edge), reuse connections (keep-alive, HTTP/2), and batch chatty calls into one. Every round trip you delete is pure win on small requests.
+Move data closer (CDNs, edge), reuse connections (keep-alive, HTTP/2), and batch chatty calls into one. Every round trip Ria deletes is pure win on small requests.
 
 </Step>
 
@@ -92,38 +92,38 @@ Latency to hold in your head (the "numbers every engineer should know"):
 - **New York ↔ London round trip:** ~55–80 ms (speed-of-light floor ~55 ms)
 - **New York ↔ Sydney round trip:** ~150–250 ms
 
-And the arithmetic that traps people:
+And the arithmetic that trapped Ria:
 
-- Downloading a **10 MB** file over **100 Mbps** takes ~0.8 s of transfer — bandwidth-bound, so a bigger pipe helps.
-- Making **20 sequential API calls** over an **80 ms** transcontinental link costs **1.6 s** of pure round-trip waiting — latency-bound, so a bigger pipe helps *not at all*. Batching them into 2 calls cuts it to 160 ms.
+- Uploading a **10 MB** video over **100 Mbps** takes ~0.8 s of transfer — bandwidth-bound, so a bigger pipe helps.
+- The cousin's feed making **20 sequential API calls** over an **80 ms** Toronto↔Dhaka link costs **1.6 s** of pure round-trip waiting — latency-bound, so a bigger pipe helps *not at all*. Batching them into 2 calls cuts it to 160 ms.
 
 <Callout type="warn" title="Diagnose before you buy">
-Big transfers are bandwidth-bound; chatty small requests are latency-bound. Adding bandwidth to a latency problem changes nothing. Before spending on a fatter pipe, measure whether you are waiting to *start* or waiting to *finish* — the fix is completely different.
+Big transfers are bandwidth-bound; chatty small requests are latency-bound. Adding bandwidth to a latency problem changes nothing — Ria's home-plan upgrade did nothing for Toronto. Before spending on a fatter pipe, measure whether you are waiting to *start* or waiting to *finish* — the fix is completely different.
 </Callout>
 
 <Callout type="idea" title="You cannot beat the speed of light">
-Light in fiber travels ~200,000 km/s, so distance sets a hard latency floor no budget can cross. The only real move against it is to *not send the request that far* — which is the entire reason CDNs and edge computing exist.
+Light in fiber travels ~200,000 km/s, so distance sets a hard latency floor no budget can cross. The only real move against it is to *not send the request that far* — which is the entire reason CDNs and edge computing exist, and exactly where Adda is headed next.
 </Callout>
 
 ## Practice
 
 <Accordions>
 
-<Accordion title="You upgrade from 100 Mbps to 1 Gbps and page load is unchanged. What went wrong?">
+<Accordion title="Ria upgrades her home plan from 100 Mbps to 1 Gbps and the cousin's feed is unchanged. What went wrong?">
 
-The page was latency-bound, not bandwidth-bound. It is made of many small requests, each waiting on round trips (DNS, handshakes, sequential API calls), and round-trip time is set by distance, not pipe width. Ten times the bandwidth does nothing for the *waiting*. The real fixes are fewer round trips (batching, connection reuse) and shorter distance (a CDN), not more Mbps.
+The feed was latency-bound, not bandwidth-bound. It is made of many small requests, each waiting on round trips (DNS, handshakes, sequential API calls), and round-trip time is set by distance, not pipe width. Ten times the bandwidth does nothing for the *waiting*. The real fixes are fewer round trips (batching, connection reuse) and shorter distance (a CDN), not more Mbps.
 
 </Accordion>
 
-<Accordion title="When does buying more bandwidth actually help?">
+<Accordion title="When does buying more bandwidth actually help Adda?">
 
 When you are moving large payloads: video streaming, big file downloads/uploads, backups, bulk data transfer. There the transfer time is `bytes / rate`, so doubling the rate roughly halves the time. The tell is a single sustained transfer rather than many tiny requests — that is a bandwidth-bound workload, and a fatter pipe genuinely pays off.
 
 </Accordion>
 
-<Accordion title="A mobile user in Sydney complains your US-hosted app is sluggish. What's the cheapest big win?">
+<Accordion title="A user in Sydney complains Adda is sluggish. What's the cheapest big win?">
 
-Cut the distance and the round trips. A Sydney↔US round trip is ~200 ms, and a page doing several sequential calls stacks that up fast. Put static assets (and ideally an edge/API cache) on a CDN node in Australia so most requests never cross the Pacific. That attacks the dominant cost — latency from distance — far more effectively than any bandwidth upgrade.
+Cut the distance and the round trips. A Sydney↔Dhaka round trip is a couple hundred milliseconds, and a feed doing several sequential calls stacks that up fast. Put static assets (and ideally an edge/API cache) on a CDN node near the user so most requests never cross the ocean. That attacks the dominant cost — latency from distance — far more effectively than any bandwidth upgrade.
 
 </Accordion>
 
@@ -132,7 +132,7 @@ Cut the distance and the round trips. A Sydney↔US round trip is ~200 ms, and a
 ## Recap
 
 - **Latency** is the delay before data starts (ms, driven by distance and round trips); **bandwidth** is the rate once it flows (Mbps/Gbps).
-- Small, chatty requests are **latency-bound**; large transfers are **bandwidth-bound** — diagnose which before you spend.
+- Small, chatty requests like Adda's feed are **latency-bound**; large transfers are **bandwidth-bound** — diagnose which before you spend.
 - Beat latency by **cutting round trips and distance** (batching, connection reuse, CDNs); beat bandwidth by **shrinking bytes** (compression, pagination).
 
 <Cards>

@@ -1,6 +1,6 @@
 ---
 title: "Consistency & the CAP Theorem"
-description: "When the network splits your servers in two, you must choose: stay consistent or stay available. You can’t have both — that’s CAP."
+description: "The network link between Adda's two regions goes dark, and its shards start disagreeing. Ria must choose: stay consistent or stay available. She can't have both — that's CAP."
 extractedReferences:
   - href: /docs/system-design/part-2-databases/03-replication
   - href: /docs/system-design/part-2-databases/04-sharding
@@ -9,15 +9,15 @@ extractedReferences:
 
 ## The problem
 
-You run your database across two datacenters so that if one burns down, the other keeps serving. One afternoon the network link between them goes dark. Both sides are alive and taking traffic — but they can no longer talk to each other. A customer in region A updates their address; a request in region B reads the old one.
+Adda now runs its shards and replicas across two datacenters so that if one burns down, the other keeps serving. One afternoon the network link between them goes dark. Both sides are alive and taking traffic — Fahim in Dhaka, his cousin routed to the other region — but they can no longer talk to each other. A user in region A updates their bio; a request in region B reads the old one.
 
-Now you face a decision with no comfortable answer. Do you let both sides keep serving, knowing they may disagree? Or do you refuse writes on one side to keep everyone in agreement, making that side effectively down? The network split forced a choice you cannot avoid.
+Now Ria faces a decision with no comfortable answer. Does she let both sides keep serving, knowing they may disagree? Or refuse writes on one side to keep everyone in agreement, making that side effectively down? The network split forced a choice she cannot avoid.
 
 ## A first attempt
 
-The instinct is "just keep both up and reconcile later." Sometimes you can — but reconciliation means two versions of the truth, and for a bank balance or a seat on a flight "later" is too late; you might sell the same seat twice.
+The instinct is "just keep both up and reconcile later." Sometimes you can — but reconciliation means two versions of the truth, and for a wallet balance or the last ticket to a concert "later" is too late; you might sell the same seat twice.
 
-The opposite instinct — "block writes until the link heals" — keeps everyone consistent but means an outage every time the network hiccups, which on a large system is constantly. Neither instinct is free. What you are bumping into is not a bug you can engineer away; it is a theorem about what is possible when machines cannot communicate.
+The opposite instinct — "block writes until the link heals" — keeps everyone consistent but means an outage every time the network hiccups, which on a system Adda's size is constantly. Neither instinct is free. What Shuvo is bumping into is not a bug you can engineer away; it is a theorem about what is possible when machines cannot communicate.
 
 ## The insight
 
@@ -87,7 +87,7 @@ The partition ends, changes flow both ways, and replicas re-agree. AP systems ca
 
 "Consistency" is really a spectrum, and where you sit on it is a latency knob. **Strong consistency** across regions means a write waits for a quorum acknowledgment — a cross-continent round trip of 100–300 ms per write. **Eventual consistency** acknowledges locally in 1–5 ms and converges in the background, usually within tens of milliseconds but seconds under a partition.
 
-That is why the choice is often made *per operation*, not per system. A shopping cart or a like-count is happy being AP — a stale count for 200 ms harms no one. A payment or an inventory decrement wants CP — better a brief error than double-charging a card. Quorum systems tune this directly with `R + W > N` (read and write replica counts): raise them for consistency, lower them for availability and speed.
+That is why Adda makes the choice *per operation*, not per system. A user's feed or a like-count is happy being AP — a stale count for 200 ms harms no one. A future Adda wallet balance or a limited-drop ticket wants CP — better a brief error than double-charging. Quorum systems tune this directly with `R + W > N` (read and write replica counts): raise them for consistency, lower them for availability and speed.
 
 ## When to use it
 
@@ -103,19 +103,19 @@ CAP only describes behavior during a partition. PACELC adds the everyday case: *
 
 <Accordions>
 
-<Accordion title="Is a single-node database subject to the CAP trade-off?">
+<Accordion title="Back when Adda was a single Postgres node, was it subject to the CAP trade-off?">
 
-Not really — CAP is about *distributed* systems, where nodes can be partitioned from each other. A single node has nothing to partition from, so it can offer both consistency and availability until it simply fails (which is an availability loss, not a CAP dilemma). The trade-off appears the moment you add replicas or shards that must communicate over a network.
-
-</Accordion>
-
-<Accordion title="You are designing a 'like' counter and a bank ledger. Which leans AP and which leans CP, and why?">
-
-The like counter leans AP: availability matters more than exactness, and a count that is briefly off by a few during a partition harms nobody, so you keep serving and converge later. The bank ledger leans CP: reading or writing a stale balance can double-spend money, so during a partition you would rather reject the operation than risk an incorrect answer. Same theorem, opposite costs of being wrong.
+Not really — CAP is about *distributed* systems, where nodes can be partitioned from each other. A single node has nothing to partition from, so it can offer both consistency and availability until it simply fails (which is an availability loss, not a CAP dilemma). The trade-off appeared the moment Adda added the replicas and shards that must communicate over a network.
 
 </Accordion>
 
-<Accordion title="Someone says their system is 'CA — consistent and available'. Why is that claim suspicious?">
+<Accordion title="Adda has a 'like' counter and a future wallet ledger. Which leans AP and which leans CP, and why?">
+
+The like counter leans AP: availability matters more than exactness, and a count that is briefly off by a few during a partition harms nobody, so you keep serving and converge later. The wallet ledger leans CP: reading or writing a stale balance can double-spend money, so during a partition you would rather reject the operation than risk an incorrect answer. Same theorem, opposite costs of being wrong.
+
+</Accordion>
+
+<Accordion title="A vendor tells Ria their database is 'CA — consistent and available'. Why is that claim suspicious?">
 
 Because CAP says you can only drop one property *during a partition*, and partitions are unavoidable in any real network — cables fail, switches reboot, packets drop. A truly "CA" system is one that assumes partitions never happen, which is only safe on a single node. In a distributed setting, claiming CA usually means the designer hasn't decided what happens during a split — which means the system will decide for them, badly.
 

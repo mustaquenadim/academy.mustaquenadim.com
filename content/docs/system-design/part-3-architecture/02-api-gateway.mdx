@@ -1,6 +1,6 @@
 ---
 title: "The API Gateway"
-description: "Dozens of services shouldn’t each handle auth, rate limits, and routing — a gateway is the single front door that does it once."
+description: "Adda's monolith is now a dozen services, and every one of them re-checks the auth token. Nabila's first week: build the single front door that does routing, auth, and rate limits once."
 extractedReferences:
   - href: /docs/system-design/part-3-architecture/01-monolith-vs-microservices
   - href: /docs/system-design/part-3-architecture/05-rate-limiting
@@ -9,25 +9,29 @@ extractedReferences:
 
 ## The problem
 
-You split your app into a dozen services. Now the mobile team asks a fair question: which
-URL do they call? There's a Users service, an Orders service, a Catalog service, each on
-its own host and port, each scaling up and down and moving around.
+Adda split its monolith into a dozen services, and the mobile team — the friend who built
+that tiny client back in Part 1, now a whole squad — asks a fair question: which URL do they
+call? There's a Users service, a Posts service, a Feed service, each on its own host and port,
+each scaling up and down and moving around.
 
-Worse, every one of those services has to check the auth token, enforce rate limits, log
-the request, and terminate TLS. You've copied the same security-critical boilerplate into a
+Worse, every one of those services has to check the auth token, enforce rate limits, log the
+request, and terminate TLS. Adda has copied the same security-critical boilerplate into a
 dozen codebases. Fix a token-validation bug and you're shipping the same patch twelve times,
-hoping nobody forgot one.
+hoping nobody forgot one. This is the week **Nabila** joins Adda as its first platform and
+security engineer — and she takes one look at twelve copies of the auth check and says, "this
+belongs in exactly one place."
 
 ## A first attempt
 
 Just expose every service directly and let clients call them. Publish a list of hostnames,
 hand it to the mobile and web teams, and you're done.
 
-It falls apart fast. Clients are now hard-wired to your internal topology — split a service
+It falls apart fast. Clients are now hard-wired to Adda's internal topology — split a service
 in two and every app must ship an update. Each client makes 6 round trips to render one
-screen. Every service re-implements auth, and each is a public attack surface. And you can't
-change an internal address without breaking someone. The naive approach turns your service
-map into part of your public API contract, which is the last thing you want to freeze.
+screen. Every service re-implements auth, and each is a public attack surface — the exact
+thing Nabila was hired to shrink. And you can't change an internal address without breaking
+someone. The naive approach turns Adda's service map into part of its public API contract,
+which is the last thing you want to freeze.
 
 ## The insight
 
@@ -36,11 +40,11 @@ Put one component in front of everything. Clients talk to *it*; it talks to the 
 That single front door is the **API gateway**. Because every request flows through it, it's
 the natural place to do the work that *every* request needs — authentication, rate limiting,
 TLS termination, logging — exactly once. Services behind it get to be simple, trust their
-caller, and stay private.
+caller, and stay private on Adda's internal network.
 
 <Callout type="idea" title="One place for cross-cutting concerns">
-A gateway centralizes the work that has nothing to do with business logic: auth, rate
-limits, TLS, routing, logging. Services stop re-implementing it, and you change policy in
+A gateway centralizes the work that has nothing to do with business logic: auth, rate limits,
+TLS, routing, logging. Adda's services stop re-implementing it, and Nabila changes policy in
 one place instead of twelve.
 </Callout>
 
@@ -64,7 +68,7 @@ re-check.
 ### Enforce policy
 
 Rate limits, quotas, and IP rules run here, before any expensive work happens. One abusive
-client is stopped at the door, protecting every service at once.
+client is stopped at the door, protecting every Adda service at once.
 
 </Step>
 
@@ -72,9 +76,9 @@ client is stopped at the door, protecting every service at once.
 
 ### Route to the right service
 
-Based on the path, the gateway forwards to the matching upstream — `/orders/*` to the
-Orders service, `/catalog/*` to Catalog — picking a healthy instance behind a load
-balancer. Clients never learn the internal addresses.
+Based on the path, the gateway forwards to the matching upstream — `/posts/*` to the Posts
+service, `/feed/*` to Feed — picking a healthy instance behind a load balancer. Clients never
+learn the internal addresses.
 
 </Step>
 
@@ -82,9 +86,9 @@ balancer. Clients never learn the internal addresses.
 
 ### Optionally aggregate
 
-For a mobile home screen that needs profile, orders, and recommendations, the gateway can
-fan out to all three, combine the results, and return one response — turning 3 client round
-trips into 1.
+For Adda's mobile home screen that needs profile, feed, and suggestions, the gateway can fan
+out to all three, combine the results, and return one response — turning 3 client round trips
+into 1.
 
 </Step>
 
@@ -100,7 +104,7 @@ trips into 1.
                         │        │       │
                         ▼        ▼       ▼
                     ┌──────┐ ┌──────┐ ┌──────┐
-                    │Users │ │Orders│ │Catalog│   (private, trust caller)
+                    │Users │ │ Posts│ │ Feed │   (private, trust caller)
                     └──────┘ └──────┘ └──────┘
 ```
 
@@ -108,9 +112,9 @@ trips into 1.
 
 A well-tuned gateway adds ~1–3 ms of latency per request — cheap next to the tens of
 milliseconds of real work behind it. A single gateway node handles tens of thousands of
-requests per second; you run several behind a load balancer for capacity and redundancy.
+requests per second; Adda runs several behind a load balancer for capacity and redundancy.
 
-The aggregation win is the vivid one. A mobile screen needing 5 resources over a 100 ms
+The aggregation win is the vivid one. Adda's mobile screen needing 5 resources over a 100 ms
 mobile round trip costs 500 ms if the client calls each service itself. Move the fan-out to
 the gateway — where inter-service hops are ~1 ms — and the client pays one 100 ms round trip
 plus ~5 ms of internal calls. Five sequential trips become one.
@@ -118,17 +122,18 @@ plus ~5 ms of internal calls. Five sequential trips become one.
 ## When to use it
 
 <Callout type="warn" title="The gateway is a single point of failure and a bottleneck">
-Every request flows through it, so if it's down, everything is down, and if it's slow,
-everything is slow. Run it as multiple stateless replicas behind a load balancer, keep its
-logic thin, and never let heavy business logic creep in. A gateway that starts orchestrating
-workflows becomes a new monolith at your front door.
+Every request flows through it, so if it's down, all of Adda is down, and if it's slow,
+everything is slow. Nabila runs it as multiple stateless replicas behind a load balancer,
+keeps its logic thin, and never lets heavy business logic creep in. A gateway that starts
+orchestrating workflows becomes a new monolith at your front door.
 </Callout>
 
 <Callout type="info" title="Gateway vs load balancer">
 They overlap but differ in altitude. A load balancer spreads traffic across identical
-instances (layer 4/7, "which copy?"). A gateway makes application-level decisions — auth,
-routing by path, aggregation ("which service, and is this caller allowed?"). You typically
-run a load balancer *in front of* the gateway, and another behind it per service.
+instances (layer 4/7, "which copy?") — the one Tanvir added in Part 1. A gateway makes
+application-level decisions — auth, routing by path, aggregation ("which service, and is this
+caller allowed?"). You typically run a load balancer *in front of* the gateway, and another
+behind it per service.
 </Callout>
 
 ## Practice
@@ -137,18 +142,18 @@ run a load balancer *in front of* the gateway, and another behind it per service
 
 <Accordion title="If the gateway handles auth, do the services behind it need any security at all?">
 
-Yes — defense in depth. The gateway does *edge* authentication so services can trust the
-attached identity, but services should still run inside a private network, accept traffic
-only from the gateway (e.g. mutual TLS or network policy), and do their own *authorization*
-(is this user allowed to edit *this* order?). The gateway proves who you are; the service
-decides what you may do.
+Yes — defense in depth, and Nabila insists on it. The gateway does *edge* authentication so
+services can trust the attached identity, but services should still run inside a private
+network, accept traffic only from the gateway (e.g. mutual TLS or network policy), and do
+their own *authorization* (is this user allowed to edit *this* post?). The gateway proves who
+you are; the service decides what you may do.
 
 </Accordion>
 
 <Accordion title="Should the gateway aggregate calls for every client, or is there a better pattern?">
 
-Aggregating in one shared gateway works until different clients want different shapes — a
-mobile app wants trimmed payloads, a web app wants everything, a partner wants yet another
+Aggregating in one shared gateway works until different clients want different shapes — Adda's
+mobile app wants trimmed payloads, the web app wants everything, a partner wants yet another
 view. Stuffing all that into one gateway makes it a tangled mess. The common evolution is
 Backend-for-Frontend (BFF): a thin gateway per client type, each aggregating for its own
 audience, so mobile's needs never complicate web's.
@@ -157,10 +162,10 @@ audience, so mobile's needs never complicate web's.
 
 <Accordion title="The gateway is adding 40 ms of latency. Where do you look?">
 
-Usually not the gateway's own code (that's 1–3 ms). Look at what it does synchronously:
-token validation that calls a slow auth service on every request instead of verifying a
-signed JWT locally, aggregation that fans out *sequentially* instead of in parallel, or a
-missing connection pool forcing a new TLS handshake to each upstream. Cache auth decisions,
+Usually not the gateway's own code (that's 1–3 ms). Look at what it does synchronously: token
+validation that calls a slow auth service on every request instead of verifying a signed JWT
+locally, aggregation that fans out *sequentially* instead of in parallel, or a missing
+connection pool forcing a new TLS handshake to each upstream. Cache auth decisions,
 parallelize fan-out, and reuse connections.
 
 </Accordion>
@@ -171,7 +176,7 @@ parallelize fan-out, and reuse connections.
 
 - A gateway is the single front door that does the work every request needs — auth, rate
   limiting, TLS, routing, logging — once, instead of copying it into every service.
-- It hides internal topology so you can split, move, and rescale services without breaking
+- It hides internal topology so Adda can split, move, and rescale services without breaking
   clients, and it can aggregate calls to cut client round trips.
 - It's a single point of failure and a potential bottleneck: keep it thin, stateless, and
   replicated, and never let business logic move into it.
@@ -186,8 +191,8 @@ parallelize fan-out, and reuse connections.
 
 <Callout type="info" title="How to discuss this">
 Introduce the gateway as the home for cross-cutting concerns, and immediately name the risk:
-it's a single point of failure, so you run it stateless and replicated. Distinguish it from
-a plain load balancer (application-level decisions vs "which copy"), and if the design has
+it's a single point of failure, so you run it stateless and replicated. Distinguish it from a
+plain load balancer (application-level decisions vs "which copy"), and if the design has
 several client types, mention Backend-for-Frontend as the natural next step. Keep it thin —
 the moment it holds business logic, you've rebuilt a monolith.
 </Callout>

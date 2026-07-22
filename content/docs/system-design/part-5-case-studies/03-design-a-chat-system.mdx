@@ -1,6 +1,6 @@
 ---
 title: "Design a Chat System"
-description: "Messages that arrive instantly, in order, even when a phone drops off the network — real-time chat is deceptively deep."
+description: "Adda adds real-time messaging: messages that arrive instantly, in order, even when a phone drops off the network. Deceptively deep — and it stretches everything the team learned."
 extractedReferences:
   - href: /docs/system-design/part-1-networking/03-http-and-apis
   - href: /docs/system-design/part-3-architecture/04-pub-sub
@@ -9,9 +9,9 @@ extractedReferences:
 
 ## The problem
 
-You type "on my way", hit send, and it lands on your friend's phone before your thumb leaves the screen. They're on a train, so their phone flickers between towers, drops off the network for ten seconds, and reconnects — and the message is still there, in order, exactly once. That reliability is the product.
+Users have been asking for it for months: they want to talk to each other on Adda, not just post. So Ria greenlights direct messaging, and the team gathers at the whiteboard. The bar Fahim sets is simple to say and hard to build — he types "on my way", hits send, and it should land on his friend's phone before his thumb leaves the screen. His friend is on a train, so their phone flickers between towers, drops off the network for ten seconds, and reconnects — and the message is still there, in order, exactly once. That reliability is the product.
 
-The naive version — the client polls the server every few seconds asking "any new messages?" — technically works and is technically terrible. It's slow (up to a full poll interval of delay), wasteful (millions of empty "nope" responses), and it can't feel instant. Real-time chat forces you to invert the flow: the server must *push* to the client.
+The naive version — the client polls the server every few seconds asking "any new messages?" — technically works and is technically terrible. It's slow (up to a full poll interval of delay), wasteful (millions of empty "nope" responses), and it can't feel instant. Real-time chat forces Adda to invert the flow: the server must *push* to the client.
 
 ## Requirements
 
@@ -31,6 +31,8 @@ The naive version — the client polls the server every few seconds asking "any 
 
 ## A scale estimate
 
+Shuvo sizes the new feature against Adda's user base:
+
 - **500 M** daily users, **50 M** concurrently connected.
 - **40 B** messages/day → ~460 K messages/sec average, **~1 M/sec** peak.
 - Each connection is a long-lived socket → 50 M open sockets. At ~65 K ports per IP and memory per connection, you need thousands of gateway servers just to hold connections open.
@@ -38,7 +40,7 @@ The naive version — the client polls the server every few seconds asking "any 
 
 ## The insight
 
-HTTP request/response is pull-shaped — the client asks, the server answers (see [HTTP and APIs](/docs/system-design/part-1-networking/03-http-and-apis)). Chat needs the opposite: a **persistent connection** the server can push down at any moment. That's a **WebSocket**. Once you accept that every online user holds an open socket to some server, the whole design reorganizes around one question: *when A sends to B, how does A's server find B's socket?*
+HTTP request/response is pull-shaped — the client asks, the server answers (the same [HTTP model](/docs/system-design/part-1-networking/03-http-and-apis) from Part 1). Chat needs the opposite: a **persistent connection** the server can push down at any moment. That's a **WebSocket**. Once you accept that every online user holds an open socket to some server, Nabila observes, the whole design reorganizes around one question: *when A sends to B, how does A's server find B's socket?*
 
 ## How it works
 
@@ -56,7 +58,7 @@ Each client opens a WebSocket to a **chat gateway** server and keeps it open. Th
 
 ### Route a message to the right gateway
 
-When A sends a message, A's gateway needs to reach B's gateway. A **presence/session service** maps `user → gateway`. A's gateway looks up B, then hands the message to B's gateway — often via an internal [pub/sub](/docs/system-design/part-3-architecture/04-pub-sub) bus so gateways stay decoupled.
+When A sends a message, A's gateway needs to reach B's gateway. A **presence/session service** maps `user → gateway`. A's gateway looks up B, then hands the message to B's gateway — often via an internal [pub/sub](/docs/system-design/part-3-architecture/04-pub-sub) bus, the fan-out pattern from Part 3, so gateways stay decoupled.
 
 </Step>
 
@@ -90,7 +92,7 @@ B's client sends an ack up its socket → the server marks the message *delivere
 
 ## Message ordering
 
-Within a single conversation, order must be stable. Don't trust client clocks. Assign each message a **monotonic sequence number per conversation** (from the conversation's storage partition or a sequencer). Clients render by sequence, not arrival time, so even out-of-order network delivery displays correctly. Across conversations, global order doesn't matter — which lets you shard by conversation.
+Within a single conversation, order must be stable. Don't trust client clocks. Assign each message a **monotonic sequence number per conversation** (from the conversation's storage partition or a sequencer). Clients render by sequence, not arrival time, so even out-of-order network delivery displays correctly. Across conversations, global order doesn't matter — which lets you shard by conversation, the same way Shuvo sharded Adda's data in Part 2.
 
 ## Key decisions and trade-offs
 
@@ -99,7 +101,7 @@ Long-polling can fake push but wastes a connection per pending request and adds 
 </Callout>
 
 <Callout type="warn" title="Stateful gateways change how you scale">
-Because a user is pinned to a specific gateway holding their socket, you can't blindly round-robin. You need the presence service to route to the right box, sticky-ish load balancing on connect, and graceful connection draining on deploy so you don't drop 50 M sockets at once.
+Because a user is pinned to a specific gateway holding their socket, you can't blindly round-robin the way Tanvir's load balancer did in Part 1. You need the presence service to route to the right box, sticky-ish load balancing on connect, and graceful connection draining on deploy so you don't drop 50 M sockets at once — which is now Mou's problem to plan for.
 </Callout>
 
 Store messages in a store optimized for the access pattern — "fetch recent messages in a conversation, ordered" — which is a wide-column store (Cassandra-style) partitioned by conversation ID, clustered by sequence number.
@@ -107,9 +109,9 @@ Store messages in a store optimized for the access pattern — "fetch recent mes
 ## Bottlenecks and how to scale
 
 - **Connection capacity:** add gateway servers; each holds a slice of the 50 M sockets. Presence service is the routing brain and must be fast and replicated.
-- **Message fan-out in groups:** a 1,000-member group turns one send into 1,000 deliveries. This is the same **fan-out** problem as the [news feed](/docs/system-design/part-5-case-studies/02-design-a-news-feed) — deliver to online members via their gateways, queue for offline ones.
+- **Message fan-out in groups:** a 1,000-member group turns one send into 1,000 deliveries. This is the same **fan-out** problem as [Adda's feed](/docs/system-design/part-5-case-studies/02-design-a-news-feed) — deliver to online members via their gateways, queue for offline ones.
 - **Offline delivery:** an inbox/queue per user holds undelivered messages; on reconnect the client syncs everything after its last-seen sequence number.
-- **Exactly-once:** clients attach a client-generated message ID; the server dedupes on it, so a retry after a flaky network doesn't create a duplicate.
+- **Exactly-once:** clients attach a client-generated message ID; the server dedupes on it — the same idempotency-key idea from Part 3 — so a retry after a flaky network doesn't create a duplicate.
 
 ## Practice
 

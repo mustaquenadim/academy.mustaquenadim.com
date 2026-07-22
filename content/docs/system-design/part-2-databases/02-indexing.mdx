@@ -1,6 +1,6 @@
 ---
 title: "Indexing"
-description: "Finding one row in a billion by scanning them all is hopeless — an index is the book’s table of contents for your data."
+description: "Adda's login page starts timing out, and Shuvo finds the database reading every row to find one. Finding a needle in millions by checking each straw is hopeless — an index is the book's table of contents for your data."
 extractedReferences:
   - href: /docs/system-design/part-2-databases/01-sql-vs-nosql
   - href: /docs/system-design/part-2-databases/04-sharding
@@ -9,15 +9,15 @@ extractedReferences:
 
 ## The problem
 
-Your users table has 50 million rows and the login page is timing out. You look at the query — `WHERE email = ?` — and it seems trivial. But the database is reading every single row to find the one that matches, because email is not indexed.
+Fahim texts at 9pm: "login is spinning." He is the canary again — but this time it is not just him. Adda's users table has crossed 50 million rows, and the login page is timing out for everyone. Shuvo pulls up the query and it looks trivial — `WHERE email = ?` — but Postgres is reading every single row to find the one that matches, because email is not indexed.
 
 That is a *full table scan*: 50 million comparisons for one login. At a few hundred logins per second, the disk and CPU are pinned and everything else queues behind it. The data is fine. The problem is that the database has no faster way to *find* things than looking at all of them.
 
 ## A first attempt
 
-The naive fix is "add more hardware." A bigger machine reads rows faster, so the scan finishes sooner. But you have only pushed the wall further out — a scan is still `O(n)`, so doubling the data doubles the work no matter how fast the box.
+Tanvir's instinct is "add more hardware" — the reflex that worked back in Part 1 until it didn't. A bigger machine reads rows faster, so the scan finishes sooner. But it only pushes the wall further out. A scan is still `O(n)`, so doubling Adda's users doubles the work no matter how fast the box.
 
-The real cost is the algorithm. Searching an unordered list is linear. If instead the data were *sorted* by email, you could binary-search it in `O(log n)` — about 26 comparisons for 50 million rows instead of 50 million. But you cannot keep the table itself sorted by every column you query. You need a separate, sorted structure that points back into the table.
+The real cost is the algorithm, Shuvo says. Searching an unordered list is linear. If instead the data were *sorted* by email, you could binary-search it in `O(log n)` — about 26 comparisons for 50 million rows instead of 50 million. But you cannot keep the table itself sorted by every column you query. You need a separate, sorted structure that points back into the table.
 
 ## The insight
 
@@ -89,9 +89,9 @@ Inserting a row means inserting into the table *and* into each index that covers
 
 ## Concrete numbers
 
-On 50 million rows, a full scan reads all 50M rows; a B-tree lookup touches roughly `log₂(50,000,000) ≈ 26` keys, in practice 3–4 disk pages because each node is wide. That is the difference between a query that takes seconds and one that takes under a millisecond.
+On Adda's 50 million rows, a full scan reads all 50M rows; a B-tree lookup touches roughly `log₂(50,000,000) ≈ 26` keys, in practice 3–4 disk pages because each node is wide. That is the difference between a login that takes seconds and one that takes under a millisecond — and Fahim's spinner disappears the moment Shuvo adds the index.
 
-The write cost is real. Each additional index typically adds 10–20% to insert time and its own storage — an index can be 20–40% of the size of the column it covers. A table with eight indexes can spend more time maintaining indexes than writing the row itself. That is why write-heavy tables carry few indexes and read-heavy tables carry many.
+The write cost is real. Each additional index typically adds 10–20% to insert time and its own storage — an index can be 20–40% of the size of the column it covers. A table with eight indexes can spend more time maintaining indexes than writing the row itself. That is why Adda's write-heavy tables (the likes stream) carry few indexes and read-heavy tables (profiles) carry many.
 
 ## When to use it
 
@@ -107,19 +107,19 @@ An index on a column with few distinct values (a boolean `is_active`, a status w
 
 <Accordions>
 
-<Accordion title="You have an index on (last_name, first_name). Which of these queries can use it: filter by last_name, by first_name, by both?">
+<Accordion title="Adda has an index on (last_name, first_name). Which of these queries can use it: filter by last_name, by first_name, by both?">
 
 `last_name` alone and `last_name AND first_name` both use the index, because the keys are sorted by last name first. Filtering by `first_name` alone *cannot* use it — first names are scattered across the whole index with no ordering the database can jump into. This is the leftmost-prefix rule: a composite index only helps queries that start from its left.
 
 </Accordion>
 
-<Accordion title="Your query is 'SELECT count(*) FROM orders WHERE status = shipped'. When would a covering index help most?">
+<Accordion title="A query counts 'SELECT count(*) FROM posts WHERE status = published'. When would a covering index help most?">
 
 If the index is on `(status)` and includes nothing else, the database still finds matching entries in the index without touching the table — for a count it never needs the row bodies, so it is already covering. The win is largest when the query reads only indexed columns; adding an unindexed column to the SELECT forces the second hop back to the table for every match.
 
 </Accordion>
 
-<Accordion title="Why can a hash index beat a B-tree for exact lookups but be useless for a dashboard showing 'orders from the last 7 days'?">
+<Accordion title="Why can a hash index beat a B-tree for exact lookups but be useless for Adda's 'posts from the last 7 days' feed?">
 
 A hash index maps a key to a location in `O(1)`, faster than a B-tree's `O(log n)` for exact matches. But a hash destroys ordering — there is no notion of "next key" — so a range like `created_at >= now() - 7d` cannot be walked. Range and sort queries need the B-tree's sorted leaves.
 

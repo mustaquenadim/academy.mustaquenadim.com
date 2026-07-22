@@ -1,6 +1,6 @@
 ---
 title: "Design a News Feed"
-description: "How does a feed show you fresh posts from hundreds of people, instantly, at massive scale? The fan-out problem has no perfect answer."
+description: "This is the payoff: Adda's own feed, at the scale it has finally reached. Showing fresh posts from hundreds of people, instantly, to 300 million users — the fan-out problem has no perfect answer."
 extractedReferences:
   - href: /docs/system-design/part-3-architecture/03-message-queues
   - href: /docs/system-design/part-1-networking/07-caching-fundamentals
@@ -9,9 +9,9 @@ extractedReferences:
 
 ## The problem
 
-You open the app and, in under a second, you see the latest posts from the 500 people you follow, newest-ish first, mixed and ranked. It feels effortless. Behind that second, the system had to gather posts scattered across 500 different authors, some of whom posted while you were asleep, and assemble them into one list — for you, and for 300 million other people, each with a different 500.
+This is the one the whole book has been building toward. Adda *is* a feed — it always was, back when Fahim's "first post lol" landed on Ria's laptop. Now Fahim opens the app and, in under a second, sees the latest posts from the 500 people he follows, newest-ish first, mixed and ranked. It feels effortless. Behind that second, Adda had to gather posts scattered across 500 different authors, some of whom posted while Fahim was asleep, and assemble them into one list — for him, and for 300 million other people, each with a different 500.
 
-The naive version — "when Maria opens her feed, query every account she follows for their recent posts and merge" — is a beautiful idea that dies at scale. The hard part of a news feed isn't storing posts; it's the **fan-out**: matching a flood of writes to a flood of reads.
+The version Ria first shipped — "when Fahim opens his feed, query every account he follows for their recent posts and merge" — was a beautiful idea that died the week Adda crossed a few million users. **Mou** was paged at 3am for feed reads timing out; the database was drowning. The hard part of a feed, the team now knows, isn't storing posts. It's the **fan-out**: matching a flood of writes to a flood of reads.
 
 ## Requirements
 
@@ -25,9 +25,11 @@ The naive version — "when Maria opens her feed, query every account she follow
 
 - Feed load must be fast (< 200 ms) — this is the read hot path.
 - Eventual consistency is fine; a post appearing a few seconds late is acceptable.
-- Handle highly skewed follower counts (you follow 500; a celebrity has 50 M followers).
+- Handle highly skewed follower counts (Fahim follows 500; an Adda celebrity has 50 M followers).
 
 ## A scale estimate
+
+Shuvo runs the numbers on Adda's real traffic:
 
 - **300 M** daily active users, each loading the feed ~10×/day → ~35 K feed reads/sec average, **~100 K/sec** peak.
 - **2 M** posts/sec is unrealistic; assume **~5 K posts/sec**.
@@ -38,15 +40,15 @@ Reads outnumber writes ~20:1, but a single write can generate millions of feed u
 
 ## The two approaches
 
-There are exactly two places you can do the merging work: at write time or at read time.
+There are exactly two places Adda can do the merging work, Tanvir points out: at write time or at read time.
 
-**Fan-out on read (pull).** Store each post once. When a user opens their feed, query all the people they follow and merge on the fly. Writes are trivial; reads are expensive — merging 500 authors' timelines every single load, 100 K times a second. Feed latency suffers.
+**Fan-out on read (pull).** Store each post once. When a user opens their feed, query all the people they follow and merge on the fly. Writes are trivial; reads are expensive — merging 500 authors' timelines every single load, 100 K times a second. This is exactly the version that paged Mou. Feed latency suffers.
 
-**Fan-out on write (push).** When someone posts, immediately copy that post's ID into the precomputed feed of every follower. Reads become a single lookup ("give me my feed list"). But a celebrity posting to 50 M followers triggers 50 M writes — a *fan-out storm*.
+**Fan-out on write (push).** When someone posts, immediately copy that post's ID into the precomputed feed of every follower. Reads become a single lookup ("give me my feed list"). But an Adda celebrity posting to 50 M followers triggers 50 M writes — a *fan-out storm*.
 
 ## The insight
 
-Neither pure approach wins. The trick is a **hybrid**: push for ordinary users (fast feeds, cheap writes), pull for the handful of celebrities (avoid the storm), and merge the two at read time.
+Neither pure approach wins, and the team stops looking for the one that does. The trick is a **hybrid**: push for ordinary users (fast feeds, cheap writes), pull for the handful of celebrities (avoid the storm), and merge the two at read time.
 
 ## How it works
 
@@ -56,7 +58,7 @@ Neither pure approach wins. The trick is a **hybrid**: push for ordinary users (
 
 ### Write a post
 
-Persist the post once in a posts store. Emit a "new post" event onto a [message queue](/docs/system-design/part-3-architecture/03-message-queues) so fan-out happens asynchronously — the author's request returns immediately.
+Persist the post once in a posts store. Emit a "new post" event onto the [message queue](/docs/system-design/part-3-architecture/03-message-queues) — the same queue the team added in Part 3 — so fan-out happens asynchronously. The author's request returns immediately.
 
 </Step>
 
@@ -101,7 +103,7 @@ On feed load: read the user's precomputed feed list (push results), then pull re
 ## Key decisions and trade-offs
 
 <Callout type="idea" title="Hybrid fan-out is the standard answer">
-Push gives readers O(1) feeds; pull gives writers relief from the celebrity storm. Splitting on follower count captures the best of both. The cost is complexity — you now run two code paths and merge them — but it's the design real systems (Twitter's timeline) converged on.
+Push gives readers O(1) feeds; pull gives writers relief from the celebrity storm. Splitting on follower count captures the best of both. The cost is complexity — Adda now runs two code paths and merges them — but it's the design real systems (Twitter's timeline) converged on.
 </Callout>
 
 <Callout type="warn" title="Precomputed feeds can go stale">
@@ -121,7 +123,7 @@ Ranking (engagement, recency, affinity) happens at read time on the merged candi
 
 <Accordions>
 
-<Accordion title="A celebrity with 50M followers posts. Trace what happens with pure fan-out on write, and why the hybrid avoids it.">
+<Accordion title="An Adda celebrity with 50M followers posts. Trace what happens with pure fan-out on write, and why the hybrid avoids it.">
 
 Pure push would enqueue 50 million feed-append operations for one post. Even at 100 K writes/sec that's ~8 minutes of backlog, and it starves every other author's fan-out behind it. The hybrid detects the follower count is above threshold and simply doesn't fan out — the post sits in the posts store. Any follower who loads their feed pulls the celebrity's recent posts directly and merges them in. One post now costs a handful of reads instead of 50 million writes.
 
@@ -143,14 +145,14 @@ Reverse-chronological offset pagination breaks when new posts shift everything d
 
 ## Recap
 
-- A news feed is a **fan-out** problem: reconciling many writes with many reads.
+- Adda's feed is a **fan-out** problem: reconciling many writes with many reads.
 - **Push** (fan-out on write) makes reads cheap; **pull** avoids the celebrity storm; the **hybrid** does both and merges.
 - Store **IDs not bodies**, fan out **asynchronously via a queue**, and rank a bounded candidate set at read time.
 
 <Cards>
   <Card title="Message Queues" href="/docs/system-design/part-3-architecture/03-message-queues" description="Decoupling the post write from the fan-out work." />
   <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="Hydrating post bodies and hot celebrity timelines." />
-  <Card title="Design a Chat System" href="/docs/system-design/part-5-case-studies/03-design-a-chat-system" description="Another real-time delivery problem, with strict ordering." />
+  <Card title="Design a Chat System" href="/docs/system-design/part-5-case-studies/03-design-a-chat-system" description="Adda's next feature — real-time delivery with strict ordering." />
 </Cards>
 
 <Callout type="info" title="In an interview">

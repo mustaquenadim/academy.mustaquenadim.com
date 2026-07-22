@@ -1,6 +1,6 @@
 ---
 title: "Design a Distributed Rate Limiter"
-description: "Enforcing \"100 requests per minute\" is easy on one server and genuinely hard across a hundred — this is a favorite for a reason."
+description: "Back in Part 3 a bot hammered Adda and the team bolted on a quick limiter. Now they design it properly, end to end — because \"100 requests per minute\" is easy on one server and genuinely hard across a hundred."
 extractedReferences:
   - href: /docs/system-design/part-3-architecture/05-rate-limiting
   - href: /docs/system-design/part-1-networking/07-caching-fundamentals
@@ -9,9 +9,9 @@ extractedReferences:
 
 ## The problem
 
-A single abusive client starts hammering your API 10,000 times a second, and your database — sized for normal traffic — falls over, taking every other customer down with it. You want a bouncer at the door: "this key gets 100 requests per minute, no more." On one server that's a counter in memory. Done in five minutes.
+Nabila never liked the rate limiter the team bolted on back in Part 3, the night a bot hammered Adda's API. It worked, but it was a quick patch. So the team runs a proper design drill to build it end to end. The scenario is the one that started it: a single abusive client hammers Adda's API 10,000 times a second, and the database — sized for normal traffic — falls over, taking every other user down with it. They want a bouncer at the door: "this key gets 100 requests per minute, no more." On one server that's a counter in memory. Done in five minutes.
 
-Then you remember you run **a hundred** API servers behind a load balancer, and any request can hit any one of them. Each server sees only its own slice of the traffic. A client doing 100 req/min spread across 100 servers looks like 1 req/min to each — so your "100/min" limit silently becomes "10,000/min". The whole difficulty is that the count must be **shared**.
+Then Tanvir reminds the room that Adda now runs **a hundred** API servers behind a load balancer, and any request can hit any one of them. Each server sees only its own slice of the traffic. A client doing 100 req/min spread across 100 servers looks like 1 req/min to each — so the "100/min" limit silently becomes "10,000/min". The whole difficulty is that the count must be **shared**.
 
 ## Requirements
 
@@ -29,6 +29,8 @@ Then you remember you run **a hundred** API servers behind a load balancer, and 
 
 ## A scale estimate
 
+Shuvo sketches the load the limiter has to sit in front of:
+
 - **1 M requests/sec** across the fleet, each needing a limit check.
 - 100 servers, so ~10 K checks/sec/server locally, but the *state* is global.
 - Millions of distinct clients → millions of counters, each tiny (a count + a timestamp).
@@ -36,7 +38,7 @@ Then you remember you run **a hundred** API servers behind a load balancer, and 
 
 ## The insight
 
-You can't keep the count in each server's memory — it has to live in **one shared, fast store** that all servers read and increment atomically. Redis is the standard choice: an in-memory store with atomic operations (`INCR`, `EXPIRE`) and sub-millisecond latency. The real design work is then choosing an *algorithm* that trades accuracy against cost, because a naive shared counter has a nasty burst bug.
+You can't keep the count in each server's memory — it has to live in **one shared, fast store** that all servers read and increment atomically. Redis is the standard choice: an in-memory store (the same kind Adda leaned on for caching in Part 1) with atomic operations (`INCR`, `EXPIRE`) and sub-millisecond latency. The real design work is then choosing an *algorithm* that trades accuracy against cost, because a naive shared counter has a nasty burst bug.
 
 ## The algorithms
 
@@ -102,7 +104,7 @@ Every request touching Redis adds a network hop and makes Redis a hot dependency
 </Callout>
 
 <Callout type="error" title="Fail open or fail closed?">
-If the rate-limit store is unreachable, do you allow all traffic (fail open) or block it (fail closed)? Fail-open keeps your product working during a limiter outage but removes your protection exactly when you might need it; fail-closed protects the backend but turns a limiter blip into a full outage. Most public APIs fail open — availability wins — but say it out loud and justify it.
+If the rate-limit store is unreachable, do you allow all traffic (fail open) or block it (fail closed)? This is Mou's call, and it's exactly the availability trade-off from Part 4. Fail-open keeps Adda working during a limiter outage but removes your protection exactly when you might need it; fail-closed protects the backend but turns a limiter blip into a full outage. Most public APIs fail open — availability wins — but say it out loud and justify it.
 </Callout>
 
 ## Bottlenecks and how to scale
@@ -110,7 +112,7 @@ If the rate-limit store is unreachable, do you allow all traffic (fail open) or 
 - **Redis throughput:** at 1 M checks/sec, use local batching (lease-and-spend) so most requests never hit Redis. Shard Redis by client key if a single node saturates.
 - **Latency:** keep the check in-process where possible; the network round-trip to a shared store is the dominant cost, so amortize it.
 - **Atomicity:** do the read-modify-write as one atomic op — a Lua script in Redis — so two servers can't both "see 99, write 100."
-- **Coordinated backpressure:** a rate limiter is one layer; pair it with [backpressure and circuit breakers](/docs/system-design/part-4-reliability/04-backpressure-and-circuit-breakers) so the system sheds load gracefully rather than just returning 429s.
+- **Coordinated backpressure:** a rate limiter is one layer; pair it with [backpressure and circuit breakers](/docs/system-design/part-4-reliability/04-backpressure-and-circuit-breakers) — Mou's Part 4 tooling — so the system sheds load gracefully rather than just returning 429s.
 
 ## Practice
 

@@ -1,6 +1,6 @@
 ---
 title: "Content Delivery Networks"
-description: "Serving a video from one city to the whole world is slow for everyone far away — a CDN keeps copies close to your users."
+description: "Adda's image-heavy posts crawl for users far from Dhaka. Ria and Tanvir can't move Dhaka closer to Sydney — so they move the content instead, with copies at the edge."
 extractedReferences:
   - href: /docs/system-design/part-1-networking/04-latency-and-bandwidth
   - href: /docs/system-design/part-1-networking/02-dns
@@ -9,21 +9,21 @@ extractedReferences:
 
 ## The problem
 
-Your servers live in Virginia. Your users live everywhere. A user in Sydney requests your homepage image, and every byte crawls ~16,000 km across the Pacific and back. The image is fine; the *distance* is the problem.
+Adda's servers live in Dhaka. Adda's users, increasingly, do not. Posts have gotten image-heavy — people share photos, memes, screenshots — and every one of those images is served from that single origin. A user in Sydney opens a popular post, and every byte of the image crawls thousands of kilometers across the ocean and back. The image is fine; the *distance* is the problem. This is the latency tax **Ria** learned about when Fahim's cousin complained — now it's showing up at scale.
 
-It gets worse under load. Launch a popular video and thousands of far-away users all pull the same large file from that one Virginia datacenter, saturating its outbound bandwidth and stacking a fat speed-of-light delay on top. Everyone far away has a bad time, and your origin servers strain to push the same bytes over and over. You cannot move Sydney closer — so you must move the *content*.
+**Tanvir** points out it gets worse under load. When a post goes big and thousands of far-away users all pull the same large image from that one Dhaka origin, it saturates the origin's outbound bandwidth *and* stacks a fat speed-of-light delay on top. Everyone far away has a bad time, and the origin strains to push the same bytes over and over. They cannot move Sydney closer — so they must move the *content*.
 
 ## A first attempt
 
-The obvious fix: buy a bigger server and a fatter pipe in Virginia.
+The obvious fix, and the one they already know is wrong: buy a bigger server and a fatter pipe in Dhaka.
 
-But this is a **latency** problem, not a bandwidth one, and no upgrade in Virginia shortens the road to Sydney. A Sydney↔Virginia round trip is ~200 ms set by the speed of light — untouchable from Virginia. Meanwhile the same bytes are shipped across the ocean thousands of times because nothing near the user remembers them. Scaling *up* one location cannot fix a problem caused by *distance*. You need presence in many locations at once.
+But this is a **latency** problem, not a bandwidth one, and no upgrade in Dhaka shortens the road to Sydney. A Sydney↔Dhaka round trip is a couple hundred milliseconds set by the speed of light — untouchable from Dhaka. Meanwhile the same image bytes are shipped across the ocean thousands of times because nothing near the user remembers them. Scaling *up* one location cannot fix a problem caused by *distance*. Adda needs presence in many locations at once.
 
 ## The insight
 
 Keep **copies of your content in many locations worldwide**, and serve each user from the one nearest them.
 
-That network of geographically distributed cache servers is a **CDN**. Put a copy of your image on **edge servers** in Sydney, Frankfurt, São Paulo, Tokyo — hundreds of cities. Now the Sydney user's request travels a few dozen kilometers, not sixteen thousand. The edge caches your content on first request and serves everyone else locally. You attack latency by collapsing distance, and you shield your origin because the edge answers most requests without ever touching it.
+That network of geographically distributed cache servers is a **CDN**. Tanvir puts copies of Adda's images on **edge servers** in Sydney, Frankfurt, São Paulo, Tokyo — hundreds of cities. Now the Sydney user's request travels a few dozen kilometers, not across an ocean. The edge caches the content on first request and serves everyone else locally. Adda attacks latency by collapsing distance, and shields its origin because the edge answers most requests without ever touching Dhaka.
 
 ## How it works
 
@@ -33,7 +33,7 @@ That network of geographically distributed cache servers is a **CDN**. Put a cop
 
 ### DNS sends users to the nearest edge
 
-When a user resolves your CDN hostname, the CDN's DNS returns the IP of the closest, healthiest edge location (by geography/network path). The user connects to an edge a few milliseconds away instead of your distant origin.
+When a user resolves Adda's CDN hostname, the CDN's DNS returns the IP of the closest, healthiest edge location (by geography/network path). The user connects to an edge a few milliseconds away instead of the distant Dhaka origin.
 
 </Step>
 
@@ -41,7 +41,7 @@ When a user resolves your CDN hostname, the CDN's DNS returns the IP of the clos
 
 ### Cache hit — served locally
 
-If that edge already has the file cached, it returns it immediately. No trip to the origin. This is the fast path and, for static content, the overwhelming majority of requests.
+If that edge already has the image cached, it returns it immediately. No trip to the origin. This is the fast path and, for static content like Adda's photos, the overwhelming majority of requests.
 
 </Step>
 
@@ -49,7 +49,7 @@ If that edge already has the file cached, it returns it immediately. No trip to 
 
 ### Cache miss — fetch once from origin
 
-On the first request (or after expiry), the edge fetches the file from your origin, stores it locally with a TTL, and serves it. The *next* user in that region gets a hit. One origin fetch serves a whole region.
+On the first request (or after expiry), the edge fetches the file from Adda's origin, stores it locally with a TTL, and serves it. The *next* user in that region gets a hit. One origin fetch serves a whole region.
 
 </Step>
 
@@ -57,7 +57,7 @@ On the first request (or after expiry), the edge fetches the file from your orig
 
 ### Expiry and invalidation
 
-Cached objects carry a TTL (via `Cache-Control`). When it expires the edge re-validates with the origin. When you change a file *before* expiry, you issue a **purge/invalidation** or change the URL (`app.v2.js`, or a content hash) to force fresh fetches.
+Cached objects carry a TTL (via `Cache-Control`). When it expires the edge re-validates with the origin. When Adda changes a file *before* expiry, the team issues a **purge/invalidation** or changes the URL (`app.v2.js`, or a content hash) to force fresh fetches.
 
 </Step>
 
@@ -68,22 +68,24 @@ Same request, without and with a CDN:
 ```
 WITHOUT CDN                         WITH CDN
                                     Sydney user ─► [ Sydney edge ]  ~5 ms
-Sydney user ──────────► Virginia                       │ (cache miss, once)
+Sydney user ──────────► Dhaka                          │ (cache miss, once)
    ~200 ms round trip    origin                        ▼
-   every request, every user                     [ Virginia origin ]
+   every request, every user                     [ Dhaka origin ]
                                     next Sydney users ─► edge  (cache hit, no origin)
 ```
 
 ## The numbers
 
+What the edge bought Adda:
+
 - **Latency win:** a far-away static asset drops from ~150–250 ms (cross-ocean origin) to ~5–30 ms (local edge) — often a **5–10×** improvement.
-- **Cache hit ratio:** a well-tuned CDN serves **85–99%** of static requests from the edge, so your origin sees only the misses.
-- **Origin offload:** at a 95% hit ratio, your origin handles **1 in 20** requests — a 20× traffic reduction and matching bandwidth savings.
-- **Scale:** major CDNs run **hundreds of PoPs** across the globe, so almost every user is within ~50 ms of an edge.
-- **TTL tuning:** static assets get long TTLs (hours–days); frequently changing pages get short TTLs (seconds–minutes) or are cached only after careful invalidation planning.
+- **Cache hit ratio:** a well-tuned CDN serves **85–99%** of static requests from the edge, so Adda's origin sees only the misses.
+- **Origin offload:** at a 95% hit ratio, the Dhaka origin handles **1 in 20** requests — a 20× traffic reduction and matching bandwidth savings.
+- **Scale:** major CDNs run **hundreds of PoPs** across the globe, so almost every Adda user is within ~50 ms of an edge.
+- **TTL tuning:** static assets (images, CSS, JS) get long TTLs (hours–days); frequently changing pages get short TTLs (seconds–minutes) or are cached only after careful invalidation planning.
 
 <Callout type="warn" title="Static is easy, dynamic is the hard part">
-CDNs shine on **static** content — images, video, CSS/JS, fonts — that is identical for everyone and safe to cache long. **Dynamic**, per-user content (your account page, a personalized feed) is risky to cache: serve it to the wrong user and you leak their data. Options are short TTLs, caching only the static shell, or edge compute — but "just cache everything" is how you ship one user's data to another.
+CDNs shine on **static** content — images, video, CSS/JS, fonts — that is identical for everyone and safe to cache long. **Dynamic**, per-user content (a user's own feed, their account page) is risky to cache: serve it to the wrong user and you leak their data. Options are short TTLs, caching only the static shell, or edge compute — but "just cache everything" is how Adda would ship one user's data to another.
 </Callout>
 
 <Callout type="idea" title="Cache invalidation is the catch">
@@ -94,19 +96,19 @@ Copies scattered across hundreds of edges are wonderful until you need to change
 
 <Accordions>
 
-<Accordion title="Why can't you fix cross-continent slowness by upgrading your origin server?">
+<Accordion title="Why can't Adda fix cross-continent slowness by upgrading the Dhaka origin?">
 
-Because it is a latency problem set by distance, and the origin's location does not change. A Sydney↔Virginia round trip is ~200 ms no matter how powerful the Virginia box is — the speed of light is the limit. A CDN fixes it by serving from an edge in Sydney (~5 ms away), collapsing the distance itself. Bigger origin hardware only helps a bandwidth or compute bottleneck, not the round-trip delay.
-
-</Accordion>
-
-<Accordion title="At a 95% cache hit ratio, how much traffic does your origin actually see?">
-
-Only the 5% of requests that miss — roughly 1 in 20, a ~20× reduction in load and bandwidth on the origin. That offload is often as valuable as the latency win: it lets a modest origin survive traffic spikes and viral moments, because the edge absorbs the flood of repeated reads for the same static objects. Push the hit ratio up with longer TTLs and versioned URLs and the origin barely notices peak traffic.
+Because it is a latency problem set by distance, and the origin's location does not change. A Sydney↔Dhaka round trip is ~200 ms no matter how powerful the Dhaka box is — the speed of light is the limit. A CDN fixes it by serving from an edge in Sydney (~5 ms away), collapsing the distance itself. Bigger origin hardware only helps a bandwidth or compute bottleneck, not the round-trip delay.
 
 </Accordion>
 
-<Accordion title="You pushed a critical CSS fix but users still see the broken old file. Why, and how do you prevent it?">
+<Accordion title="At a 95% cache hit ratio, how much traffic does Adda's origin actually see?">
+
+Only the 5% of requests that miss — roughly 1 in 20, a ~20× reduction in load and bandwidth on the origin. That offload is often as valuable as the latency win: it lets a modest Dhaka origin survive traffic spikes and viral moments, because the edge absorbs the flood of repeated reads for the same static images. Push the hit ratio up with longer TTLs and versioned URLs and the origin barely notices peak traffic.
+
+</Accordion>
+
+<Accordion title="Ria pushed a critical CSS fix but users still see the broken old file. Why, and how do you prevent it?">
 
 The old CSS is still cached at edges under its unchanged URL and TTL, so users keep getting the stale copy until it expires. Fix it now with a purge/invalidation of that file. Prevent it in future with **versioned URLs** — `styles.a1b2c3.css` (content hash) or `styles.v2.css` — so any change produces a *new* URL that was never cached, sidestepping invalidation entirely. This is why build tools fingerprint asset filenames.
 
@@ -116,7 +118,7 @@ The old CSS is still cached at edges under its unchanged URL and TTL, so users k
 
 ## Recap
 
-- A CDN keeps **copies of content at edge servers worldwide** and serves each user from the nearest one, attacking latency by collapsing distance.
+- A CDN keeps **copies of content at edge servers worldwide** and serves each user from the nearest one, attacking latency by collapsing distance — Adda's fix for far-away, image-heavy posts.
 - **Cache hits** serve locally in milliseconds; **misses** fetch once from origin — yielding both a big latency win and heavy **origin offload**.
 - CDNs excel at **static** content; **dynamic/personalized** content and **cache invalidation** are the genuine hard parts — plan versioning and TTLs deliberately.
 

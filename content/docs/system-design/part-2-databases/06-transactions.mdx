@@ -1,6 +1,6 @@
 ---
 title: "Transactions"
-description: "Move money from one account to another and a crash halfway through must not vanish the cash — transactions make \"all or nothing\" real."
+description: "On Adda a 'like' must record the like AND fire the notification — a crash halfway can't leave one without the other. Transactions make \"all or nothing\" real."
 extractedReferences:
   - href: /docs/system-design/part-2-databases/05-consistency-and-cap
   - href: /docs/system-design/part-2-databases/03-replication
@@ -9,7 +9,9 @@ extractedReferences:
 
 ## The problem
 
-You transfer $100 from Alice to Bob. In code that is two steps: subtract 100 from Alice, add 100 to Bob. Now imagine the server crashes — or the power blinks — in the gap between those two lines. Alice is out $100 and Bob never got it. The money simply evaporated.
+Adda ships a feature: when you like a post, the author gets a notification. In code that is two steps — insert the like, insert the notification. Then Fahim reports something strange: sometimes he sees his like on a post, but the author swears they were never notified. Sometimes it is the reverse. The server crashed — or a shard hiccupped — in the gap between those two lines, and the pair came apart.
+
+Shuvo reaches for the cleanest analogy on the whiteboard: money. Transfer $100 from Alice to Bob — subtract 100 from Alice, add 100 to Bob. If the server crashes in the gap, Alice is out $100 and Bob never got it. The money simply evaporated, exactly like Adda's orphaned like.
 
 It gets worse under concurrency. Two withdrawals hit Alice's $150 balance at the same moment, both read "150," both approve, and she withdraws $200 she never had. Nothing in the individual operations is wrong. The danger lives in the *seams* between them — the moments where a crash or another request can interleave.
 
@@ -17,7 +19,7 @@ It gets worse under concurrency. Two withdrawals hit Alice's $150 balance at the
 
 The naive guard is "check before you write": read the balance, verify it is enough, then subtract. But the check and the write are two separate steps, so another request can slip in between them — you have just moved the seam, not closed it.
 
-You might reach for a lock around the whole operation. Now correctness depends on your application never crashing while holding that lock, never forgetting to release it, and coordinating locks across every code path that touches the balance. That is a huge amount of fragile bookkeeping to reinvent for something the database can guarantee for you — if you wrap the steps in a *transaction*.
+Tanvir might reach for a lock around the whole operation. Now correctness depends on Adda's code never crashing while holding that lock, never forgetting to release it, and coordinating locks across every path that touches the balance. That is a huge amount of fragile bookkeeping to reinvent for something the database can guarantee for you — if you wrap the steps in a *transaction*.
 
 ## The insight
 
@@ -43,7 +45,7 @@ COMMIT;   -- both, or (on crash) neither
 
 ### Write intentions to a log first
 
-Before touching the real data, the database appends the change to a write-ahead log (WAL). If it crashes, recovery replays committed transactions and discards uncommitted ones — this is how atomicity and durability are enforced.
+Before touching the real data, the database appends the change to a write-ahead log (WAL) — the same WAL Adda's followers replay in replication. If it crashes, recovery replays committed transactions and discards uncommitted ones — this is how atomicity and durability are enforced.
 
 </Step>
 
@@ -84,9 +86,9 @@ Isolation levels trade safety against throughput. From weakest to strongest, and
 
 ## Concrete numbers
 
-Isolation is not free. On a contended row, `Serializable` can cut throughput by 2–5x versus `Read Committed`, because transactions must wait or abort and retry when they conflict. Most systems default to `Read Committed` (Postgres) or `Repeatable Read` (MySQL) and reserve `Serializable` for the few operations that truly need it.
+Isolation is not free. On a contended row, `Serializable` can cut throughput by 2–5x versus `Read Committed`, because transactions must wait or abort and retry when they conflict. Most systems default to `Read Committed` (Postgres — Adda's choice) or `Repeatable Read` (MySQL) and reserve `Serializable` for the few operations that truly need it.
 
-The distributed case is far more expensive. A **two-phase commit (2PC)** across 3 nodes needs two network round trips *plus* durable writes at each participant — tens of milliseconds across a datacenter, hundreds across regions — and it *blocks*: if the coordinator dies mid-commit, participants hold locks until it recovers. That single blocking property is why large systems avoid distributed transactions and favor idempotent, eventually-consistent workflows (like the saga pattern) instead.
+The distributed case is far more expensive — and this is where Adda's sharding comes back to bite. A **two-phase commit (2PC)** across 3 nodes needs two network round trips *plus* durable writes at each participant — tens of milliseconds across a datacenter, hundreds across regions — and it *blocks*: if the coordinator dies mid-commit, participants hold locks until it recovers. That single blocking property is why large systems avoid distributed transactions and favor idempotent, eventually-consistent workflows (like the saga pattern) instead.
 
 ## When to use it
 
@@ -95,7 +97,7 @@ Stronger guarantees cost concurrency. Higher isolation prevents more anomalies b
 </Callout>
 
 <Callout type="idea" title="Prefer idempotency over distributed transactions">
-Across services, a two-phase commit is often the wrong tool — it blocks on coordinator failure. Instead, make each step idempotent and retryable and stitch them with a saga (with compensating actions to undo). You trade strict atomicity for availability, which is usually the right call across a network.
+When the like lives on one shard and the notification on another, a two-phase commit is often the wrong tool — it blocks on coordinator failure. Instead, make each step idempotent and retryable and stitch them with a saga (with compensating actions to undo). You trade strict atomicity for availability, which is usually the right call across Adda's network.
 </Callout>
 
 ## Practice
@@ -108,13 +110,13 @@ Isolation. With proper isolation the two transactions cannot both act on the sam
 
 </Accordion>
 
-<Accordion title="Your report runs the same SELECT twice inside one transaction and gets different totals because another transaction committed in between. Name the anomaly and the level that fixes it.">
+<Accordion title="An Adda analytics report runs the same SELECT twice inside one transaction and gets different totals because another transaction committed in between. Name the anomaly and the level that fixes it.">
 
 That is a non-repeatable read. `Read Committed` allows it, because each statement sees the latest committed data. Moving to `Repeatable Read` gives the transaction a stable snapshot so both SELECTs return the same result. If new rows (not just changed ones) could also appear, that is a phantom read, which needs `Serializable`.
 
 </Accordion>
 
-<Accordion title="Why do large distributed systems often avoid two-phase commit even though it gives true atomicity across services?">
+<Accordion title="Why does Adda avoid two-phase commit for its cross-shard like+notify even though it gives true atomicity across services?">
 
 Because 2PC is a blocking protocol: if the coordinator crashes after participants have voted to commit, they must hold their locks and wait until it recovers — an availability hit that can cascade. It also adds multiple network round trips per commit. Under CAP pressure most systems prefer to stay available, so they replace distributed transactions with idempotent, retryable steps and sagas that use compensating actions to undo partial work, accepting eventual consistency instead of strict atomicity.
 

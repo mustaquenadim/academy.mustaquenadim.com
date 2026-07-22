@@ -1,6 +1,6 @@
 ---
 title: "Sharding"
-description: "When your data outgrows the biggest machine you can buy, you have to split it across many — sharding is that split, and choosing the key is everything."
+description: "Adda's data outgrows the biggest machine the cloud rents. Ria has to split it across many — sharding is that split, and choosing the key by user id is everything."
 extractedReferences:
   - href: /docs/system-design/part-2-databases/03-replication
   - href: /docs/system-design/part-2-databases/02-indexing
@@ -9,13 +9,13 @@ extractedReferences:
 
 ## The problem
 
-Your orders table has grown to 4 terabytes and 20,000 writes per second. You have already bought the biggest instance the cloud offers, added replicas for reads, and tuned every index. Writes still funnel through one leader, and that leader is out of headroom. There is no bigger machine to buy.
+Adda's posts table has grown to 4 terabytes and 20,000 writes per second. Shuvo has already bought the biggest instance the cloud offers, added the read replicas from last lesson, and tuned every index. Writes still funnel through one leader, and that leader is out of headroom. There is no bigger machine to buy — Ria checks the pricing page twice to be sure.
 
-This is the wall replication cannot climb. Followers scale reads, but every write still lands on a single node. When the *write* volume or the *dataset* exceeds one machine, your only move is to stop putting all the data in one place and split it across many.
+This is the wall replication cannot climb. Followers scale reads, but every write still lands on a single node. When the *write* volume or the *dataset* exceeds one machine, the only move is to stop putting all the data in one place and split it across many.
 
 ## A first attempt
 
-The obvious split is by feature: users on one database, orders on another, payments on a third. That is *functional partitioning*, and it buys you room — for a while. But each of those tables can itself outgrow a machine, and now you cannot join across them either. Splitting by feature does not help when a *single table* is too big.
+The obvious split is by feature: users on one database, posts on another, likes on a third. That is *functional partitioning*, and it buys Adda room — for a while. But each of those tables can itself outgrow a machine, and now you cannot join across them either. Splitting by feature does not help when a *single table* — posts — is too big.
 
 The real need is to cut one huge table into pieces that each live on their own machine, so that both storage and write load spread out. The question is not *whether* to split, but *how to decide which row goes where* — and that decision, the shard key, is the whole ballgame.
 
@@ -36,7 +36,7 @@ Two routing strategies dominate:
 
 ### Pick a shard key with high cardinality and even access
 
-Choose a key with many distinct values that spreads both storage and traffic — `user_id` is usually better than `country`, because a few countries would overload a few shards.
+Choose a key with many distinct values that spreads both storage and traffic — for Adda, `user_id` is usually better than `country`, because a few countries would overload a few shards.
 
 </Step>
 
@@ -60,7 +60,7 @@ Because each shard is its own database with its own leader, writes now happen in
 
 ### Handle cross-shard queries carefully
 
-A query that spans shards ("total revenue this month") must scatter to every shard and gather the results — slower, and only as fast as the slowest shard. Design your key so the common queries stay single-shard.
+A query that spans shards ("total posts this month across all users") must scatter to every shard and gather the results — slower, and only as fast as the slowest shard. Design your key so the common queries stay single-shard.
 
 </Step>
 
@@ -87,9 +87,9 @@ When one shard runs hot, you split it or move ranges. Consistent hashing minimiz
 
 ## Concrete numbers
 
-Split that 4 TB, 20k-writes/s table across 8 shards and each node holds 500 GB and ~2,500 writes/s — comfortably back inside one machine's envelope, and you can add shards as you grow. That is horizontal scale: capacity grows with the number of nodes instead of the size of one node.
+Split that 4 TB, 20k-writes/s table across 8 shards and each node holds 500 GB and ~2,500 writes/s — comfortably back inside one machine's envelope, and Adda can add shards as it grows. That is horizontal scale: capacity grows with the number of nodes instead of the size of one node.
 
-The catch shows up in fan-out. A single-shard read stays around 1–5 ms. A cross-shard aggregate over 8 shards runs all 8 in parallel but must wait for the slowest — so p99 latency is set by the worst shard, and a query touching every shard is far more failure-prone (one slow node stalls the whole result). A hot shard taking 40% of traffic while seven idle is the classic skew failure.
+The catch shows up in fan-out. A single-shard read stays around 1–5 ms. A cross-shard aggregate over 8 shards runs all 8 in parallel but must wait for the slowest — so p99 latency is set by the worst shard, and a query touching every shard is far more failure-prone (one slow node stalls the whole result). A hot shard taking 40% of traffic while seven idle is the classic skew failure — and the one Shuvo watches for when a post goes viral.
 
 ## When to use it
 
@@ -98,22 +98,22 @@ Sharding is the price of scale, and it is steep: you lose easy joins, cross-shar
 </Callout>
 
 <Callout type="idea" title="The shard key is a one-way door">
-Changing the shard key means re-hashing and physically moving most of your data, often with downtime. Spend real time up front modeling your dominant queries so the common ones stay single-shard — because you will live with this choice for years.
+Changing the shard key means re-hashing and physically moving most of your data, often with downtime. Shuvo spends real time up front modeling Adda's dominant queries so the common ones stay single-shard — because the team will live with this choice for years.
 </Callout>
 
 ## Practice
 
 <Accordions>
 
-<Accordion title="You shard a users table by hash(user_id). Product asks for 'all users who signed up in the last week', sorted by date. Why is this now painful?">
+<Accordion title="Adda shards its users table by hash(user_id). Product asks for 'all users who signed up in the last week', sorted by date. Why is this now painful?">
 
 Hashing scatters users across all shards with no regard to signup date, so "last week's users" live on every shard — the query must scatter to all N shards, gather partial results, and merge-sort them. Hashing optimized for even single-key access at the cost of range queries. If date-range queries were dominant, range sharding on signup time would keep them local — but then you would risk a hot shard on the newest range.
 
 </Accordion>
 
-<Accordion title="One shard is at 90% CPU while the others sit near 10%. What is this called, and what usually causes it?">
+<Accordion title="One of Adda's shards is at 90% CPU while the others sit near 10%. What is this called, and what usually causes it?">
 
-A hot shard, caused by skew — the shard key does not spread load evenly. Common causes: a low-cardinality key (sharding by country puts all US traffic on one shard), or a "celebrity" key (one viral user's data all lands on one shard). Fixes include choosing a higher-cardinality key, splitting the hot shard, or adding a salt to spread a celebrity's rows.
+A hot shard, caused by skew — the shard key does not spread load evenly. Common causes: a low-cardinality key (sharding by country puts all Bangladesh traffic on one shard), or a "celebrity" key (one viral user's data all lands on one shard). Fixes include choosing a higher-cardinality key, splitting the hot shard, or adding a salt to spread a celebrity's rows.
 
 </Accordion>
 

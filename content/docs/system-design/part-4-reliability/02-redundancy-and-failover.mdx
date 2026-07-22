@@ -1,6 +1,6 @@
 ---
 title: "Redundancy & Failover"
-description: "Everything fails eventually — the question is whether your users notice. Redundancy means a spare is always ready to take over."
+description: "Everything Adda runs on fails eventually — the question is whether Fahim notices. Mou's answer: a spare that's always ready to take over."
 extractedReferences:
   - href: /docs/system-design/part-4-reliability/01-availability-and-slas
   - href: /docs/system-design/part-2-databases/03-replication
@@ -9,19 +9,19 @@ extractedReferences:
 
 ## The problem
 
-It's 2am and a single server — the one running your whole checkout service — has a power supply die. Orders stop. Revenue stops. Your phone starts buzzing. The fix is simple: plug in another machine. But that takes 40 minutes of someone driving to a data center, and for those 40 minutes you are completely dark.
+It's 2am and a single machine — the one running Adda's whole checkout service — has a power supply die. Orders stop. Revenue stops. Mou's phone starts buzzing. The fix is simple: plug in another box. But that takes 40 minutes of someone driving to the data center at 2am, and for those 40 minutes Adda is completely dark — and 40 minutes is nearly Adda's entire *monthly* error budget spent in one night.
 
-The uncomfortable truth is that every component fails eventually. Disks wear out, memory flips bits, a deploy corrupts state, a whole rack loses power. You cannot make any single thing never fail. So the real question isn't "how do I stop failure?" — it's "how do I make sure users don't notice when it happens?"
+The uncomfortable truth Mou keeps repeating: every component fails eventually. Disks wear out, memory flips bits, a deploy corrupts state, a whole rack loses power. You cannot make any single thing never fail. So the real question isn't "how do I stop failure?" — it's "how do I make sure Fahim doesn't notice when it happens?"
 
 ## A first attempt
 
-The obvious move is to buy a *better* server. More expensive hardware, redundant power supplies inside the box, ECC memory, enterprise disks. Make the one machine as bulletproof as money allows.
+The obvious move is to buy a *better* machine. Pricier hardware, redundant power supplies inside the box, ECC memory, enterprise disks. Make the one server as bulletproof as money allows. Tanvir has actually floated this.
 
-This helps a little and misses the point entirely. A single server, no matter how premium, is still a **single point of failure** — one thing whose death takes down the whole system. You've reduced the odds of that one box failing, but you haven't removed the fact that *its* failure is *your* failure. And you still can't survive the switch it's plugged into dying, the rack losing power, or a bad deploy. One of anything is a liability.
+It helps a little and misses the point entirely. A single server, no matter how premium, is still a **single point of failure** — one thing whose death takes down all of Adda. You've reduced the odds of that one box dying, but you haven't removed the fact that *its* failure is *your* failure. And you still can't survive the switch it's plugged into dying, the rack losing power, or a bad deploy from Shuvo. One of anything is a liability.
 
 ## The insight
 
-Stop trying to make one thing unbreakable. Instead, **have more than one of everything, so any single failure has a standby to fall over to.** That's redundancy. The act of shifting traffic from the dead one to a healthy one is **failover**.
+Stop trying to make one thing unbreakable. Instead, Mou's rule: **have more than one of everything, so any single failure has a standby to fall over to.** That's redundancy. The act of shifting traffic from the dead one to a healthy one is **failover**.
 
 The design questions become: how many spares, and are they sitting idle or already doing work? That single choice — idle spare vs. working spare — splits every redundancy design into two families.
 
@@ -33,7 +33,7 @@ The design questions become: how many spares, and are they sitting idle or alrea
 
 ### Remove the single points of failure
 
-Walk the request path and ask "what dies takes me down?" One load balancer, one database primary, one region — each is a SPOF. Duplicate each one. The goal is that no single box, disk, or link is irreplaceable.
+Mou walks Adda's request path and asks "what dies takes us down?" One load balancer, one database primary, one region — each is a SPOF. Duplicate each one. The goal is that no single box, disk, or link is irreplaceable.
 
 </Step>
 
@@ -41,7 +41,7 @@ Walk the request path and ask "what dies takes me down?" One load balancer, one 
 
 ### Choose active-passive or active-active
 
-**Active-passive:** one node serves traffic, a standby sits ready. Simpler, but the standby's capacity is paid-for and idle. **Active-active:** all nodes serve traffic at once and cover each other. Better utilization and no cold spare, but now you must handle concurrent writes, split-brain, and load rebalancing.
+**Active-passive:** one node serves traffic, a standby sits ready. Simpler, but the standby's capacity is paid-for and idle. **Active-active:** all nodes serve traffic at once and cover each other. Better utilization and no cold spare, but now Adda must handle concurrent writes, split-brain, and load rebalancing.
 
 </Step>
 
@@ -49,7 +49,7 @@ Walk the request path and ask "what dies takes me down?" One load balancer, one 
 
 ### Detect failure with health checks
 
-A load balancer or orchestrator pings each node every few seconds (`GET /healthz`). Miss N checks in a row and the node is marked unhealthy and pulled from rotation. The detection window — how fast you notice — sets the floor on your recovery time.
+The load balancer or orchestrator pings each node every few seconds (`GET /healthz`). Miss N checks in a row and the node is marked unhealthy and pulled from rotation. The detection window — how fast Adda notices — sets the floor on recovery time.
 
 </Step>
 
@@ -57,7 +57,7 @@ A load balancer or orchestrator pings each node every few seconds (`GET /healthz
 
 ### Fail over automatically
 
-Once a node is marked dead, route around it: the load balancer stops sending it requests, or the standby is promoted to primary. Automate this. A human-in-the-loop failover at 3am costs you 20 minutes; an automatic one costs seconds.
+Once a node is marked dead, route around it: the load balancer stops sending it requests, or the standby is promoted to primary. Automate this. A human-in-the-loop failover at 3am costs Mou 20 minutes; an automatic one costs seconds.
 
 </Step>
 
@@ -65,7 +65,7 @@ Once a node is marked dead, route around it: the load balancer stops sending it 
 
 ### Test the failure before it tests you
 
-Untested failover is a coin flip. Practice killing nodes on purpose — chaos drills — so you learn that the standby's config drifted, or promotion takes 90 seconds, *before* a real outage teaches you the same thing under pressure.
+Untested failover is a coin flip. Mou's team practices killing nodes on purpose — chaos drills — so they learn that the standby's config drifted, or promotion takes 90 seconds, *before* a real outage teaches them the same thing under pressure.
 
 </Step>
 
@@ -90,41 +90,41 @@ Active-passive vs. active-active, side by side:
        (seconds of blip)                   absorbs the load
 ```
 
-## Concrete numbers
+## Adda's real numbers
 
-Recovery Time Objective (**RTO**) — how fast you're back — is dominated by detection plus promotion:
+Recovery Time Objective (**RTO**) — how fast Adda is back — is dominated by detection plus promotion:
 
-- Health check every **2s**, mark dead after **3 misses** = ~6s to detect. DNS/LB reroute ~5s. Total blip ≈ **10–15s** for a stateless active-active tier.
-- Promoting a database standby is slower: detect ~10s, replay the last WAL, repoint the app, warm the cache — often **30–120s**, sometimes minutes. Stateful failover is always harder than stateless.
-- Capacity math matters in active-active: if two nodes each run at **60%** and one dies, the survivor needs 120% — it falls over too. Run active-active nodes at ≤ **50%** (for 2) so a survivor can absorb the load. This "N+1" headroom is the tax you pay for surviving one failure.
+- Health check every **2s**, mark dead after **3 misses** = ~6s to detect. DNS/LB reroute ~5s. Total blip ≈ **10–15s** for Adda's stateless active-active web tier.
+- Promoting a database standby is slower: detect ~10s, replay the last WAL, repoint the app, warm the cache — often **30–120s**, sometimes minutes. Stateful failover is always harder than stateless, as Shuvo learned wiring up replicas back in Part 2.
+- Capacity math matters in active-active: if two nodes each run at **60%** and one dies, the survivor needs 120% — it falls over too, and now Adda has a cascading outage. Run active-active nodes at ≤ **50%** (for 2) so a survivor can absorb the load. This "N+1" headroom is the tax Adda pays for surviving one failure.
 
 ## When to use it
 
 <Callout type="warn" title="Active-active can cause split-brain">
-If two active nodes both think they're the writer — because the network between them broke, not the nodes — they accept conflicting writes and diverge. This is split-brain, and it corrupts data. Guard against it with a quorum, a consensus protocol (Raft/Paxos), or a fencing token so only one side can win a partition.
+If two active nodes both think they're the writer — because the network between them broke, not the nodes — they accept conflicting writes and diverge. This is split-brain, and it corrupts Adda's data. Guard against it with a quorum, a consensus protocol (Raft/Paxos), or a fencing token so only one side can win a partition.
 </Callout>
 
 <Callout type="idea" title="Redundancy multiplies availability">
-Two independent nodes at 99% each give a combined 1 − (0.01 × 0.01) = 99.99% — *if* their failures are truly independent. That "if" is the catch: a shared power supply, shared config push, or shared bug fails both at once. Real redundancy means spreading across failure domains (racks, zones, regions), not just adding boxes.
+Two independent nodes at 99% each give a combined 1 − (0.01 × 0.01) = 99.99% — *if* their failures are truly independent. That "if" is the catch Mou drills into the team: a shared power supply, shared config push, or shared bug fails both at once. Real redundancy means spreading across failure domains (racks, zones, regions), not just adding boxes.
 </Callout>
 
 ## Practice
 
 <Accordions>
 
-<Accordion title="Your standby has been idle for months. Why might failover still fail when you need it?">
+<Accordion title="Adda's standby has been idle for months. Why might failover still fail when Mou needs it?">
 
-Idle standbys rot. The config may have drifted from the primary, its software version may be stale, its data may have fallen behind in replication, or its disk may have quietly filled. Because nothing exercises it, none of this surfaces until the moment you promote it — and then it's a second outage on top of the first. This is why active-active (where every node is constantly proven in production) or regular chaos drills beat a cold standby you've never watched take real traffic.
-
-</Accordion>
-
-<Accordion title="Active-active doubles your capacity, so why not run every node at 90% utilization?">
-
-Because when one node dies, its traffic lands on the survivors. Two nodes at 90% each mean the survivor would need 180% — it collapses, and now you have a cascading outage instead of a clean failover. You must leave enough headroom that the remaining nodes can absorb the dead one's share: for 2 nodes, cap each at ~50%; for N nodes surviving one loss, cap at roughly (N−1)/N. That spare headroom is the real cost of redundancy.
+Idle standbys rot. The config may have drifted from the primary, its software version may be stale, its data may have fallen behind in replication, or its disk may have quietly filled. Because nothing exercises it, none of this surfaces until the moment you promote it — and then it's a second outage on top of the first. This is why active-active (where every node is constantly proven in production) or regular chaos drills beat a cold standby nobody's watched take real traffic.
 
 </Accordion>
 
-<Accordion title="Why is failing over a database far harder than failing over a web server?">
+<Accordion title="Active-active doubles Adda's capacity, so why not run every node at 90% utilization?">
+
+Because when one node dies, its traffic lands on the survivors. Two nodes at 90% each mean the survivor would need 180% — it collapses, and now Adda has a cascading outage instead of a clean failover. You must leave enough headroom that the remaining nodes can absorb the dead one's share: for 2 nodes, cap each at ~50%; for N nodes surviving one loss, cap at roughly (N−1)/N. That spare headroom is the real cost of redundancy.
+
+</Accordion>
+
+<Accordion title="Why is failing over Adda's database far harder than failing over a web server?">
 
 Web servers are usually stateless — any node can serve any request, so failover is just "stop routing to the dead one." A database holds state, so its standby must have an up-to-date *copy* of the data. Failover means promoting a replica that may be a few writes behind (risking data loss up to the replication lag), repointing every client, and ensuring the old primary can't come back and double-write. State turns a routing change into a careful, ordered promotion — which is why stateful RTO is measured in tens of seconds to minutes, not seconds.
 
@@ -134,7 +134,7 @@ Web servers are usually stateless — any node can serve any request, so failove
 
 ## Recap
 
-- Every component fails; redundancy means **more than one of everything** so a spare can take over.
+- Every component fails; redundancy means **more than one of everything** so a spare can take over before Fahim notices.
 - **Active-passive** is simpler but pays for an idle, possibly-rotten standby; **active-active** uses everything but must handle concurrent writes and split-brain.
 - Failover speed (**RTO**) is detection + promotion; automate it, leave capacity headroom, and rehearse it before a real failure does.
 

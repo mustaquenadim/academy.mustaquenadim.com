@@ -1,6 +1,6 @@
 ---
 title: "Replication"
-description: "If your one database dies, your product dies with it — replication keeps copies alive and reads fast, at the price of keeping them in sync."
+description: "Adda's one database reboots at 2am and takes the whole app down with it. Replication keeps copies alive and reads fast — at the price of keeping them in sync."
 extractedReferences:
   - href: /docs/system-design/part-2-databases/04-sharding
   - href: /docs/system-design/part-2-databases/05-consistency-and-cap
@@ -9,15 +9,15 @@ extractedReferences:
 
 ## The problem
 
-It is 2 a.m. and the single database server that holds everything your company does reboots for a kernel update — or its disk fails. For those minutes, nobody can log in, nobody can buy anything, and there is no second copy to fall back to. One machine is one point of failure.
+It is 2 a.m. and the single Postgres server that holds everything Adda knows reboots for a kernel update — and Shuvo's phone lights up because for those minutes, nobody can log in, nobody can post, nobody can even load a feed. There is no second copy to fall back to. Indexes made lookups fast, but a fast database that is *down* is still down. One machine is one point of failure.
 
-Even on a good night, that same machine is a bottleneck. Every read and every write funnels through it. As traffic grows, the reads alone — dashboards, feeds, product pages — saturate it long before writes do. You need more copies of the data: for survival, and for read throughput.
+Even on a good night, that same machine is a bottleneck. Every read and every write funnels through it. As Adda grows, the reads alone — feeds, profiles, notifications — saturate it long before writes do. Ria needs more copies of the data: for survival, and for read throughput.
 
 ## A first attempt
 
-The naive backup is a nightly dump: copy the whole database to another disk at midnight. It protects you from total loss, but if the server dies at 11 p.m. you have lost 23 hours of data, and restoring a large dump can take hours during which you are still down.
+The naive backup is a nightly dump: copy the whole database to another disk at midnight. It protects Adda from total loss, but if the server dies at 11 p.m. you have lost 23 hours of posts, and restoring a large dump can take hours during which Adda is still down.
 
-A nightly copy is a *snapshot*, not a *live spare*. What you actually want is a second server that is continuously up to date — so that if the primary dies you switch to the copy in seconds, and so that reads can be served from the copy right now. That means streaming every change to the copy as it happens, which raises the hard question: how in-sync must the copy be?
+A nightly copy is a *snapshot*, not a *live spare*. What Ria actually wants is a second server that is continuously up to date — so that if the primary dies you switch to the copy in seconds, and so that reads can be served from the copy right now. That means streaming every change to the copy as it happens, which raises the hard question Shuvo keeps circling back to: how in-sync must the copy be?
 
 ## The insight
 
@@ -52,7 +52,7 @@ Each follower connects, streams the log, and applies the same changes in the sam
 
 ### Reads split across the copies
 
-Writes go to the leader; reads fan out to followers. Because reads usually outnumber writes 10:1 or more, adding followers scales reads almost linearly.
+Writes go to the leader; reads fan out to followers. Because Adda's reads outnumber writes 10:1 or more, adding followers scales reads almost linearly.
 
 </Step>
 
@@ -84,7 +84,7 @@ If the leader dies, a follower is promoted to leader and traffic redirects to it
 
 Async replication lag is typically single-digit milliseconds within one datacenter, but can spike to seconds under write bursts or across regions (a cross-continent link adds 100–200 ms of round trip on its own). That lag is exactly the window where a follower serves stale data.
 
-The read-scaling math is direct: one leader plus five read-replicas gives you roughly 6x read capacity, so a system doing 60k reads/s and 5k writes/s fits comfortably where a single node at 20k reads/s would have collapsed. Failover time depends on detection — health checks every few seconds plus promotion usually means 10–30 seconds of write downtime, unless an automated system does it faster.
+The read-scaling math is direct: one leader plus five read-replicas gives Adda roughly 6x read capacity, so a system doing 60k reads/s and 5k writes/s fits comfortably where a single node at 20k reads/s would have collapsed. Failover time depends on detection — health checks every few seconds plus promotion usually means 10–30 seconds of write downtime, unless an automated system does it faster.
 
 ## When to use it
 
@@ -93,26 +93,26 @@ Synchronous replication protects your data but couples your write latency to you
 </Callout>
 
 <Callout type="idea" title="Read-your-own-writes">
-Right after a user posts a comment, a read from a lagging follower may not show it — the write "vanishes." Fix it by routing that user's reads to the leader (or to a follower known to be caught up) for a short window after they write. This is why replica reads need care, not just a load balancer.
+Right after Fahim posts a comment, a read from a lagging follower may not show it — the comment "vanishes." Fix it by routing that user's reads to the leader (or to a follower known to be caught up) for a short window after they write. This is why replica reads need care, not just a load balancer.
 </Callout>
 
 ## Practice
 
 <Accordions>
 
-<Accordion title="A user updates their profile photo, the page reloads, and the old photo is back. The database is healthy. What happened?">
+<Accordion title="A user updates their profile photo on Adda, the page reloads, and the old photo is back. The database is healthy. What happened?">
 
 Replication lag. The write went to the leader, but the reload read from a follower that had not yet applied the change, so it returned the stale photo. Nothing is broken — this is asynchronous replication showing its window. The fix is read-your-own-writes: route this user's reads to the leader (or a caught-up replica) briefly after they write.
 
 </Accordion>
 
-<Accordion title="Your write latency doubled after you added a replica in another region for disaster recovery. Why, and what setting caused it?">
+<Accordion title="Adda's write latency doubled after Shuvo added a replica in another region for disaster recovery. Why, and what setting caused it?">
 
 The replica was added synchronously, so the leader now waits for an acknowledgment that must cross the continent — adding 100–200 ms per write. Synchronous replication makes every write as slow as the slowest replica. For a distant DR replica you almost always want asynchronous replication, accepting a small potential data-loss window in exchange for local write speed.
 
 </Accordion>
 
-<Accordion title="Replication scales reads by adding followers. Why does it not scale writes?">
+<Accordion title="Replication scales Adda's reads by adding followers. Why does it not scale writes?">
 
 Every write still goes through the single leader and is then copied to every follower — followers *add* write work (each must replay the log), they do not absorb it. So write capacity is capped by the one leader regardless of how many followers you add. Scaling writes requires splitting the data itself across multiple leaders, which is sharding.
 

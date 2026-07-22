@@ -1,6 +1,6 @@
 ---
 title: "Availability & SLAs"
-description: "What does \"99.99% uptime\" actually promise, and what does it cost? Reliability starts with agreeing on the target."
+description: "Adda promises its users it will always be there. Mou joins the night uptime becomes a real job — and the first thing she does is turn that promise into a number."
 extractedReferences:
   - href: /docs/system-design/part-4-reliability/02-redundancy-and-failover
   - href: /docs/system-design/part-4-reliability/03-monitoring-and-observability
@@ -9,21 +9,21 @@ extractedReferences:
 
 ## The problem
 
-Your service went down for 20 minutes last Tuesday. In the incident review someone asks the only question that matters: "Is that bad?" Marketing thinks any downtime is a catastrophe. The on-call engineer who got paged at 3am thinks 20 minutes is a miracle. Nobody can agree, because nobody wrote down what "good enough" means.
+Adda went dark for 20 minutes last Tuesday. In the incident review, someone finally asks the only question that matters: "Was that bad?" Marketing thinks any downtime at all is a catastrophe — millions of people now open Adda the way they open a light switch. **Tanvir**, who caught the 3am page, thinks 20 minutes to recover a wedged database is honestly a miracle. **Fahim**, still user #1, just wants to know if it'll happen again tonight. Nobody can agree, because nobody ever wrote down what "good enough" means.
 
-Without a number, every outage becomes an argument. You can't tell whether to invest six months making the system bulletproof or whether you're already over-engineering. Reliability work has no finish line until you draw one.
+That's the night **Ria** hires **Mou** — Adda's first real SRE. Mou listens to the whole argument, then says the thing that reframes the room: without a number, every outage is just a shouting match. You can't tell whether to spend six months making Adda bulletproof or whether you're already gold-plating. Reliability work has no finish line until someone draws one — and drawing it is now Mou's job.
 
 ## A first attempt
 
-The naive answer is "aim for 100% uptime." It sounds responsible. It's also a trap.
+The room's instinct is "let's aim for 100% uptime." It sounds responsible. Mou has seen it burn a team before.
 
-The last stretch of reliability is astronomically expensive. Going from one server to two might double your availability cheaply. Going from 99.9% to 99.99% means redundant data centers, automatic failover, chaos testing, and a follow-the-sun on-call rotation. Each extra "nine" roughly multiplies your cost and complexity while removing an order of magnitude less downtime. Chasing 100% spends infinite money to eliminate a finite, shrinking risk — and you still can't beat a backhoe cutting a fiber line.
+The last stretch of reliability is astronomically expensive. Going from Adda's one server to two doubled availability cheaply. Going from 99.9% to 99.99% means redundant data centers, automatic failover, chaos testing, and a follow-the-sun on-call rotation covering every timezone Adda now lives in. Each extra "nine" roughly multiplies cost and complexity while removing an order of magnitude less downtime. Chasing 100% spends infinite money to erase a finite, shrinking risk — and no budget on Earth stops a backhoe from cutting a fiber line outside the data center.
 
-So "as available as possible" is not a target. It's a way to burn budget forever.
+So "as available as possible" isn't a target Mou will accept. It's a way to burn Adda's runway forever.
 
 ## The insight
 
-Availability is a **business decision expressed as a number**, not an engineering ideal. You pick a target that matches what users actually need, promise it, measure it, and spend exactly enough to hit it — no more.
+Availability is a **business decision expressed as a number**, not an engineering ideal. Mou's rule: pick a target that matches what Adda's users actually need, promise it, measure it, and spend exactly enough to hit it — not one taka more.
 
 That number is usually written in "nines." Here is what each nine buys you, as allowed downtime:
 
@@ -34,11 +34,11 @@ That number is usually written in "nines." Here is what each nine buys you, as a
 | 99.99% (four nines) | 52.6 min | 4.3 min | Serious platform |
 | 99.999% (five nines) | 5.26 min | 26 sec | Telco / payments |
 
-Notice the jump: three nines gives you 43 minutes a month to deploy, restart, and recover. Four nines gives you barely 4 minutes — a single bad deploy blows the whole budget.
+Notice the jump Mou circles on the whiteboard: three nines gives Adda 43 minutes a month to deploy, restart, and recover. Four nines gives barely 4 minutes — a single bad deploy blows the whole budget.
 
 ## How it works
 
-Three acronyms turn the target into something you can operate against.
+Mou introduces three acronyms that turn the target into something the team can operate against.
 
 <Steps>
 
@@ -46,7 +46,7 @@ Three acronyms turn the target into something you can operate against.
 
 ### Define the SLI (what you measure)
 
-A Service Level Indicator is the raw metric. Pick something the user actually feels: the fraction of HTTP requests that return successfully in under 300ms, measured at the load balancer. Availability that users can't perceive isn't worth paying for.
+A Service Level Indicator is the raw metric. Mou picks something Adda's users actually feel: the fraction of HTTP requests that return successfully in under 300ms, measured at the load balancer Tanvir set up back in Part 1. Availability that users can't perceive isn't worth paying for.
 
 </Step>
 
@@ -54,7 +54,7 @@ A Service Level Indicator is the raw metric. Pick something the user actually fe
 
 ### Set the SLO (your internal goal)
 
-A Service Level Objective is the target for that SLI, e.g. "99.9% of requests succeed over a rolling 30 days." The SLO is stricter than anything you promise outsiders — it's the line that triggers action *before* customers complain.
+A Service Level Objective is the target for that SLI — "99.9% of requests succeed over a rolling 30 days." The SLO is stricter than anything Adda promises outsiders — it's the line that pages Mou's team *before* Fahim ever tweets that the app is down.
 
 </Step>
 
@@ -62,7 +62,7 @@ A Service Level Objective is the target for that SLI, e.g. "99.9% of requests su
 
 ### Sign the SLA (the external promise)
 
-A Service Level Agreement is the contract with customers, with penalties attached (usually service credits). If your SLO is 99.95%, your SLA might be 99.9% — you keep a safety margin so you break your internal goal long before you owe anyone money.
+A Service Level Agreement is the contract with customers — Adda's business partners and, later, paying teams — with penalties attached (usually service credits). If the SLO is 99.95%, the SLA might be 99.9%: Adda keeps a safety margin so it breaks its internal goal long before it owes anyone money.
 
 </Step>
 
@@ -70,7 +70,7 @@ A Service Level Agreement is the contract with customers, with penalties attache
 
 ### Spend the error budget
 
-100% minus your SLO is your **error budget** — the downtime you're *allowed* to spend. At 99.9% you have 43 minutes a month to burn on risky deploys, migrations, and experiments. Budget left over? Ship faster. Budget gone? Freeze features and stabilize.
+100% minus the SLO is Adda's **error budget** — the downtime it's *allowed* to spend. At 99.9% that's 43 minutes a month to burn on risky deploys, migrations, and experiments. Budget left over? Ship faster. Budget gone? Freeze features and stabilize.
 
 </Step>
 
@@ -89,43 +89,43 @@ The relationship between the three, and where the error budget sits:
         error budget = 100% − SLO = 43 min / month
 ```
 
-## Concrete numbers
+## Adda's real numbers
 
-Say you run an API doing **10,000 requests per second**. That's about 25.9 billion requests a month.
+Adda's API now does **10,000 requests per second**. That's about 25.9 billion requests a month passing through Mou's watch.
 
-- A 99.9% SLO means you're allowed to fail **0.1%** of them: ~25.9 million failed requests, or about 43 minutes of total outage-equivalent.
-- Tighten to 99.99% and your budget shrinks 10x to ~4.3 minutes. One 6-minute deploy hiccup and you've already broken the month.
-- A single dependency at 99.9% caps *your* ceiling: chain three independent services at 99.9% each and your theoretical max is 0.999³ ≈ **99.7%**. Dependencies multiply, so your own target must account for everyone you call.
+- A 99.9% SLO means Adda is allowed to fail **0.1%** of them: ~25.9 million failed requests, or about 43 minutes of total outage-equivalent.
+- Tighten to 99.99% and that budget shrinks 10x to ~4.3 minutes. One 6-minute deploy hiccup and the month is already broken.
+- A single dependency at 99.9% caps *Adda's* ceiling: chain three independent services at 99.9% each and the theoretical max is 0.999³ ≈ **99.7%**. Dependencies multiply, so Adda's own target must account for everyone it calls — the payment provider, the notification service, all of it.
 
 ## When to use it
 
 <Callout type="warn" title="More nines is not always better">
-Every extra nine roughly multiplies cost and slows delivery. A three-nines internal tool that's cheap and ships weekly may serve the business far better than a gold-plated four-nines version that freezes for months. Match the target to the blast radius, not to engineering pride.
+Every extra nine roughly multiplies cost and slows delivery. A three-nines internal admin tool that's cheap and ships weekly may serve Adda far better than a gold-plated four-nines version that freezes for months. Mou matches the target to the blast radius, not to engineering pride.
 </Callout>
 
 <Callout type="idea" title="Error budgets align dev and ops">
-The error budget resolves the classic fight: developers want to ship, operators want stability. Frame it as a shared bank account. Budget remaining means you've *earned* the right to take risks. Budget spent means everyone stops and stabilizes — no politics, just the number.
+The error budget resolves the classic fight Mou walked into on night one: developers (Shuvo, Nabila) want to ship, operators want stability. She frames it as a shared bank account. Budget remaining means the team has *earned* the right to take risks. Budget spent means everyone stops and stabilizes — no politics, just the number.
 </Callout>
 
 ## Practice
 
 <Accordions>
 
-<Accordion title="Your SLA promises 99.9%, but last month you were down for 50 minutes. Did you breach it?">
+<Accordion title="Adda's SLA promises 99.9%, but last month it was down for 50 minutes. Did it breach?">
 
-99.9% over a 30-day month allows about **43 minutes** of downtime. 50 minutes exceeds that, so yes — you breached the SLA and likely owe service credits. This is exactly why your internal SLO should be stricter (say 99.95%, ~21 min) so an alert fires with margin to spare before you ever touch the contractual line.
-
-</Accordion>
-
-<Accordion title="Why measure the SLI at the load balancer instead of inside each microservice?">
-
-Because availability is defined by what the *user* experiences, not what any internal component reports. A service can be "up" while returning 500s, timing out at the gateway, or being unreachable due to a DNS or network fault. Measuring at the edge — the last hop before the user — captures the real success/failure the customer sees. Internal metrics are for debugging *why*, not for defining the SLO.
+99.9% over a 30-day month allows about **43 minutes** of downtime. 50 minutes exceeds that, so yes — Adda breached the SLA and likely owes service credits. This is exactly why Mou sets the internal SLO stricter (say 99.95%, ~21 min) so an alert fires with margin to spare before Adda ever touches the contractual line.
 
 </Accordion>
 
-<Accordion title="You depend on a payment provider with a 99.9% SLA. Can your checkout flow promise 99.95%?">
+<Accordion title="Why does Mou measure the SLI at the load balancer instead of inside each microservice?">
 
-Not for the parts that hard-depend on that provider. Availabilities of serial dependencies multiply, so a synchronous call into a 99.9% service caps that path at 99.9% at best. To promise more, you must remove the hard dependency — queue the payment and confirm asynchronously, fail over to a second provider, or degrade gracefully (accept the order, settle payment later). Redundancy is the only way to beat a single dependency's ceiling.
+Because availability is defined by what the *user* experiences, not what any internal component reports. An Adda service can be "up" while returning 500s, timing out at the gateway, or being unreachable due to a DNS or network fault. Measuring at the edge — the last hop before Fahim's phone — captures the real success/failure the customer sees. Internal metrics are for debugging *why*, not for defining the SLO.
+
+</Accordion>
+
+<Accordion title="Adda depends on a payment provider with a 99.9% SLA. Can checkout promise 99.95%?">
+
+Not for the parts that hard-depend on that provider. Availabilities of serial dependencies multiply, so a synchronous call into a 99.9% service caps that path at 99.9% at best. To promise more, Adda must remove the hard dependency — queue the payment and confirm asynchronously, fail over to a second provider, or degrade gracefully (accept the order, settle payment later). Redundancy is the only way to beat a single dependency's ceiling — which is exactly the next lesson.
 
 </Accordion>
 
@@ -133,13 +133,13 @@ Not for the parts that hard-depend on that provider. Availabilities of serial de
 
 ## Recap
 
-- Availability is a **business number**, not an ideal — pick a target that matches user need and stop there.
+- Availability is a **business number**, not an ideal — Mou picks a target that matches user need and stops there.
 - **SLI** = what you measure, **SLO** = your stricter internal goal, **SLA** = the looser external promise with penalties.
-- The **error budget** (100% − SLO) is downtime you're allowed to spend; it turns "ship vs. stabilize" into a math problem.
+- The **error budget** (100% − SLO) is downtime you're allowed to spend; it turns "ship vs. stabilize" into a math problem instead of an argument.
 
 <Cards>
-  <Card title="Redundancy & Failover" href="/docs/system-design/part-4-reliability/02-redundancy-and-failover" description="How spares keep you above your SLO when hardware dies." />
-  <Card title="Monitoring & Observability" href="/docs/system-design/part-4-reliability/03-monitoring-and-observability" description="Measuring the SLIs that your SLO is built on." />
+  <Card title="Redundancy & Failover" href="/docs/system-design/part-4-reliability/02-redundancy-and-failover" description="How spares keep Adda above its SLO when hardware dies." />
+  <Card title="Monitoring & Observability" href="/docs/system-design/part-4-reliability/03-monitoring-and-observability" description="Measuring the SLIs that Adda's SLO is built on." />
   <Card title="Disaster Recovery" href="/docs/system-design/part-4-reliability/05-disaster-recovery" description="What happens when downtime blows past the error budget entirely." />
 </Cards>
 

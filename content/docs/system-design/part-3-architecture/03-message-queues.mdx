@@ -1,6 +1,6 @@
 ---
 title: "Message Queues"
-description: "When one service produces work faster than another can handle it, a queue absorbs the shock and lets them work at their own pace."
+description: "A video attached to an Adda post takes 90 seconds to process — and it's holding the upload request hostage. When Adda goes viral, that one slow task takes down the whole API. A queue absorbs the shock."
 extractedReferences:
   - href: /docs/system-design/part-3-architecture/04-pub-sub
   - href: /docs/system-design/part-3-architecture/06-idempotency
@@ -9,40 +9,41 @@ extractedReferences:
 
 ## The problem
 
-A user uploads a video. Your API has to transcode it into five resolutions, generate
-thumbnails, scan for copyright, and email the user when it's done — maybe 90 seconds of
-work. Right now the upload request does all of it inline, so the user's browser sits
-spinning for a minute and a half, and if anything fails, the whole upload errors out.
+A user attaches a video to an Adda post. The Posts service has to transcode it into five
+resolutions, generate thumbnails, scan it for copyright, and notify the user when it's done —
+maybe 90 seconds of work. Right now the upload request does all of it inline, so the user's
+app sits spinning for a minute and a half, and if anything fails, the whole upload errors out.
 
-Then you go viral. A thousand uploads land in one minute. Each ties up a request thread for
-90 seconds, your thread pool is exhausted in seconds, and now *unrelated* requests — logins,
-page loads — start timing out too. One slow task took down the whole API.
+Then Adda trends. A thousand video uploads land in one minute. Each ties up a request thread
+for 90 seconds, the thread pool is exhausted in seconds, and now *unrelated* requests —
+logins, feed loads, plain text posts — start timing out too. Fahim, the canary as ever, can't
+even open his feed. One slow task took down the whole API.
 
 ## A first attempt
 
-Add more workers and bigger machines so you can process everything the instant it arrives.
-Provision for the peak.
+Tanvir's first move: add more workers and bigger machines so Adda can process everything the
+instant it arrives. Provision for the peak.
 
-But the peak is the problem. Traffic isn't smooth — it spikes. If you size for the worst
-minute of the year, you pay for idle capacity the other 525,599 minutes. Size for the
-average and the spikes knock you over. And the deeper issue remains: the producer (uploads)
-and the consumer (transcoding) are locked together in time. The upload *cannot finish* until
-transcoding does. You need them to run at their own speeds.
+But the peak is the problem. Adda's traffic isn't smooth — it spikes when a post goes viral.
+If you size for the worst minute of the year, you pay for idle capacity the other 525,599
+minutes. Size for the average and the spikes knock you over. And the deeper issue remains: the
+producer (uploads) and the consumer (transcoding) are locked together in time. The upload
+*cannot finish* until transcoding does. You need them to run at their own speeds.
 
 ## The insight
 
-Put a buffer between them. The API drops a "transcode this video" message into a **queue**
-and immediately returns "got it, we'll email you." Separate worker processes pull messages
-off the queue and transcode at whatever rate they can sustain.
+Put a buffer between them. The Posts service drops a "transcode this video" message into a
+**queue** and immediately returns "got it, we'll notify you." Separate worker processes pull
+messages off the queue and transcode at whatever rate they can sustain.
 
 Now producer and consumer are **decoupled** in time. Uploads finish in milliseconds. A spike
-just makes the queue longer, not the API slower — the queue absorbs the shock and drains
-when the surge passes. Add workers to drain faster; the API never notices.
+just makes the queue longer, not the API slower — the queue absorbs the shock and drains when
+the surge passes. Add workers to drain faster; the API never notices.
 
 <Callout type="idea" title="A queue trades latency for resilience">
 By accepting work now and doing it later, a queue turns a synchronous, all-or-nothing chain
-into an asynchronous one that bends under load instead of breaking. The cost: the result
-isn't ready the instant the request returns.
+into an asynchronous one that bends under load instead of breaking. The cost: the result isn't
+ready the instant the request returns.
 </Callout>
 
 ## How it works
@@ -53,8 +54,8 @@ isn't ready the instant the request returns.
 
 ### Producer enqueues and moves on
 
-The API validates the request, writes a message (video ID, options) to the queue, and
-returns immediately. Its job is done in a few milliseconds.
+The Posts service validates the request, writes a message (video ID, options) to the queue,
+and returns immediately. Its job is done in a few milliseconds.
 
 </Step>
 
@@ -62,8 +63,8 @@ returns immediately. Its job is done in a few milliseconds.
 
 ### The queue holds the backlog
 
-Messages wait durably in order of arrival. If 1,000 arrive in a burst, all 1,000 sit safely
-in the queue — nothing is dropped, nothing blocks the producer.
+Messages wait durably in order of arrival. If 1,000 arrive in a burst, all 1,000 sit safely in
+the queue — nothing is dropped, nothing blocks the producer.
 
 </Step>
 
@@ -72,7 +73,7 @@ in the queue — nothing is dropped, nothing blocks the producer.
 ### Consumers pull at their own pace
 
 Worker processes each grab a message, process it, and ask for the next. Slow consumers just
-leave more in the queue; you scale throughput by adding workers.
+leave more in the queue; Adda scales throughput by adding workers.
 
 </Step>
 
@@ -102,27 +103,29 @@ un-acked message reappears for another worker. After N failed tries, the message
 
 ## Concrete numbers
 
-Enqueuing a message costs ~1–5 ms; the client sees that instead of 90 seconds. A broker like
-RabbitMQ or SQS sustains tens of thousands of messages per second per queue, and a
-partitioned log like Kafka pushes into the millions.
+Enqueuing a message costs ~1–5 ms; the user sees that instead of 90 seconds. A broker like
+RabbitMQ or SQS sustains tens of thousands of messages per second per queue, and a partitioned
+log like Kafka pushes into the millions.
 
-The buffering math: say uploads spike to 1,000/min for 5 minutes (5,000 messages) while each
-worker transcodes one video every 90 s (~0.67/min). With 20 workers you drain ~13/min, so
+The buffering math: say Adda's uploads spike to 1,000/min for 5 minutes (5,000 messages) while
+each worker transcodes one video every 90 s (~0.67/min). With 20 workers you drain ~13/min, so
 the backlog clears in a few minutes after the spike — users wait a little longer for their
-"done" email, but *nothing fails and the API never stalls*. Without the queue, those 5,000
-jobs would have exhausted the thread pool and taken the whole service down.
+"done" notification, but *nothing fails and the API never stalls*. Without the queue, those
+5,000 jobs would have exhausted the thread pool and taken the whole service down — exactly the
+outage that started this lesson.
 
 ## When to use it
 
 <Callout type="warn" title="At-least-once means duplicates — design for them">
 Most queues guarantee *at-least-once* delivery: if a worker processes a message but crashes
 before acking, the message is redelivered and processed again. "Exactly-once" is largely a
-marketing promise; in practice you get at-least-once and make your consumers **idempotent**
-so a duplicate is harmless (charge card only if not already charged for this message ID).
+marketing promise; in practice you get at-least-once and make your consumers **idempotent** so
+a duplicate is harmless (transcode once if not already done for this message ID). Adda meets
+that problem head-on a few lessons from now.
 </Callout>
 
 <Callout type="error" title="Queues hide overload — watch the depth">
-A queue absorbing a spike is healthy; a queue that grows without ever draining means your
+A queue absorbing a spike is healthy; a queue that grows without ever draining means Adda's
 consumers are permanently too slow, and the "buffer" is now just a delay machine hiding a
 capacity problem. Alert on queue depth and age-of-oldest-message, not just on errors — a
 silently growing backlog can mean hours-old data by the time anyone notices.
@@ -145,7 +148,7 @@ redelivery — hence at-least-once, hence the need for idempotent consumers.
 <Accordion title="A queue and pub/sub both move messages between services. How are they different?">
 
 A queue is *point-to-point*: each message is delivered to exactly one consumer in a group,
-which is what you want for work distribution (only one worker should transcode a given
+which is what you want for work distribution (only one worker should transcode a given Adda
 video). Pub/sub is *broadcast*: one event goes to every interested subscriber, which is what
 you want when many services each need to react to the same fact. Queues load-balance work;
 pub/sub fans out notifications.
@@ -156,10 +159,9 @@ pub/sub fans out notifications.
 
 It means messages failed processing N times — a real bug or bad data, not a transient blip
 (transient errors usually succeed on retry). Don't just re-drain it blindly, or you'll loop.
-Inspect a sample: is it a poison message (malformed input) that should be dropped or fixed,
-or a downstream dependency that was down (in which case fix it, then replay)? The DLQ is a
-safety net that converts "retry forever and wedge the queue" into "quarantine and
-investigate."
+Inspect a sample: is it a poison message (a corrupt upload) that should be dropped or fixed, or
+a downstream dependency that was down (in which case fix it, then replay)? The DLQ is a safety
+net that converts "retry forever and wedge the queue" into "quarantine and investigate."
 
 </Accordion>
 
@@ -168,15 +170,14 @@ investigate."
 ## Recap
 
 - A queue decouples producer and consumer in time: the producer enqueues and returns fast,
-  consumers process at their own pace, and spikes grow the backlog instead of breaking the
-  API.
+  consumers process at their own pace, and spikes grow the backlog instead of breaking the API.
 - Delivery is at-least-once, so duplicates happen — make consumers idempotent, ack only after
   success, and send repeated failures to a dead-letter queue.
-- The queue hides overload, so monitor depth and message age; a backlog that never drains is
-  a capacity problem wearing a buffer's clothes.
+- The queue hides overload, so monitor depth and message age; a backlog that never drains is a
+  capacity problem wearing a buffer's clothes.
 
 <Cards>
-  <Card title="Publish / Subscribe" href="/docs/system-design/part-3-architecture/04-pub-sub" description="When one event needs to reach many services, not one worker." />
+  <Card title="Publish / Subscribe" href="/docs/system-design/part-3-architecture/04-pub-sub" description="When one Adda event needs to reach many services, not one worker." />
   <Card title="Idempotency" href="/docs/system-design/part-3-architecture/06-idempotency" description="Making at-least-once delivery safe by tolerating duplicates." />
   <Card title="Backpressure & Circuit Breakers" href="/docs/system-design/part-4-reliability/04-backpressure-and-circuit-breakers" description="What to do when the backlog keeps growing." />
 </Cards>
@@ -187,6 +188,6 @@ investigate."
 Reach for a queue whenever work can be done asynchronously — "the API accepts the job and a
 worker processes it later." Say the two words that show you've operated one: *at-least-once*
 (so consumers must be idempotent) and *dead-letter queue* (so failures don't loop forever).
-Mention monitoring queue depth as your overload signal, and be ready to contrast point-to-
-point queues with broadcast pub/sub.
+Mention monitoring queue depth as your overload signal, and be ready to contrast point-to-point
+queues with broadcast pub/sub.
 </Callout>

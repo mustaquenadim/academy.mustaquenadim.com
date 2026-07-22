@@ -1,6 +1,6 @@
 ---
 title: "Backpressure & Circuit Breakers"
-description: "When one slow service starts dragging down everything that depends on it, you need a way to fail fast and stop the cascade."
+description: "One slow Adda service starts dragging down everything that calls it. Mou needs a way to fail fast and stop the slowdown from swallowing the whole app."
 extractedReferences:
   - href: /docs/system-design/part-4-reliability/03-monitoring-and-observability
   - href: /docs/system-design/part-3-architecture/03-message-queues
@@ -9,24 +9,24 @@ extractedReferences:
 
 ## The problem
 
-Your payments service gets a little slow — its database is under load, so calls that took 20ms now take 3 seconds. Not down, just slow. The Orders service calls Payments on every checkout, so its threads start piling up waiting. Within a minute every Orders thread is blocked on a slow Payments call. Now Orders is unresponsive. The web tier that calls Orders backs up too. A tiny hiccup in one service has taken down the entire site.
+Adda's payments service gets a little slow — its database is under load, so calls that took 20ms now take 3 seconds. Not down, just slow. The Orders service calls Payments on every checkout, so its threads start piling up waiting. Within a minute every Orders thread is blocked on a slow Payments call. Now Orders is unresponsive. The web tier that calls Orders backs up too. Mou watches, on the dashboards from last lesson, a tiny hiccup in one service take down the entire app — the traces light up red from the bottom of the stack all the way to Fahim's home feed.
 
-This is the nightmare of distributed systems: failure doesn't stay put. A single slow dependency spreads *upward* through everything that waits on it, until the whole system is jammed. And "slow" is worse than "down" — a fast rejection frees the caller, but a slow success holds every caller hostage.
+This is the nightmare of distributed systems: failure doesn't stay put. A single slow dependency spreads *upward* through everything that waits on it, until all of Adda is jammed. And "slow" is worse than "down" — a fast rejection frees the caller, but a slow success holds every caller hostage.
 
 ## A first attempt
 
-The instinct is to add **retries and timeouts**. If a call is slow, time out after a few seconds and try again. Surely retrying a flaky call helps?
+The instinct — Tanvir's first patch — is to add **retries and timeouts**. If a call is slow, time out after a few seconds and try again. Surely retrying a flaky call helps?
 
-It makes things dramatically worse. When Payments is already overloaded, every timeout spawns a retry, so the *struggling* service now gets 2–3x the traffic — a **retry storm** that guarantees it never recovers. And a naive 30-second timeout still holds the caller's thread for 30 seconds; multiply by thousands of requests and you exhaust the thread pool anyway. Retries and timeouts are necessary, but applied naively they pour fuel on the fire instead of putting it out.
+It makes things dramatically worse. When Payments is already overloaded, every timeout spawns a retry, so the *struggling* service now gets 2–3x the traffic — a **retry storm** that guarantees it never recovers. And a naive 30-second timeout still holds the caller's thread for 30 seconds; multiply by thousands of Adda's requests and you exhaust the thread pool anyway. Retries and timeouts are necessary, but applied naively they pour fuel on the fire instead of putting it out.
 
 ## The insight
 
-Two complementary ideas break the cascade:
+Mou brings two complementary ideas that break the cascade:
 
 - **Fail fast, don't wait.** If a dependency is clearly sick, stop calling it *immediately* and return an error (or a fallback) in microseconds. Freeing the caller instantly is what stops the pile-up. This is the **circuit breaker**.
-- **Push back when overwhelmed.** If work arrives faster than you can handle it, signal upstream to slow down or shed the excess, instead of accepting infinite work and collapsing. This is **backpressure**.
+- **Push back when overwhelmed.** If work arrives faster than a service can handle it, signal upstream to slow down or shed the excess, instead of accepting infinite work and collapsing. This is **backpressure**.
 
-One protects *callers* from a sick *callee*. The other protects a *callee* from too many *callers*. Together they keep local failures local.
+One protects *callers* from a sick *callee*. The other protects a *callee* from too many *callers*. Together they keep Adda's local failures local.
 
 ## How it works
 
@@ -36,7 +36,7 @@ One protects *callers* from a sick *callee*. The other protects a *callee* from 
 
 ### Wrap risky calls in a circuit breaker
 
-Put a breaker around every call to a dependency that can fail. Like an electrical breaker, it has three states — **closed** (calls flow), **open** (calls are rejected instantly), and **half-open** (a trickle of test calls) — and it flips based on the recent error/latency rate.
+Put a breaker around every call to a dependency that can fail. Like an electrical breaker in the apartment where Adda started, it has three states — **closed** (calls flow), **open** (calls are rejected instantly), and **half-open** (a trickle of test calls) — and it flips based on the recent error/latency rate.
 
 </Step>
 
@@ -52,7 +52,7 @@ Track a rolling window of results. If failures exceed a threshold — say **50% 
 
 ### Probe with half-open, then recover
 
-After a cooldown (say 10s), move to **half-open** and allow a few probe calls through. If they succeed, close the breaker and resume normal traffic. If they fail, snap back to open and wait again. This auto-recovers without a human.
+After a cooldown (say 10s), move to **half-open** and allow a few probe calls through. If they succeed, close the breaker and resume normal traffic. If they fail, snap back to open and wait again. This auto-recovers without waking Mou up.
 
 </Step>
 
@@ -60,7 +60,7 @@ After a cooldown (say 10s), move to **half-open** and allow a few probe calls th
 
 ### Apply backpressure with bounded queues
 
-Give each service a *bounded* work queue. When it fills, reject new work immediately (return 429) rather than buffering forever. A full queue is the signal "I'm at capacity" — propagate it upstream so callers slow down instead of piling on.
+Give each Adda service a *bounded* work queue. When it fills, reject new work immediately (return 429) rather than buffering forever. A full queue is the signal "I'm at capacity" — propagate it upstream so callers slow down instead of piling on.
 
 </Step>
 
@@ -68,7 +68,7 @@ Give each service a *bounded* work queue. When it fills, reject new work immedia
 
 ### Shed load and degrade gracefully
 
-When you must drop work, drop the *least* important first: reject low-priority requests, serve a cached or default response, disable the recommendations widget but keep checkout alive. A degraded-but-up service beats a perfect-but-down one.
+When Adda must drop work, drop the *least* important first: reject low-priority requests, serve a cached or default response, disable the recommendations widget but keep checkout alive. A degraded-but-up Adda beats a perfect-but-down one.
 
 </Step>
 
@@ -93,17 +93,17 @@ The circuit breaker state machine:
                              └───────────┘
 ```
 
-## Concrete numbers
+## Adda's real numbers
 
-- **Timeouts must be tight.** If Payments' normal p99 is 50ms, set the timeout at ~250ms, not 30s. A tight timeout frees a thread in a quarter-second instead of holding it half a minute — the difference between absorbing a blip and exhausting a 200-thread pool.
-- **Thread-pool math.** 200 threads and a 3s hung dependency means you can serve at most ~66 req/s before every thread is blocked. Drop the timeout to 250ms and the same pool sustains ~800 req/s of *failing* calls without locking up.
-- **Retry with backoff and jitter, capped.** Retry at most **2–3 times**, with exponential backoff (100ms, 200ms, 400ms) plus random jitter, and only when the breaker is closed. Jitter prevents thousands of clients retrying in a synchronized wave.
+- **Timeouts must be tight.** If Payments' normal p99 is 50ms, Mou sets the timeout at ~250ms, not 30s. A tight timeout frees a thread in a quarter-second instead of holding it half a minute — the difference between absorbing a blip and exhausting a 200-thread pool.
+- **Thread-pool math.** 200 threads and a 3s hung dependency means Orders can serve at most ~66 req/s before every thread is blocked. Drop the timeout to 250ms and the same pool sustains ~800 req/s of *failing* calls without locking up.
+- **Retry with backoff and jitter, capped.** Retry at most **2–3 times**, with exponential backoff (100ms, 200ms, 400ms) plus random jitter, and only when the breaker is closed. Jitter prevents thousands of Adda clients retrying in a synchronized wave.
 - **Bounded queue size.** A queue of 1,000 at 500 req/s adds up to 2s of latency when full — beyond that, new requests should be rejected (429), not queued, or you just build a latency time bomb.
 
 ## When to use it
 
 <Callout type="warn" title="An open breaker is still an outage — decide the fallback">
-Tripping the breaker stops the cascade, but callers now get errors. You must decide what they get: a cached value, a sensible default, a queued write to process later, or a clean error. "Fail fast" without a fallback plan just moves the failure — the win is that it's now *contained and fast* instead of *spreading and slow*.
+Tripping the breaker stops the cascade, but callers now get errors. Mou must decide what they get: a cached value, a sensible default, a queued write to process later, or a clean error. "Fail fast" without a fallback plan just moves the failure — the win is that it's now *contained and fast* instead of *spreading and slow*.
 </Callout>
 
 <Callout type="idea" title="Backpressure needs a bounded buffer to work">
@@ -114,21 +114,21 @@ Backpressure only exists if something can say "full." An unbounded queue can nev
 
 <Accordions>
 
-<Accordion title="Why is a slow dependency more dangerous than one that's completely down?">
+<Accordion title="Why is a slow Payments service more dangerous to Adda than one that's completely down?">
 
-A dependency that's *down* usually fails fast — the connection is refused in milliseconds, your caller gets an error immediately, its thread is freed, and it moves on. A dependency that's *slow* succeeds eventually but holds each caller's thread/connection the entire time. At any real traffic level, those held resources accumulate until the caller's pool is fully blocked — so the caller itself becomes unresponsive and the jam spreads upward. This is exactly why circuit breakers trip on *latency* as well as errors, and why timeouts must be tight: you want to convert "slow success" into "fast failure" so callers are freed.
-
-</Accordion>
-
-<Accordion title="Adding retries to a struggling service made the outage worse. Why?">
-
-Because retries multiply load on a service precisely when it can least handle it. If Payments is overloaded and every caller retries 3x on timeout, Payments suddenly receives ~3x its normal traffic — a retry storm that guarantees it stays down. The fixes: cap retries (2–3 max), use exponential backoff with jitter so retries spread out instead of hammering in sync, only retry idempotent operations, and gate retries behind a circuit breaker so once the service is clearly sick you stop retrying entirely and fail fast instead.
+A dependency that's *down* usually fails fast — the connection is refused in milliseconds, the caller gets an error immediately, its thread is freed, and it moves on. A dependency that's *slow* succeeds eventually but holds each caller's thread/connection the entire time. At Adda's traffic level, those held resources accumulate until the caller's pool is fully blocked — so the caller itself becomes unresponsive and the jam spreads upward. This is exactly why circuit breakers trip on *latency* as well as errors, and why timeouts must be tight: you want to convert "slow success" into "fast failure" so callers are freed.
 
 </Accordion>
 
-<Accordion title="Your service is receiving more requests than it can process. What are your options, and how do you choose?">
+<Accordion title="Adding retries to a struggling service made Adda's outage worse. Why?">
 
-You have three: (1) **buffer** in a bounded queue — smooths short bursts, but a full queue must reject, not grow unbounded; (2) **backpressure** — signal upstream (429 / full queue) so callers slow down; (3) **load shedding** — drop requests now, cheapest first. Choose by whether the overload is transient or sustained: a brief spike, buffer it; a sustained overload, buffering just adds latency and eventually rejects anyway, so shed load and degrade gracefully — reject low-priority work, serve cached/default responses, and protect the critical path (keep checkout, drop recommendations). The guiding rule: it's better to serve 80% of users well than to serve 100% a timeout.
+Because retries multiply load on a service precisely when it can least handle it. If Payments is overloaded and every caller retries 3x on timeout, Payments suddenly receives ~3x its normal traffic — a retry storm that guarantees it stays down. The fixes: cap retries (2–3 max), use exponential backoff with jitter so retries spread out instead of hammering in sync, only retry idempotent operations (Nabila's idempotency keys from Part 3 matter here), and gate retries behind a circuit breaker so once the service is clearly sick you stop retrying entirely and fail fast instead.
+
+</Accordion>
+
+<Accordion title="An Adda service is receiving more requests than it can process. What are the options, and how do you choose?">
+
+Three: (1) **buffer** in a bounded queue — smooths short bursts, but a full queue must reject, not grow unbounded; (2) **backpressure** — signal upstream (429 / full queue) so callers slow down; (3) **load shedding** — drop requests now, cheapest first. Choose by whether the overload is transient or sustained: a brief spike, buffer it; a sustained overload, buffering just adds latency and eventually rejects anyway, so shed load and degrade gracefully — reject low-priority work, serve cached/default responses, and protect the critical path (keep checkout, drop recommendations). The guiding rule Mou lives by: it's better to serve 80% of users well than to serve 100% a timeout.
 
 </Accordion>
 
@@ -136,7 +136,7 @@ You have three: (1) **buffer** in a bounded queue — smooths short bursts, but 
 
 ## Recap
 
-- Failure spreads *upward*: a slow dependency blocks its callers' threads until the whole system jams — and "slow" is worse than "down."
+- Failure spreads *upward*: a slow dependency blocks its callers' threads until all of Adda jams — and "slow" is worse than "down."
 - **Circuit breakers** protect callers by failing fast (closed → open → half-open) when a dependency is sick; **backpressure** protects a service by pushing back when it's overwhelmed.
 - Tight timeouts, capped retries with jittered backoff, bounded queues, and graceful degradation are the concrete tools that keep local failures local.
 

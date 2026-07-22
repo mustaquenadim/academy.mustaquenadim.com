@@ -1,6 +1,6 @@
 ---
 title: "Design a URL Shortener"
-description: "Turning a long link into \"sho.rt/x7Qa\" sounds trivial — until you need it to handle a billion links and never hand out the same code twice."
+description: "Adda is hiring, so the team warms up on a classic: turning a long link into \"sho.rt/x7Qa\" sounds trivial — until it has to handle a billion links and never hand out the same code twice."
 extractedReferences:
   - href: /docs/system-design/part-1-networking/07-caching-fundamentals
   - href: /docs/system-design/part-2-databases/04-sharding
@@ -9,13 +9,13 @@ extractedReferences:
 
 ## The problem
 
-Someone pastes a 400-character tracking URL into a tweet and it eats half their character budget. You want to hand them back `sho.rt/x7Qa` instead, and when anyone clicks it, send them straight to the original. Easy — a table with two columns.
+Adda is finally big enough to hire, and **Nabila** has volunteered to run the system-design interviews. To calibrate — and to warm up the whole team before the real Adda case studies — she puts a classic on the whiteboard one Friday afternoon. **Fahim** kicks it off with a real gripe: he pasted a 400-character tracking URL into an Adda post and it ate half his character budget. He wants Adda to hand him back `sho.rt/x7Qa` instead, and when anyone taps it, send them straight to the original. Easy, says Ria — a table with two columns.
 
-Then marketing runs a campaign, the short link goes out to ten million inboxes, and every click hits your one database row at the same instant. The "trivial" version melts. The real problem isn't shortening a link once; it's serving billions of redirects a day, fast, without ever giving two different URLs the same code.
+Then **Tanvir** plays interviewer. "Marketing runs a campaign, the short link goes out to ten million inboxes, and every click hits your one database row at the same instant." The "trivial" version melts. The real problem isn't shortening a link once; it's serving billions of redirects a day, fast, without ever giving two different URLs the same code.
 
 ## Requirements
 
-Pin these down before drawing anything — the interviewer is watching how you scope.
+Pin these down before drawing anything — Nabila is watching how the room scopes.
 
 **Functional**
 
@@ -31,7 +31,7 @@ Pin these down before drawing anything — the interviewer is watching how you s
 
 ## A scale estimate
 
-Numbers turn hand-waving into engineering. Assume:
+Numbers turn hand-waving into engineering, so **Shuvo** grabs the marker. Assume:
 
 - **100 M** new URLs per day → ~1,160 writes/sec average, call it **~5,000/sec** at peak.
 - Read:write ratio of **100:1** → ~500 K redirects/sec at peak.
@@ -42,7 +42,7 @@ The redirect path is the hot path. Optimize everything around making that read c
 
 ## The insight
 
-A redirect is just a key-value lookup: short code → long URL. You don't need joins, transactions, or a relational schema for the hot path — you need a fast dictionary. The only genuinely hard part is **minting unique codes at 5,000/sec across many machines** without coordination on every request.
+A redirect is just a key-value lookup: short code → long URL. No joins, no transactions, no relational schema on the hot path — you need a fast dictionary, the same instinct behind the cache Ria added back in Part 1. The only genuinely hard part, Tanvir notes, is **minting unique codes at 5,000/sec across many machines** without coordination on every request.
 
 ## How it works
 
@@ -52,7 +52,7 @@ A redirect is just a key-value lookup: short code → long URL. You don't need j
 
 ### Pick the code format
 
-Use base62 (`a–z`, `A–Z`, `0–9`). Seven characters give 62⁷ ≈ **3.5 trillion** combinations — comfortably past our 365 B ceiling. Six characters (56 B) is close but risky, so budget seven.
+Use base62 (`a–z`, `A–Z`, `0–9`). Seven characters give 62⁷ ≈ **3.5 trillion** combinations — comfortably past the 365 B ceiling. Six characters (56 B) is close but risky, so budget seven.
 
 </Step>
 
@@ -70,7 +70,7 @@ A key generation service (or a Redis `INCR`, or a Snowflake-style ID) hands out 
 
 ### Store the mapping
 
-Write `code → long_url` into a partitioned key-value store (see [sharding](/docs/system-design/part-2-databases/04-sharding)), sharded by the code itself. The code is a great shard key — high cardinality, uniform, and it's exactly what every read queries by.
+Write `code → long_url` into a partitioned key-value store — the same [sharding](/docs/system-design/part-2-databases/04-sharding) trick Shuvo pulled in Part 2 — sharded by the code itself. The code is a great shard key: high cardinality, uniform, and exactly what every read queries by.
 
 </Step>
 
@@ -153,7 +153,7 @@ Store an `expires_at` field and check it lazily on read — if a looked-up code 
 <Cards>
   <Card title="Caching Fundamentals" href="/docs/system-design/part-1-networking/07-caching-fundamentals" description="Why the redirect path lives or dies on cache hit rate." />
   <Card title="Sharding" href="/docs/system-design/part-2-databases/04-sharding" description="Splitting 180 TB across nodes with the code as shard key." />
-  <Card title="Design a News Feed" href="/docs/system-design/part-5-case-studies/02-design-a-news-feed" description="The next case study — fan-out at scale." />
+  <Card title="Design a News Feed" href="/docs/system-design/part-5-case-studies/02-design-a-news-feed" description="The next case study — Adda's own feed, at scale." />
 </Cards>
 
 <Callout type="info" title="In an interview">
