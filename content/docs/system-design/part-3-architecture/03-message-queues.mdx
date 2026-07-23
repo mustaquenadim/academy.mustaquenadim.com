@@ -89,16 +89,15 @@ un-acked message reappears for another worker. After N failed tries, the message
 
 </Steps>
 
-```
-                    ┌──────────────── QUEUE ─────────────────┐
-   Upload API ──────▶ [m7][m6][m5][m4][m3][m2][m1] ──────────▶  Worker 1
-   (enqueue,          └────────────────────────────────────────┘  Worker 2
-    returns fast)              backlog grows on spikes,            Worker 3
-                               drains as workers consume             │
-                                                                     ▼ fail x N
-                                                            ┌──────────────────┐
-                                                            │ Dead-letter queue │
-                                                            └──────────────────┘
+```mermaid
+flowchart LR
+  API["Upload API<br/>enqueue, returns fast"] --> Q["QUEUE<br/>m1 … m7<br/>backlog grows on spikes,<br/>drains as workers consume"]
+  Q --> W1["Worker 1"]
+  Q --> W2["Worker 2"]
+  Q --> W3["Worker 3"]
+  W1 -->|"fail × N"| DLQ["Dead-letter queue"]
+  W2 -->|"fail × N"| DLQ
+  W3 -->|"fail × N"| DLQ
 ```
 
 ## Concrete numbers

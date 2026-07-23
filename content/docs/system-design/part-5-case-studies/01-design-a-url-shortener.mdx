@@ -84,21 +84,15 @@ On a click, look up the code and return an HTTP **301/302** with a `Location` he
 
 </Steps>
 
-```
-                    ┌──────────────┐
-   create ─────────▶│  App server  │◀──── ID block from
-                    │  (base62)    │      Key-Gen service
-                    └──────┬───────┘
-                           │ write code→url
-                           ▼
-                    ┌──────────────┐
-                    │  KV store    │  sharded by code
-                    │  (365B rows) │
-                    └──────────────┘
-                           ▲
-   click ───▶ [ CDN/edge ] │ miss
-              [  Redis   ]─┘ hit (99%)
-                 cache
+```mermaid
+flowchart TB
+  Create(["create"]) --> App["App server<br/>(base62)"]
+  KeyGen["Key-Gen service"] -->|"ID block"| App
+  App -->|"write code → url"| KV[("KV store<br/>sharded by code<br/>365B rows")]
+
+  Click(["click"]) --> Edge["CDN / edge"] --> Redis["Redis cache"]
+  Redis -->|"hit (99%)"| Served(["redirect served"])
+  Redis -->|miss| KV
 ```
 
 ## Key decisions and trade-offs

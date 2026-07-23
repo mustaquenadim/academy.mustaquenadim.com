@@ -88,16 +88,17 @@ On feed load: read the user's precomputed feed list (push results), then pull re
 
 </Steps>
 
-```
- POST ─▶ posts store
-   │
-   └─▶ [ queue ] ─▶ fan-out worker ──┐  (skip if celebrity)
-                                     ▼
-                          feed cache: user → [postId, postId, …]
-                                     ▲
- GET feed ─▶ read my feed list ──────┘
-          + pull recent celebrity posts
-          → merge + rank + paginate → client
+```mermaid
+flowchart TB
+  Post(["POST"]) --> Store[("posts store")]
+  Post --> Queue["queue"]
+  Queue --> Worker["fan-out worker<br/>skip if celebrity"]
+  Worker --> FeedCache[("feed cache<br/>user → postId, postId, …")]
+
+  Get(["GET feed"]) --> FeedCache
+  FeedCache --> Merge["merge + rank + paginate"]
+  Celeb["pull recent celebrity posts"] --> Merge
+  Merge --> Client(["client"])
 ```
 
 ## Key decisions and trade-offs

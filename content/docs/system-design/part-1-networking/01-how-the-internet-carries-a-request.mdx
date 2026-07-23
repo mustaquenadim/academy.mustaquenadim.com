@@ -80,16 +80,16 @@ Adda sends the page back as its own stream of packets. TCP on Fahim's side reord
 
 The whole trip in one picture:
 
-```
-  Fahim (browser)                                  Adda
-  ┌──────────┐   1. DNS: adda.com → IP            ┌────────┐
-  │  phone   │ ─────────────► [ Resolver ]        │ Ria's  │
-  └────┬─────┘   2. TCP + TLS handshake           │ laptop │
-       │         3. HTTP GET /                    └───▲────┘
-       │                                              │
-       ▼   packets hop router → router → router       │
-   [ carrier ] ─► [ IXP ] ─► [ backbone ] ─► [ ISP ] ─┘
-                  (each hop only knows the *next* hop)
+```mermaid
+flowchart TB
+  subgraph hops["packets hop router → router → router — each hop only knows the next hop"]
+    direction LR
+    Carrier["carrier"] --> IXP["IXP"] --> Backbone["backbone"] --> ISP["ISP"]
+  end
+
+  Phone(["Fahim's phone"]) -->|"1. DNS: adda.com → IP"| Resolver["Resolver"]
+  Phone -->|"2. TCP + TLS handshake<br/>3. HTTP GET /"| Carrier
+  ISP --> Adda["Ria's laptop<br/>(Adda)"]
 ```
 
 ## The numbers

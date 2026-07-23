@@ -80,14 +80,14 @@ B's client sends an ack up its socket → the server marks the message *delivere
 
 </Steps>
 
-```
-  A ═socket═▶ Gateway-1 ──┐
-                          │ lookup B → Gateway-2
-                          ▼
-     presence: user→gateway     ┌─ persist (message store)
-                          │      │
-                          └─▶ pub/sub ─▶ Gateway-2 ═socket═▶ B
-                                          (or queue if B offline)
+```mermaid
+flowchart LR
+  A(["A"]) -->|socket| GW1["Gateway-1"]
+  GW1 -->|"lookup B → Gateway-2"| Presence[("presence<br/>user → gateway")]
+  GW1 --> Persist[("message store")]
+  GW1 --> PubSub["pub/sub"]
+  PubSub --> GW2["Gateway-2<br/>or queue if B is offline"]
+  GW2 -->|socket| B(["B"])
 ```
 
 ## Message ordering

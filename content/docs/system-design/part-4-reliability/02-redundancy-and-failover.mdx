@@ -73,21 +73,21 @@ Untested failover is a coin flip. Mou's team practices killing nodes on purpose 
 
 Active-passive vs. active-active, side by side:
 
-```
-   ACTIVE-PASSIVE                     ACTIVE-ACTIVE
-   ───────────────                    ─────────────
-        clients                            clients
-           │                                 │
-      ┌────┴────┐                      ┌──────┴──────┐
-      │   LB    │                      │     LB      │
-      └────┬────┘                      └──┬───────┬──┘
-       ok  │  (dead)                      │       │
-    ┌──────┴──────┐                    ┌──┴──┐ ┌──┴──┐
-    │ PRIMARY     │  ✕ STANDBY         │ N1  │ │ N2  │   both serve,
-    │ serves all  │    idle, warm      │serve│ │serve│   each ~50%
-    └─────────────┘                    └─────┘ └─────┘
-       on failure: promote standby        on failure: survivor
-       (seconds of blip)                   absorbs the load
+```mermaid
+flowchart TB
+  subgraph ap["ACTIVE-PASSIVE — on failure: promote standby (seconds of blip)"]
+    direction TB
+    C1(["clients"]) --> LB1["LB"]
+    LB1 -->|ok| P["PRIMARY<br/>serves all"]
+    LB1 -.->|"dead — idle, warm"| S["STANDBY"]
+  end
+
+  subgraph aa["ACTIVE-ACTIVE — on failure: the survivor absorbs the load"]
+    direction TB
+    C2(["clients"]) --> LB2["LB"]
+    LB2 --> N1["N1<br/>serves ~50%"]
+    LB2 --> N2["N2<br/>serves ~50%"]
+  end
 ```
 
 ## Adda's real numbers

@@ -65,17 +65,12 @@ Later requests hit the cache until the TTL expires. Then the resolver refreshes 
 
 The delegation chain, top to bottom:
 
-```
-   [ Fahim's device ]
-         │  "IP for www.adda.com?"
-         ▼
-   [ Recursive resolver ]  ◄── caches every answer (TTL)
-     │        │        │
-     │(1)     │(2)     │(3)
-     ▼        ▼        ▼
-  [ Root ]  [ .com ]  [ adda.com ]
-  "ask      "ask      "it's
-   .com"    adda"      203.0.113.42"
+```mermaid
+flowchart TB
+  Device(["Fahim's device"]) -->|"IP for www.adda.com?"| Resolver["Recursive resolver<br/>caches every answer (TTL)"]
+  Resolver -->|"1"| Root["Root<br/>'ask .com'"]
+  Resolver -->|"2"| Com[".com<br/>'ask adda'"]
+  Resolver -->|"3"| Auth["adda.com<br/>'it is 203.0.113.42'"]
 ```
 
 Common record types Ria will actually name in a design:

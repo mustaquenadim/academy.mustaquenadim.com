@@ -74,15 +74,15 @@ When one shard runs hot, you split it or move ranges. Consistent hashing minimiz
 
 </Steps>
 
-```
-   Routing:  shard = hash(user_id) % 4
-
-   client ──► router ──┬──► Shard 0  (users hashing to 0)  ← own leader
-                       ├──► Shard 1  (…to 1)               ← own leader
-                       ├──► Shard 2  (…to 2)               ← own leader
-                       └──► Shard 3  (…to 3)               ← own leader
-
-   single-key read → one shard          "sum all revenue" → scatter/gather all 4
+```mermaid
+flowchart LR
+  Client(["client"]) -->|"single-key read → one shard"| Router
+  Client -->|"'sum all revenue' → scatter/gather all 4"| Router
+  Router["router<br/>shard = hash(user_id) % 4"]
+  Router --> S0[("Shard 0 — own leader<br/>users hashing to 0")]
+  Router --> S1[("Shard 1 — own leader")]
+  Router --> S2[("Shard 2 — own leader")]
+  Router --> S3[("Shard 3 — own leader")]
 ```
 
 ## Concrete numbers

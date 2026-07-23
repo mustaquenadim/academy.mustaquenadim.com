@@ -76,21 +76,19 @@ When Adda must drop work, drop the *least* important first: reject low-priority 
 
 The circuit breaker state machine:
 
-```
-        failures < threshold
-        ┌───────────────────┐
-        ▼                   │
-   ┌─────────┐  fail rate   ┌─────────┐
-   │ CLOSED  │─── > 50% ───►│  OPEN   │  reject instantly,
-   │ calls   │              │ (fail   │  return fallback
-   │ flow    │              │  fast)  │
-   └─────────┘              └────┬────┘
-        ▲                        │ after cooldown (10s)
-        │ probes ok              ▼
-        │                   ┌───────────┐
-        └───────────────────│ HALF-OPEN │ allow a few test calls
-              probes fail ──►│  (probe)  │──► back to OPEN
-                             └───────────┘
+```mermaid
+stateDiagram-v2
+  [*] --> Closed
+
+  Closed: CLOSED — calls flow
+  Open: OPEN — reject instantly, return fallback
+  HalfOpen: HALF-OPEN — allow a few test calls
+
+  Closed --> Closed: failures under threshold
+  Closed --> Open: fail rate over 50%
+  Open --> HalfOpen: after cooldown (10s)
+  HalfOpen --> Closed: probes ok
+  HalfOpen --> Open: probes fail
 ```
 
 ## Adda's real numbers

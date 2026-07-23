@@ -94,17 +94,23 @@ clean answer and the customer is charged once.
 
 </Steps>
 
-```
-   Attempt 1 ── key=abc ──▶ ┌──────────────────────┐
-                            │ seen "abc"? NO        │
-                            │  → charge card        │──▶ store {abc: result}
-                            │  → save result        │
-   (response lost) ✗ ◀──────└──────────────────────┘
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant S as Server
+  participant St as Key store
 
-   Attempt 2 ── key=abc ──▶ ┌──────────────────────┐
-   (retry)                  │ seen "abc"? YES       │
-                            │  → return stored result│──▶ NO second charge
-                            └──────────────────────┘
+  C->>S: Attempt 1 — key=abc
+  S->>St: seen 'abc'?
+  St-->>S: NO
+  S->>S: charge card
+  S->>St: store {abc: result}
+  S--xC: response lost
+
+  C->>S: Attempt 2 — key=abc (retry)
+  S->>St: seen 'abc'?
+  St-->>S: YES — stored result
+  S->>C: return stored result, NO second charge
 ```
 
 ## Concrete numbers

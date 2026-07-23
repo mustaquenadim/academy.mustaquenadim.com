@@ -78,19 +78,12 @@ Each client has a bucket of tokens refilled at a steady rate; each request spend
 
 </Steps>
 
-```
-        request (key = api_key)
-              │
-              ▼
-   ┌────────────────────┐    atomic INCR / token check
-   │  API server (1 of  │◀──────────────┐
-   │  100) — thin check │               │
-   └─────────┬──────────┘        ┌──────────────┐
-             │ under limit       │  Redis       │  key → {tokens, ts}
-             ▼                   │  (shared)    │
-        pass to app             └──────────────┘
-             │ over limit
-             └──▶ 429 + Retry-After
+```mermaid
+flowchart TB
+  Req(["request — key = api_key"]) --> API["API server (1 of 100)<br/>thin check"]
+  API <-->|"atomic INCR / token check"| Redis[("Redis (shared)<br/>key → tokens, ts")]
+  API -->|"under limit"| App(["pass to app"])
+  API -->|"over limit"| Reject(["429 + Retry-After"])
 ```
 
 ## Key decisions and trade-offs

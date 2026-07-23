@@ -77,16 +77,19 @@ Most real systems are polyglot: Postgres as the source of truth, Redis in front 
 
 </Steps>
 
-```
-   Relational (normalized)              Document (denormalized)
-   ────────────────────────            ──────────────────────────
-   customers ──┐                        orders/4711  ┌───────────┐
-               │  join                               │ id: 4711  │
-   orders ─────┼──────► order page                   │ customer: │
-               │  join                               │   { name }│  one read
-   line_items ─┘                                     │ items:[…] │
-                                                     └───────────┘
-   1 write updates a name once          1 name lives in every order
+```mermaid
+flowchart LR
+  subgraph rel["Relational (normalized) — 1 write updates a name once"]
+    direction LR
+    Customers["customers"] -->|join| Page["order page"]
+    Orders["orders"] -->|join| Page
+    LineItems["line_items"] -->|join| Page
+  end
+
+  subgraph doc["Document (denormalized) — 1 name lives in every order"]
+    direction LR
+    Read(["one read"]) --> Doc["orders/4711<br/>id: 4711<br/>customer: { name }<br/>items: [ … ]"]
+  end
 ```
 
 ## Concrete numbers

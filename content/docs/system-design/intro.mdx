@@ -15,10 +15,9 @@ She texts her friend **Fahim** a link. He opens it, types "first post lol", and 
 
 Right now, Adda is the simplest system that can possibly exist:
 
-```
-  Fahim's phone  ───────►  Ria's laptop
-   (the browser)            (the app + the data,
-                             all in one process)
+```mermaid
+flowchart LR
+  Phone(["Fahim's phone<br/>(the browser)"]) --> Laptop["Ria's laptop<br/>(the app + the data,<br/>all in one process)"]
 ```
 
 One machine does *everything*: it receives the request, runs the code, stores the post in a file, and sends the page back. There is no "architecture" here. There's just a program.

@@ -73,18 +73,17 @@ Inserting a row means inserting into the table *and* into each index that covers
 
 </Steps>
 
-```
-   Query: WHERE email = 'ana@x.com'
+```mermaid
+flowchart LR
+  subgraph idx["B-tree index on email — O(log n) to the leaf"]
+    direction TB
+    Root["m"] --> F["f"]
+    Root --> T["t"]
+    F --> Leaf["…ana…"]
+  end
 
-        B-tree index on email                Table (heap)
-        ─────────────────────                ────────────
-              [ m ]                           row 8123301
-             /     \                          ┌────────────────────┐
-          [ f ]    [ t ]                       │ id | name | email…  │
-          /   \    /   \        pointer         │ ...                │
-       …ana…  …    …   …   ─────────────────►   │ ana@x.com  ✓        │
-       O(log n) to the leaf                     └────────────────────┘
-                                                one extra read
+  Query(["WHERE email = 'ana@x.com'"]) --> Root
+  Leaf -->|"pointer — one extra read"| Heap["Table (heap) · row 8123301<br/>id · name · email …<br/>ana@x.com ✓"]
 ```
 
 ## Concrete numbers

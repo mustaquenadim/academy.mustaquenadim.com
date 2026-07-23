@@ -87,23 +87,20 @@ The player fetches a manifest listing every rendition, then requests segments on
 
 </Steps>
 
-```
- upload ─chunks─▶ object storage ──┐
-   (pre-signed)                    │ on complete
-                                   ▼
-                            [ encode queue ]
-                                   │
-                    ┌──────────────┼──────────────┐
-                    ▼              ▼               ▼
-                 worker         worker          worker   (segment × rendition)
-                    └──────────────┼──────────────┘
-                                   ▼
-                    object storage (segments + manifest)
-                                   │ push hot content
-                                   ▼
-   viewer ◀── nearest CDN edge ◀── CDN  ◀────────┘
-     ▲  measures bandwidth, requests next segment at best quality
-     └──────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  Upload(["upload — chunks, pre-signed"]) --> Raw[("object storage")]
+  Raw -->|"on complete"| Queue["encode queue"]
+  Queue --> W1["worker"]
+  Queue --> W2["worker"]
+  Queue --> W3["worker"]
+  W1 --> Out[("object storage<br/>segments + manifest")]
+  W2 --> Out
+  W3 --> Out
+  Out -->|"push hot content"| CDN["CDN"]
+  CDN --> Edge["nearest CDN edge"]
+  Edge --> Viewer(["viewer"])
+  Viewer -->|"measures bandwidth, asks for the next segment at the best quality"| Edge
 ```
 
 ## Key decisions and trade-offs

@@ -95,15 +95,11 @@ an atomic Lua script so the read-modify-write can't race.
 
 </Steps>
 
-```
-   refill: R tokens/sec
-        │
-        ▼
-   ┌─────────────┐   take 1 token
-   │ ● ● ● ● ●   │ ───────────────▶  request ALLOWED
-   │ bucket B=10 │
-   └─────────────┘   bucket empty?
-                     ───────────────▶  request REJECTED (429 + Retry-After)
+```mermaid
+flowchart TB
+  Refill(["refill: R tokens/sec"]) --> Bucket["bucket B=10<br/>● ● ● ● ●"]
+  Bucket -->|"take 1 token"| Allowed(["request ALLOWED"])
+  Bucket -->|"bucket empty?"| Rejected(["request REJECTED<br/>429 + Retry-After"])
 ```
 
 ## Concrete numbers

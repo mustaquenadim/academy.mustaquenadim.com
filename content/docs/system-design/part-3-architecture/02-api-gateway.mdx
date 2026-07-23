@@ -94,18 +94,24 @@ into 1.
 
 </Steps>
 
-```
-   Mobile ─┐
-   Web    ─┤        ┌───────────────────────────┐
-   Partner─┴──────▶ │        API GATEWAY        │
-                    │  TLS · authN · rate limit  │
-                    │  routing · logging · agg   │
-                    └───┬───────┬───────┬────────┘
-                        │        │       │
-                        ▼        ▼       ▼
-                    ┌──────┐ ┌──────┐ ┌──────┐
-                    │Users │ │ Posts│ │ Feed │   (private, trust caller)
-                    └──────┘ └──────┘ └──────┘
+```mermaid
+flowchart LR
+  Mobile(["Mobile"]) --> GW
+  Web(["Web"]) --> GW
+  Partner(["Partner"]) --> GW
+
+  GW["API GATEWAY<br/>TLS · authN · rate limit<br/>routing · logging · aggregation"]
+
+  subgraph internal["private services — they trust the caller"]
+    direction TB
+    Users["Users"]
+    Posts["Posts"]
+    Feed["Feed"]
+  end
+
+  GW --> Users
+  GW --> Posts
+  GW --> Feed
 ```
 
 ## Concrete numbers

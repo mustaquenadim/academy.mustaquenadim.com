@@ -95,21 +95,22 @@ touching posting. Each service has its own pipeline, dashboards, and on-call.
 
 </Steps>
 
-```
-        MONOLITH                         MICROSERVICES
+```mermaid
+flowchart TB
+  subgraph mono["MONOLITH — one process, one deploy"]
+    direction TB
+    M["Bill · Srch · Post · Notf"] --> MDB[("1 DB")]
+  end
 
-   ┌──────────────────┐              ┌──────────────┐
-   │  ┌────┐  ┌────┐   │              │  API Gateway │
-   │  │Bill│  │Srch│   │              └──────┬───────┘
-   │  ├────┤  ├────┤   │           ┌─────────┼─────────┐
-   │  │Post│  │Notf│   │           ▼         ▼         ▼
-   │  └────┘  └────┘   │        ┌──────┐ ┌──────┐ ┌──────┐
-   │   one process     │        │ Bill │ │ Srch │ │ Post │
-   └────────┬─────────┘        └──┬───┘ └──┬───┘ └──┬───┘
-            │                      ▼        ▼        ▼
-        ┌───────┐               ┌───┐    ┌───┐    ┌───┐
-        │  1 DB │               │DB │    │DB │    │DB │
-        └───────┘               └───┘    └───┘    └───┘
+  subgraph micro["MICROSERVICES — deploy and scale each on its own"]
+    direction TB
+    GW["API Gateway"] --> Bill["Bill"]
+    GW --> Srch["Srch"]
+    GW --> Post["Post"]
+    Bill --> BillDB[("DB")]
+    Srch --> SrchDB[("DB")]
+    Post --> PostDB[("DB")]
+  end
 ```
 
 ## Concrete numbers

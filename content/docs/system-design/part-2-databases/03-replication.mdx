@@ -66,18 +66,15 @@ If the leader dies, a follower is promoted to leader and traffic redirects to it
 
 </Steps>
 
-```
-                 writes
-   client ───────────────►  ┌────────────┐
-                            │   LEADER    │  append to log
-                            └─────┬───────┘
-                       replicate  │  (sync = wait, async = fire-and-forget)
-                     ┌────────────┼────────────┐
-                     ▼            ▼             ▼
-               ┌──────────┐ ┌──────────┐ ┌──────────┐
-               │ follower │ │ follower │ │ follower │
-               └────┬─────┘ └────┬─────┘ └────┬─────┘
-                    └──────── reads ──────────┘
+```mermaid
+flowchart TB
+  Client(["client"]) -->|writes| Leader["LEADER<br/>append to log"]
+  Leader -->|"replicate — sync = wait, async = fire-and-forget"| F1["follower"]
+  Leader -->|replicate| F2["follower"]
+  Leader -->|replicate| F3["follower"]
+  F1 -->|reads| Readers(["read clients"])
+  F2 -->|reads| Readers
+  F3 -->|reads| Readers
 ```
 
 ## Concrete numbers

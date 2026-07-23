@@ -67,14 +67,13 @@ An **L4** balancer routes on IP/port only — fast, protocol-agnostic, no idea w
 
 The front-door picture:
 
-```
-                       ┌──────────────────┐   health checks
-   clients ──────────► │  Load Balancer   │ ─────┐
-   (one DNS name)      │  round robin /   │      │  ✔ web-1  (healthy)
-                       │  least conn /    │──────┼─ ✘ web-2  (down → removed)
-                       │  ip hash         │      │  ✔ web-3  (healthy)
-                       └──────────────────┘ ─────┘
-                        add web-4 → pool grows, no client change
+```mermaid
+flowchart LR
+  Clients(["clients<br/>(one DNS name)"]) --> LB["Load Balancer<br/>round robin · least conn · ip hash"]
+  LB -->|"health check ✔"| Web1["web-1 (healthy)"]
+  LB -->|"health check ✘"| Web2["web-2 (down → removed)"]
+  LB -->|"health check ✔"| Web3["web-3 (healthy)"]
+  LB -.->|"add web-4 → pool grows, no client change"| Web4["web-4"]
 ```
 
 ## The numbers

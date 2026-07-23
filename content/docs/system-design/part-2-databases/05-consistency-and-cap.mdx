@@ -74,13 +74,20 @@ The partition ends, changes flow both ways, and replicas re-agree. AP systems ca
 
 </Steps>
 
-```
-   Healthy:            A ───── link ───── B     both consistent + available
+```mermaid
+flowchart TB
+  subgraph healthy["Healthy — both consistent + available"]
+    direction LR
+    A1["A"] <-->|link| B1["B"]
+  end
 
-   Partition:          A ──╳ (no link) ╳── B
-                       │                  │
-   CP choice:   accept writes │  reject writes  ← B is unavailable, no stale data
-   AP choice:   accept writes │  accept writes  ← both up, may disagree, merge later
+  subgraph split["Partition — the link between A and B is gone"]
+    direction LR
+    A2["A"] -.->|"link down"| B2["B"]
+  end
+
+  split --> CP["CP choice: A accepts writes, B rejects<br/>B is unavailable, but no stale data"]
+  split --> AP["AP choice: both accept writes<br/>both stay up, may disagree, merge later"]
 ```
 
 ## Concrete numbers

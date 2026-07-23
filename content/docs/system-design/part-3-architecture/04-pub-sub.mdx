@@ -91,16 +91,13 @@ at the edges.
 
 </Steps>
 
-```
-                                 ┌──────────────▶  Feed service
-                                 │
-   Posts ──publish──▶ ┌──────────┐ ──▶  Search service
-   (PostCreated)      │  TOPIC   │
-                      │  posts   │ ──▶  Analytics service
-                      └──────────┘
-                                 │
-                                 └──────────────▶  Notifications service
-             one publish  ───────▶  fan-out to every subscriber
+```mermaid
+flowchart LR
+  Posts["Posts<br/>(PostCreated)"] -->|"one publish → fan-out to every subscriber"| Topic["TOPIC<br/>posts"]
+  Topic --> Feed["Feed service"]
+  Topic --> Search["Search service"]
+  Topic --> Analytics["Analytics service"]
+  Topic --> Notifications["Notifications service"]
 ```
 
 ## Concrete numbers

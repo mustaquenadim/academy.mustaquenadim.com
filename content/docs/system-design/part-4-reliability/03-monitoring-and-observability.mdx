@@ -77,17 +77,16 @@ Arrange panels top-down: overall SLO health, then per-service golden signals, th
 
 How the three pillars connect through a shared trace ID:
 
-```
-   request ──► API GW ──► Orders ──► Payments ──► DB
-      │  trace_id=abc     span      span         span
-      │
-      ├─ METRICS: p99 latency spikes at 09:14  ── "something is wrong, now"
-      │                       │
-      │                       ▼ pivot by time
-      ├─ TRACES:  abc → GW 5ms │ Orders 8ms │ Payments 900ms ◄─ the slow hop
-      │                                         │
-      │                                         ▼ pivot by trace_id
-      └─ LOGS:    {trace_id:abc, svc:payments, msg:"upstream timeout"}  ── the why
+```mermaid
+flowchart TB
+  subgraph path["request path — trace_id=abc"]
+    direction LR
+    Req(["request"]) --> GW["API GW<br/>span"] --> Orders["Orders<br/>span"] --> Payments["Payments<br/>span"] --> DB[("DB")]
+  end
+
+  path --> Metrics["METRICS: p99 latency spikes at 09:14<br/>'something is wrong, now'"]
+  Metrics -->|"pivot by time"| Traces["TRACES: abc → GW 5ms · Orders 8ms · Payments 900ms<br/>Payments is the slow hop"]
+  Traces -->|"pivot by trace_id"| Logs["LOGS: trace_id=abc, svc=payments,<br/>msg='upstream timeout' — the why"]
 ```
 
 ## Adda's real numbers

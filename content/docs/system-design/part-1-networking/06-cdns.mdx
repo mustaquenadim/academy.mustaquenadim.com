@@ -65,13 +65,19 @@ Cached objects carry a TTL (via `Cache-Control`). When it expires the edge re-va
 
 Same request, without and with a CDN:
 
-```
-WITHOUT CDN                         WITH CDN
-                                    Sydney user ─► [ Sydney edge ]  ~5 ms
-Sydney user ──────────► Dhaka                          │ (cache miss, once)
-   ~200 ms round trip    origin                        ▼
-   every request, every user                     [ Dhaka origin ]
-                                    next Sydney users ─► edge  (cache hit, no origin)
+```mermaid
+flowchart LR
+  subgraph without["Without CDN"]
+    direction LR
+    User1(["Sydney user"]) -->|"~200 ms round trip<br/>every request, every user"| Origin1[("Dhaka origin")]
+  end
+
+  subgraph withCdn["With CDN"]
+    direction LR
+    User2(["Sydney user"]) -->|"~5 ms"| Edge["Sydney edge"]
+    Edge -->|"cache miss, once"| Origin2[("Dhaka origin")]
+    User3(["next Sydney users"]) -->|"cache hit, no origin"| Edge
+  end
 ```
 
 ## The numbers
